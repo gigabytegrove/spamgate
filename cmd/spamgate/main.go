@@ -4,10 +4,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
-	"os/signal"
-	"syscall"
+	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/gigabytegrove/spamgate/internal/core"
@@ -15,84 +16,128 @@ import (
 	"github.com/gigabytegrove/spamgate/internal/transport"
 )
 
+type options struct {
+	dataDir string
+	listen  string
+	logFile string
+}
+
+func defaultDataDir() string {
+	if runtime.GOOS == "windows" {
+		if base := os.Getenv("ProgramData"); base != "" {
+			return filepath.Join(base, "SpamGate")
+		}
+		if base, err := os.UserConfigDir(); err == nil {
+			return filepath.Join(base, "SpamGate")
+		}
+		return "SpamGate-data"
+	}
+	return "/var/lib/spamgate"
+}
+
+func defaultListen() string {
+	if value := os.Getenv("SPAMGATE_WEB_LISTEN"); value != "" {
+		return value
+	}
+	// Host installs are local-only until the administrator configures an HTTPS proxy
+	// or explicitly enables access from a trusted LAN.
+	return "127.0.0.1:38470"
+}
+
 func main() {
-	if e := run(); e != nil {
-		slog.Error("SpamGate stopped", "error", e)
+	if err := execute(os.Args[1:]); err != nil {
+		slog.Error("SpamGate stopped", "error", err)
 		os.Exit(1)
 	}
 }
-func run() error {
-	data := flag.String("data", "/var/lib/spamgate", "Data directory")
-	web := flag.String("listen", "0.0.0.0:38470", "Web listener")
-	version := flag.Bool("version", false, "Print version")
-	flag.Parse()
+
+func execute(args []string) error {
+	flags := flag.NewFlagSet("spamgate", flag.ContinueOnError)
+	data := flags.String("data", defaultDataDir(), "Persistent data directory")
+	web := flags.String("listen", defaultListen(), "Management HTTP listener (use an HTTPS reverse proxy for remote access)")
+	logPath := flags.String("log-file", "", "Optional append-only application log (useful for Windows services)")
+	version := flags.Bool("version", false, "Print version")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("unexpected positional arguments: %v", flags.Args())
+	}
 	if *version {
 		fmt.Println(core.Version)
 		return nil
 	}
-	store, e := core.Open(*data)
-	if e != nil {
-		return e
+	if *data == "" || *web == "" {
+		return fmt.Errorf("data and listen must not be empty")
 	}
-	relay, e := transport.RelayFromEnv()
-	if e != nil {
-		return e
-	}
-	inbound, e := transport.SMTPFromEnv(store, relay)
-	if e != nil {
-		return e
-	}
-	rspamdWorker, e := transport.RspamdFromEnv(store)
-	if e != nil {
-		return e
-	}
-	controller, e := transport.ControllerFromEnv(store)
-	if e != nil {
-		return e
-	}
-	milterWorker, e := transport.MilterFromEnv(store)
-	if e != nil {
-		return e
-	}
-	// Catch misconfigured listeners before accepting mail or opening admin routes.
-	seen := map[string]string{*web: "web"}
-	for _, pair := range []struct{ address, name string }{{func() string {
-		if rspamdWorker != nil {
-			return rspamdWorker.ListenAddress
+	if *logPath != "" {
+		// The setup key is logged at startup; the log directory must be protected.
+		f, err := os.OpenFile(*logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+		if err != nil {
+			return fmt.Errorf("open application log: %w", err)
 		}
-		return ""
-	}(), "rspamd-http"}, {func() string {
-		if controller != nil {
-			return controller.ListenAddress
-		}
-		return ""
-	}(), "rspamd-controller"}, {func() string {
-		if milterWorker != nil {
-			return milterWorker.Addr
-		}
-		return ""
-	}(), "milter"}, {func() string {
-		if inbound != nil {
-			return inbound.Addr
-		}
-		return ""
-	}(), "smtp"}} {
-		if pair.address == "" {
-			continue
-		}
-		if previous, exists := seen[pair.address]; exists {
-			return fmt.Errorf("listener collision: %s and %s both use %s", previous, pair.name, pair.address)
-		}
-		seen[pair.address] = pair.name
+		defer f.Close()
+		slog.SetDefault(slog.New(slog.NewTextHandler(io.MultiWriter(os.Stderr, f), nil)))
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	return runPlatform(func(ctx context.Context) error {
+		return runApp(ctx, options{dataDir: *data, listen: *web, logFile: *logPath})
+	})
+}
+
+func runApp(ctx context.Context, opts options) error {
+	store, err := core.Open(opts.dataDir)
+	if err != nil {
+		return err
+	}
+	relay, err := transport.RelayFromEnv()
+	if err != nil {
+		return err
+	}
+	inbound, err := transport.SMTPFromEnv(store, relay)
+	if err != nil {
+		return err
+	}
+	rspamdWorker, err := transport.RspamdFromEnv(store)
+	if err != nil {
+		return err
+	}
+	controller, err := transport.ControllerFromEnv(store)
+	if err != nil {
+		return err
+	}
+	milterWorker, err := transport.MilterFromEnv(store)
+	if err != nil {
+		return err
+	}
+	seen := map[string]string{opts.listen: "management"}
+	listeners := []struct{ address, name string }{}
+	if rspamdWorker != nil {
+		listeners = append(listeners, struct{ address, name string }{rspamdWorker.ListenAddress, "rspamd-http"})
+	}
+	if controller != nil {
+		listeners = append(listeners, struct{ address, name string }{controller.ListenAddress, "rspamd-controller"})
+	}
+	if milterWorker != nil {
+		listeners = append(listeners, struct{ address, name string }{milterWorker.Addr, "milter"})
+	}
+	if inbound != nil {
+		listeners = append(listeners, struct{ address, name string }{inbound.Addr, "smtp"})
+	}
+	for _, listener := range listeners {
+		if previous, exists := seen[listener.address]; exists {
+			return fmt.Errorf("listener collision: %s and %s both use %s", previous, listener.name, listener.address)
+		}
+		seen[listener.address] = listener.name
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	srv := server.New(store, nil)
 	if relay != nil {
 		srv.Deliver = relay.Send
 	}
 	errorsCh := make(chan error, 5)
-	go func() { errorsCh <- srv.ListenAndServe(ctx, *web) }()
+	go func() { errorsCh <- srv.ListenAndServe(ctx, opts.listen) }()
 	if rspamdWorker != nil {
 		go func() { errorsCh <- rspamdWorker.Listen(ctx) }()
 	}
@@ -109,15 +154,12 @@ func run() error {
 	defer ticker.Stop()
 	for {
 		select {
-		case e := <-errorsCh:
-			stop()
-			if e != nil {
-				return e
-			}
-			return nil
+		case err := <-errorsCh:
+			cancel()
+			return err
 		case <-ticker.C:
-			if e := store.Compact(); e != nil {
-				slog.Error("history compaction failed", "error", e)
+			if err := store.Compact(); err != nil {
+				slog.Error("history compaction failed", "error", err)
 			}
 		case <-ctx.Done():
 			return nil

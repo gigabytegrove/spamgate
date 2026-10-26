@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: spamgate:0.3.0-alpha.1
+    image: spamgate:0.3.0-alpha.2
     restart: unless-stopped
     init: true
     ports:
@@ -24,7 +24,7 @@ services:
       # SPAMGATE_MILTER_TRUSTED_CIDRS: "192.0.2.10/32"
       # SPAMGATE_CONTROLLER_LISTEN: "0.0.0.0:38474"
       # SPAMGATE_CONTROLLER_TRUSTED_CIDRS: "192.0.2.10/32"
-      # SPAMGATE_CONTROLLER_TOKEN: "${SPAMGATE_CONTROLLER_TOKEN:?Set a random secret before enabling controller}"
+      # SPAMGATE_CONTROLLER_TOKEN: "set-a-strong-random-secret-when-enabled"
       SPAMGATE_SECURE_COOKIES: "${SPAMGATE_SECURE_COOKIES:-false}"
       # The SMTP settings below are intentionally not populated; no mail-flow changes on install.
       # SPAMGATE_SMTP_LISTEN: "0.0.0.0:38473"

@@ -2,7 +2,7 @@
 
 **Explainable mail filtering, policy management and quarantine — written in Go.**
 
-SpamGate is a new Gigabyte Grove mail-security platform designed to replace the operational role of Rspamd over time, not a finished drop-in Rspamd clone. **Current development build: `0.3.0-alpha.1` (source).** It has a working scoring engine, browser control desk, persistent audit history and separate SMTP, Rspamd-HTTP, Milter and optional controller-style HTTP integration modes. Milter and Rspamd HTTP remain tested subsets; SPF, DKIM, exact-domain DMARC, Bayes, fuzzy similarity, a manually trained local neural network and optional ClamAV have limited implementations. **Full Rspamd parity, cryptographic ARC validation/sealing and production-ready model evaluation are not yet implemented.** Do **not** replace a production filter with this alpha without a controlled mail-flow and security evaluation.
+SpamGate is a new Gigabyte Grove mail-security platform designed to replace the operational role of Rspamd over time, not a finished drop-in Rspamd clone. **Current development build: `0.3.0-alpha.2` (native Windows/Linux packages and source).** It has a working scoring engine, browser control desk, persistent audit history and separate SMTP, Rspamd-HTTP, Milter and optional controller-style HTTP integration modes. Milter and Rspamd HTTP remain tested subsets; SPF, DKIM, exact-domain DMARC, Bayes, fuzzy similarity, a manually trained local neural network and optional ClamAV have limited implementations. **Full Rspamd parity, cryptographic ARC validation/sealing and production-ready model evaluation are not yet implemented.** Do **not** replace a production filter with this alpha without a controlled mail-flow and security evaluation.
 
 ## What works today
 
@@ -33,36 +33,53 @@ SpamGate is a new Gigabyte Grove mail-security platform designed to replace the 
 | **Full Rspamd protocol parity, cryptographic ARC verification/sealing** | **Not yet implemented** |
 | Multi-node and enterprise directory integration | **Not yet implemented** |
 
-## Quick install (Docker Compose)
+## Install: native binary (recommended)
 
-Requirements: Docker Engine with the Compose plugin, a persistent data volume, and an HTTPS reverse proxy or a private management network.
+SpamGate runs as a **real operating-system service**, without Docker, a separate database, Node.js or Go on the machine being protected. Download the matching OS/CPU **binary archive** (`linux-amd64`, `linux-arm64`, `windows-amd64` or `windows-arm64`) from the distribution artifacts; do not try to run a source ZIP as an installer. Extract the archive and use the included script.
+
+**Linux (systemd)**:
+
+```bash
+sudo ./install-linux.sh
+sudo systemctl status spamgate --no-pager
+sudo journalctl -u spamgate --no-pager -n 40
+```
+
+**Windows (elevated PowerShell 5.1+)**:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-windows.ps1
+Get-Service SpamGate
+Get-Content "$env:ProgramData\SpamGate\spamgate.log" -Tail 40
+```
+
+Visit <http://127.0.0.1:38470> **from the same computer** and use the one-time setup key shown in the logs to configure an administrator. The service is installed to start at boot and uses a dedicated unprivileged identity (`spamgate` on Linux, `LocalService` on Windows). All settings and mail history persist across upgrades and remain available after uninstalling. To expose the console beyond localhost, deliberately set a trusted interface and protect access with an HTTPS reverse proxy; do not put HTTP administrator login on the public Internet.
+
+See [full Windows and Linux install/upgrade/uninstall instructions](docs/INSTALLATION.md). Native archives and checksums are created with `bash scripts/build-release.sh`, without GitHub Actions.
+
+## Alternative install: Docker Compose
 
 ```bash
 git clone https://github.com/gigabytegrove/spamgate.git
 cd spamgate
 docker compose up -d --build
-docker compose logs spamgate --tail=30
+docker compose logs spamgate --tail=40
 ```
 
-Open `http://<server>:38470` on a **trusted private network**. Find the `setup_key` in `docker compose logs spamgate`, paste it into the first-run wizard, choose the site name and create your administrator account. The key is single-use and changes if an unconfigured instance restarts. It is never returned by the unauthenticated API.
+Docker binds the management API/Web UI on container port `38470`. The example Compose file publishes it on the Docker host, so **restrict it using the host firewall/reverse proxy**. MTA-facing ports are disabled by default. A controller secret is only needed if the optional controller is enabled. See [deployment documentation](docs/INSTALLATION.md) and [operations](docs/OPERATIONS.md).
 
-Before putting the console on the internet, deploy an HTTPS reverse proxy and set `SPAMGATE_SECURE_COOKIES=true` in `compose.yaml`. Protect access using network rules. The HTTP listener has no built-in TLS; do not send credentials over cleartext public networks.
+## Developer source build
 
-**By default all MTA-facing filtering listeners are disabled:** the web console and HTTP API work without touching mail flow. To enable SMTP delivery, configure the five required SMTP variables described in [docs/OPERATIONS.md](docs/OPERATIONS.md), keep the filtering port within a trusted network, and route messages from your MTA into that port. SpamGate does not automatically modify any mail server.
-
-## Quick install (native Go)
-
-Use Go **1.27.3** or newer to build for current security patches (the module intentionally targets older Go language syntax and also compiles with Go 1.23). Confirm target operating system architecture support before deploying.
+Go 1.27.3 (recommended for current security fixes) or another Go toolchain compatible with the `go.mod` language version is required **only to build from source**:
 
 ```bash
 go test ./...
 go vet ./...
 go build -trimpath -o spamgate ./cmd/spamgate
-mkdir -p ./data
-./spamgate -data ./data -listen 0.0.0.0:38470
+./spamgate -data ./data -listen 127.0.0.1:38470
 ```
 
-A single binary embeds the entire browser UI. No external database, Node.js runtime or frontend build step is required. The daemon writes `config.json`, `events.jsonl`, `bayes.json`, `fuzzy.json`, `neural.json`, and `quarantine/` beneath the data directory (learning files appear once trained). Take consistent backups of that directory and protect it as sensitive information.
+The web UI is embedded. The data directory holds `config.json`, `events.jsonl`, the training models and `quarantine/`. Protect that data as confidential email information and perform consistent backups with SpamGate stopped.
 
 ## Scan an email using the API
 
@@ -82,6 +99,7 @@ curl --fail-with-body --request POST https://spamgate.example.com/api/v1/scan \
 
 ## Source and documentation
 
+- [Native Windows/Linux installation, upgrades and uninstall](docs/INSTALLATION.md)
 - [Operations, environment configuration and backup](docs/OPERATIONS.md)
 - [HTTP API and JSON schemas](docs/API.md)
 - [Server/protocol compatibility](docs/COMPATIBILITY.md)
