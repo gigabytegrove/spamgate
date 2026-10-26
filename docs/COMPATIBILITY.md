@@ -4,9 +4,9 @@ SpamGate's goal is OS-independent compatibility. The **protocol boundary**, not 
 
 | MTA / platform | Alpha connection route | Native integration status |
 | --- | --- | --- |
-| Postfix / Linux, BSD | Approved Postfix instance can route a dedicated SMTP content-filter transaction to SpamGate | SMTP mode available; Postfix setup not certified; Milter planned |
+| Postfix / Linux, BSD | Approved Postfix instance can route a dedicated SMTP content-filter transaction to SpamGate | SMTP filtering and TCP Milter subsets available; neither qualified against a live Postfix instance |
 | Exim / Linux, BSD | Separate SMTP routing or custom HTTP scanner integration | Native ACL / spool protocol planned |
-| Sendmail | SMTP routing through a trusted MTA | Native Milter planned |
+| Sendmail | SMTP routing or TCP Milter | Milter v2–v6 subset implemented; no live Sendmail qualification |
 | OpenSMTPD | MTA-controlled SMTP route or custom connector | Native filter API planned |
 | Haraka / Node.js | Plugin invoking raw HTTP scan API | First-party plugin planned |
 | Dovecot / IMAP/Sieve | Filtering via upstream MTA before delivery | Native mailbox/quarantine integration planned |
@@ -21,10 +21,10 @@ SpamGate's goal is OS-independent compatibility. The **protocol boundary**, not 
 
 ## Protocol targets
 
-- HTTP request/response scanning contract for custom systems — **implemented**.
+- HTTP request/response scanning contract for custom systems — **implemented** on management API port 38470 (authenticated) and separately on MTA-worker port 38471 (trusted peers).
 - SMTP inbound filter from approved clients + outbound relay — **implemented with limited ESMTP**.
-- Rspamd-compatible `/checkv2` controller payload and response — **not implemented**.
-- Sendmail Milter over TCP/UNIX socket with header modification and tempfail — **not implemented**.
+- Rspamd-style HTTP `/checkv2`, `/check`, `/symbols`, `/scanv2` — **implemented subsets** on dedicated port 38471. Request/response parity with all Rspamd options is **not established**.
+- Sendmail-compatible **TCP** Milter v2–v6 subset — **implemented**, with negotiated add-header, reject, quarantine and temporary failure. UNIX socket mode, extended mutation actions, and live MTA certification are **not implemented**.
 - LMTP proxy and verdict hooks — **not implemented**.
 - Exim native ACL/spamd response protocol — **not implemented**.
 - Postfix policy protocol and after-queue re-injection templates — **not implemented**.

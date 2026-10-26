@@ -18,14 +18,15 @@ This project handles sensitive email metadata and, for SMTP quarantine, complete
 
 1. **Do not use as a public-facing MX.** The inbound filter does not implement STARTTLS, SMTP AUTH, modern SMTP extensions or hardened abuse controls. Put a fully supported MTA in front of it on a trusted private network.
 2. **The web interface is HTTP.** Place behind a trusted HTTPS reverse proxy and set `SPAMGATE_SECURE_COOKIES=true` before public access. The app does not validate proxy forwarded headers.
-3. **Authentication checks are incomplete.** SPF, DKIM, DMARC, ARC, sender reputation, modern malware scanning, phishing feed APIs and ML detection are not implemented. Scores must not be considered an adequate standalone production spam verdict.
+3. **Authentication and threat detection are incomplete.** Limited SPF, cryptographic DKIM and exact-domain DMARC checks are implemented; ARC and organizational-domain DMARC discovery are missing. Optional ClamAV INSTREAM and a locally trained Bayesian classifier are present, but full antivirus orchestration, phishing feed APIs, fuzzy detection and neural scoring are not. DNS/DKIM vectors and cross-MTA interoperability need additional qualification. Scores must not be considered an adequate standalone production spam verdict.
 4. **No transactional SMTP delivery queue.** The relay path is synchronous. End-to-end delivery, retry and crash safety require further work and testing.
 5. **History eviction attempts to delete matching quarantine blobs; this is not transactional.** Monitor and manually remediate deletion failures, orphan files and any external backups to meet mail-privacy requirements.
 6. **Local JSONL storage has single-writer semantics.** Do not mount one store concurrently from multiple replicas. Interrupted or damaged event logs may stop startup; restore from backup as needed.
 7. **Mailbox identities are local.** Mail server directory authentication, signed mailbox verification, alias and group authorization, OIDC/MFA and delegated administration are not yet implemented.
-8. **SMTP clients are network trusted.** Use narrow `/32` or `/128` ranges, firewalls and network segmentation. A broad trusted LAN range can permit unwanted injection.
-9. **Scanned bodies are not persisted for HTTP scans.** External clients implement enforcement and quarantine in their own MTA; admins cannot release HTTP-scan-only messages.
+8. **SMTP, Milter and Rspamd HTTP clients are network trusted.** Use narrow `/32` or `/128` ranges, firewalls and network segmentation. A broad trusted LAN range can permit unwanted injection. Their listeners have no native TLS; never expose them on an untrusted network.
+9. **Scanned bodies are not persisted for HTTP or Milter scans.** External clients implement enforcement and quarantine in their own MTA; admins cannot release HTTP-scan-only messages.
 10. **A mail relay loop is possible if misconfigured.** Never set the outbound SMTP relay to point to SpamGate itself.
+11. **Bayesian training can retain sensitive tokens.** The `bayes.json` classifier stores vocabulary derived from user-submitted messages, not raw mail, but that vocabulary can contain identifying text. Restrict access and include it in private backups; unlearning and privacy deletion workflows are not implemented.
 
 ## Reporting vulnerabilities
 

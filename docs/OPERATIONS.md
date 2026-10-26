@@ -2,9 +2,17 @@
 
 ## Modes
 
-**Advisory API** (default): HTTP 8080 serves the management UI and `POST /api/v1/scan`. No SMTP traffic is accepted. No external DNSBL lookups are performed until enabled and configured. No messages are delivered.
+**Advisory API** (default): HTTP **38470** serves the management UI and `POST /api/v1/scan`. No SMTP traffic is accepted. No external DNSBL lookups are performed until enabled and configured. No messages are delivered.
 
-**SMTP filter**: an approved upstream MTA sends SMTP over a private network to port 2525. SpamGate accepts a message for an allowed recipient domain, records a decision, then rejects, quarantines or relays to your configured outbound MTA. This mode currently supports HELO/EHLO, MAIL, RCPT, DATA, RSET, NOOP and QUIT and trusted-client `XFORWARD ADDR` (records the original sender IP), with 8BITMIME and SIZE advertisement. No inbound SMTP AUTH/STARTTLS, CHUNKING, SMTPUTF8, LMTP or Milter support is implemented.
+**SMTP filter**: an approved upstream MTA sends SMTP over a private network to port **38473**. SpamGate accepts a message for an allowed recipient domain, records a decision, then rejects, quarantines or relays to your configured outbound MTA. This mode currently supports HELO/EHLO, MAIL, RCPT, DATA, RSET, NOOP and QUIT and trusted-client `XFORWARD ADDR` (records the original sender IP), with 8BITMIME and SIZE advertisement. No inbound SMTP AUTH/STARTTLS, CHUNKING, SMTPUTF8 or LMTP support is implemented on the **SMTP** port; the Milter worker is a separate service on port 38472.
+
+**Rspamd-style HTTP**: enable `SPAMGATE_RSPAMD_LISTEN=0.0.0.0:38471` for supported `/checkv2`, `/check`, `/symbols`, `/scanv2` scan calls. Configure `SPAMGATE_RSPAMD_TRUSTED_CIDRS` to restrict client hosts, optionally add `SPAMGATE_RSPAMD_TOKEN`; this is **not** the admin API and does not modify mail transport itself. The caller is responsible for enforcing each action. Full Rspamd protocol parity is not complete.
+
+**Milter**: enable `SPAMGATE_MILTER_LISTEN=0.0.0.0:38472` and **mandatory** `SPAMGATE_MILTER_TRUSTED_CIDRS`. The TCP Milter worker handles a tested subset of v2–v6 commands and actions, but has not been tested against live Postfix or Sendmail. Its quarantine action is an *MTA-side* request; it does not store an original quarantine blob locally.
+
+**Antivirus**: optional ClamAV INSTREAM scanner using `SPAMGATE_CLAMAV_ADDRESS`. An unavailable ClamAV service **blocks scans** when enabled; a clean health endpoint does not mean ClamAV is reachable.
+
+**Learning**: administrator-only **Spam learning** in the Web UI accepts explicitly labeled RFC 5322 samples, saves `bayes.json`, and activates the classifier only when both ham and spam training thresholds have been met.
 
 ## Configuration
 
@@ -13,6 +21,12 @@
 | `-data /var/lib/spamgate` | Yes | Writable persistent directory, mode 0700 preferred |
 | `-listen 0.0.0.0:38470` | Yes | Web interface and HTTP API listener; put behind HTTPS proxy |
 | `SPAMGATE_SECURE_COOKIES=true` | Recommended for HTTPS | Marks the session cookie Secure; use when TLS termination is active |
+| `SPAMGATE_RSPAMD_LISTEN=0.0.0.0:38471` | No | Enable the dedicated Rspamd-compatible HTTP scanner; omit to disable |
+| `SPAMGATE_RSPAMD_TRUSTED_CIDRS=192.0.2.10/32` | Recommended if Rspamd HTTP enabled | Allow only known MTA scanner hosts; defaults to loopback if not specified |
+| `SPAMGATE_RSPAMD_TOKEN` | Optional | Require an additional shared bearer token for Rspamd HTTP requests; do not reuse an admin secret |
+| `SPAMGATE_MILTER_LISTEN=0.0.0.0:38472` | No | Enable the TCP Milter worker; omit to disable |
+| `SPAMGATE_MILTER_TRUSTED_CIDRS=192.0.2.10/32` | **If Milter enabled** | Mandatory trusted mail-server IP/CIDR allowlist |
+| `SPAMGATE_CLAMAV_ADDRESS=tcp://clamd.internal:3310` | No | Enable clamd INSTREAM antivirus scanning; service must be reachable on a trusted network |
 | `SPAMGATE_SMTP_LISTEN=0.0.0.0:38473` | No | Enables SMTP filter; omit to disable |
 | `SPAMGATE_SMTP_TRUSTED_CIDRS=192.0.2.10/32` | If SMTP enabled | Exact IPs/subnets allowed to connect; DO NOT use 0.0.0.0/0 |
 | `SPAMGATE_ALLOWED_RECIPIENT_DOMAINS=example.org,example.net` | If SMTP enabled | Exact recipient domains the connector can relay |
@@ -27,7 +41,7 @@ The listener authorizes *client IP ranges* and *recipient domains*, not mailbox 
 
 ## Compose setup
 
-The included Compose recipe builds with the current Go 1.27.3 toolchain. It opens host web port 8080 for initial private testing. To publish through Dokploy or another reverse proxy, attach the service to the deployment network and restrict or remove the host port mapping. If enabling SMTP, expose the filter port only to specifically trusted mail server clients. A volume preserves configuration and history across container restarts.
+The included Compose recipe builds with the current Go 1.27.3 toolchain. It publishes host port **38470** for initial private testing; optional mail-facing ports **38471**, **38472**, and **38473** are commented out by default. To publish through Dokploy or another reverse proxy, attach the service to the deployment network and restrict or remove the host port mapping. If enabling any MTA-facing listener, expose its unique port only to specifically trusted mail server clients. Validate host port availability before deploying and change both the listener address and Compose mapping if a port conflicts. A volume preserves configuration and history across container restarts.
 
 ## Initial setup and access
 
@@ -60,7 +74,7 @@ SMTP rejects when an audit write fails; no success is acknowledged before the in
 
 ## Backup and restore
 
-Stop SpamGate first for a consistent cold backup. Back up the entire data directory including `config.json`, `events.jsonl` and `quarantine/`, retaining file permissions. Restore to a writable directory with the original private permissions, then restart. Never publish archive contents, tokens, quarantine mail or administrator password hashes.
+Stop SpamGate first for a consistent cold backup. Back up the entire data directory including `config.json`, `events.jsonl`, `bayes.json` (when trained), and `quarantine/`, retaining file permissions. Restore to a writable directory with the original private permissions, then restart. Never publish archive contents, tokens, quarantine mail or administrator password hashes.
 
 ## Checks
 

@@ -16,7 +16,7 @@ Custom MTA ------- authenticated HTTP API ---------+       \- decisions
                                           browser message inspector
 ```
 
-The `internal/core` package owns message types, config validation, PBKDF2 password hashing, rule matching, DNSBL queries, scoring and atomic persistence. The `internal/transport` package handles a limited trusted-network SMTP connector and authenticated outbound SMTP/TLS transport. The `internal/server` package owns the first-run wizard, session security, role control, web UI and REST interface. `cmd/spamgate` wires the process together and coordinates shutdown and scheduled history compaction.
+The `internal/core` package owns message types, config validation, PBKDF2 password hashing, rule matching, DNSBL queries, bounded SPF lookup, DKIM verification, exact-domain DMARC evaluation, optional ClamAV INSTREAM, persisted Bayesian learning, scoring and atomic persistence. The `internal/transport` package handles independently bound Rspamd-style HTTP and TCP Milter workers, a limited trusted-network SMTP connector and authenticated outbound SMTP/TLS transport. The `internal/server` package owns the first-run wizard, session security, role control, web UI, learning controls and REST interface. Management, HTTP worker, Milter and SMTP listeners use separate configurable ports (38470–38473 by default). `cmd/spamgate` wires the process together and coordinates shutdown and scheduled history compaction.
 
 ## Data consistency
 
