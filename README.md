@@ -116,3 +116,8 @@ The interface's visual direction is **postal dispatch ledger / contemporary oper
 ## License
 
 Copyright © 2026 Gigabyte Grove. **All rights reserved until a software license is explicitly selected and added.** An empty repository was provided without licensing instructions; no open-source grant is implied. A license decision is tracked in the roadmap.
+
+
+## Windows portable first run (developer preview)
+
+A portable Windows build can now start without administrator privileges or the service installer. Extract the development package and double-click `Start-SpamGate.cmd` (or the executable). The UI opens automatically once the application is healthy. First-run claim key is shown in the console; local data is in `%LOCALAPPDATA%\SpamGate`. **The unsigned development preview has not been Defender-cleared and must not be used to process production email.** See [portable Windows guide](docs/PORTABLE_WINDOWS.md) and [release security](docs/RELEASE_SECURITY.md).

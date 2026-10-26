@@ -36,6 +36,10 @@ Paths: executable `/usr/local/bin/spamgate`, systemd unit `/etc/systemd/system/s
 
 **Uninstall:** `sudo ./uninstall-linux.sh`. Data and environment files remain on disk. No installer automatically deletes the stored email data or service account.
 
+## Windows portable developer preview (no administrator required)
+
+For local evaluation only, extract the portable development ZIP and double-click `Start-SpamGate.cmd` or `spamgate.exe`. The management console opens automatically after the application passes its health check; data is stored under `%LOCALAPPDATA%\SpamGate`. No service, elevation or PowerShell execution-policy override is involved. This unsigned preview remains subject to Defender scanning and must not be used for production mail filtering. See [portable Windows guide](PORTABLE_WINDOWS.md).
+
 ## Windows x64 or ARM64
 
 Once a signed, validated Windows release exists, extract the appropriate `windows-amd64` or `windows-arm64` archive. Confirm its SHA-256 digest against the independently published checksum and verify its Authenticode publisher signature. In an **elevated Windows PowerShell** window in the extracted directory:

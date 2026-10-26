@@ -7,10 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -70,6 +73,8 @@ func serviceControlHandler(control, _, _, _ uintptr) uintptr {
 	return 0
 }
 
+type serviceContextKey struct{}
+
 func serviceMain(_, _ uintptr) uintptr {
 	statusHandle, _, _ = registerServiceCtrlHandlerEx.Call(
 		uintptr(unsafe.Pointer(serviceName)),
@@ -80,7 +85,7 @@ func serviceMain(_, _ uintptr) uintptr {
 		return 0
 	}
 	winServiceStatus(serviceStartPending, 0, 0)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.WithValue(context.Background(), serviceContextKey{}, true))
 	defer cancel()
 	finished := make(chan error, 1)
 	go func() { finished <- serviceRun(ctx) }()
@@ -119,4 +124,53 @@ func runPlatform(app func(context.Context) error) error {
 		return app(ctx)
 	}
 	return fmt.Errorf("StartServiceCtrlDispatcher: %w", e)
+}
+
+
+// Foreground Windows launches open the browser only after the listener is
+// healthy; the service never opens a browser from Windows Session 0.
+func openConsoleWhenReady(ctx context.Context, address string) {
+	if ctx.Value(serviceContextKey{}) == true || os.Getenv("SPAMGATE_OPEN_BROWSER") == "false" {
+		return
+	}
+	host, port, err := net.SplitHostPort(address)
+	if err != nil || port == "" || (host != "localhost" && host != "127.0.0.1" && host != "::1") {
+		return
+	}
+	url := "http://127.0.0.1:" + port + "/"
+	if host == "::1" {
+		url = "http://[::1]:" + port + "/"
+	}
+	go func() {
+		client := &http.Client{Timeout: 500 * time.Millisecond}
+		for attempt := 0; attempt < 40; attempt++ {
+			if ctx.Err() != nil {
+				return
+			}
+			request, err := http.NewRequestWithContext(ctx, http.MethodGet, url + "healthz", nil)
+			if err == nil {
+				response, callErr := client.Do(request)
+				if callErr == nil {
+					_ = response.Body.Close()
+					if response.StatusCode == http.StatusOK {
+						verb, _ := syscall.UTF16PtrFromString("open")
+						target, _ := syscall.UTF16PtrFromString(url)
+						opener := syscall.NewLazyDLL("shell32.dll").NewProc("ShellExecuteW")
+						ret, _, invokeErr := opener.Call(0, uintptr(unsafe.Pointer(verb)), uintptr(unsafe.Pointer(target)), 0, 0, 1)
+						if ret <= 32 {
+							slog.Warn("Could not open the default browser", "url", url, "error", invokeErr)
+						} else {
+							slog.Info("Management console opened", "url", url)
+						}
+						return
+					}
+				}
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(250 * time.Millisecond):
+			}
+		}
+	}()
 }

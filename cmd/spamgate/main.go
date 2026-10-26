@@ -24,7 +24,8 @@ type options struct {
 
 func defaultDataDir() string {
 	if runtime.GOOS == "windows" {
-		if base := os.Getenv("ProgramData"); base != "" {
+		// Interactive sessions use a per-user, writable directory. Service installs explicitly pass -data. 
+		if base := os.Getenv("LOCALAPPDATA"); base != "" {
 			return filepath.Join(base, "SpamGate")
 		}
 		if base, err := os.UserConfigDir(); err == nil {
@@ -138,6 +139,7 @@ func runApp(ctx context.Context, opts options) error {
 	}
 	errorsCh := make(chan error, 5)
 	go func() { errorsCh <- srv.ListenAndServe(ctx, opts.listen) }()
+	openConsoleWhenReady(ctx, opts.listen)
 	if rspamdWorker != nil {
 		go func() { errorsCh <- rspamdWorker.Listen(ctx) }()
 	}

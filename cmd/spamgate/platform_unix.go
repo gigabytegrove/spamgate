@@ -14,3 +14,6 @@ func runPlatform(app func(context.Context) error) error {
 	defer stop()
 	return app(ctx)
 }
+
+// The Linux service never implicitly opens a browser.
+func openConsoleWhenReady(context.Context, string) {}
