@@ -3,20 +3,26 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: spamgate:0.1.0-alpha.1
+    image: spamgate:0.2.0-alpha.1
     restart: unless-stopped
     init: true
     ports:
       # For private-network testing. Put behind HTTPS reverse proxy for remote management.
-      - "${SPAMGATE_WEB_PORT:-8080}:8080"
-      # SMTP filtering is DISABLED unless its required environment is configured.
-      # For SMTP access add a port mapping restricted to trusted mail servers.
-    expose:
-      - "2525"
+      - "${SPAMGATE_WEB_PORT:-38470}:38470"
+      # Expose mail-facing services only to explicitly trusted infrastructure.
+      # Uncomment when enabling Rspamd HTTP and/or Milter with CIDR allowlists:
+      # - "${SPAMGATE_RSPAMD_PORT:-38471}:38471"
+      # - "${SPAMGATE_MILTER_PORT:-38472}:38472"
+      # - "${SPAMGATE_SMTP_PORT:-38473}:38473"
     environment:
+      # Never enable an MTA-facing listener without restricting inbound networks.
+      # SPAMGATE_RSPAMD_LISTEN: "0.0.0.0:38471"
+      # SPAMGATE_RSPAMD_TRUSTED_CIDRS: "192.0.2.10/32"
+      # SPAMGATE_MILTER_LISTEN: "0.0.0.0:38472"
+      # SPAMGATE_MILTER_TRUSTED_CIDRS: "192.0.2.10/32"
       SPAMGATE_SECURE_COOKIES: "${SPAMGATE_SECURE_COOKIES:-false}"
       # The SMTP settings below are intentionally not populated; no mail-flow changes on install.
-      # SPAMGATE_SMTP_LISTEN: "0.0.0.0:2525"
+      # SPAMGATE_SMTP_LISTEN: "0.0.0.0:38473"
       # SPAMGATE_SMTP_TRUSTED_CIDRS: "192.0.2.10/32"
       # SPAMGATE_ALLOWED_RECIPIENT_DOMAINS: "example.org"
       # SPAMGATE_RELAY_ADDRESS: "mail-relay.example.org:587"
@@ -31,7 +37,7 @@ services:
     tmpfs:
       - /tmp:size=32m,mode=1777
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/healthz"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:38470/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3

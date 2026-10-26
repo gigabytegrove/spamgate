@@ -11,9 +11,9 @@
 | Variable or CLI argument | Required | Description |
 |---|---|---|
 | `-data /var/lib/spamgate` | Yes | Writable persistent directory, mode 0700 preferred |
-| `-listen 0.0.0.0:8080` | Yes | Web interface and HTTP API listener; put behind HTTPS proxy |
+| `-listen 0.0.0.0:38470` | Yes | Web interface and HTTP API listener; put behind HTTPS proxy |
 | `SPAMGATE_SECURE_COOKIES=true` | Recommended for HTTPS | Marks the session cookie Secure; use when TLS termination is active |
-| `SPAMGATE_SMTP_LISTEN=0.0.0.0:2525` | No | Enables SMTP filter; omit to disable |
+| `SPAMGATE_SMTP_LISTEN=0.0.0.0:38473` | No | Enables SMTP filter; omit to disable |
 | `SPAMGATE_SMTP_TRUSTED_CIDRS=192.0.2.10/32` | If SMTP enabled | Exact IPs/subnets allowed to connect; DO NOT use 0.0.0.0/0 |
 | `SPAMGATE_ALLOWED_RECIPIENT_DOMAINS=example.org,example.net` | If SMTP enabled | Exact recipient domains the connector can relay |
 | `SPAMGATE_RELAY_ADDRESS=relay.example.org:587` | If SMTP enabled | External SMTP relay receiving accepted messages |
@@ -69,7 +69,7 @@ go test ./...
 go test -race ./...
 go vet ./...
 go build ./cmd/spamgate
-curl --fail http://localhost:8080/healthz
+curl --fail http://localhost:38470/healthz
 ```
 
 The health endpoint is *liveness only*, not a downstream SMTP delivery guarantee. Monitor process logs and end-to-end test mail flow before routing real customer messages.

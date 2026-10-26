@@ -23,7 +23,7 @@ func main() {
 }
 func run() error {
 	data := flag.String("data", "/var/lib/spamgate", "Data directory")
-	web := flag.String("listen", "0.0.0.0:8080", "Web listener")
+	web := flag.String("listen", "0.0.0.0:38470", "Web listener")
 	version := flag.Bool("version", false, "Print version")
 	flag.Parse()
 	if *version {
@@ -42,14 +42,54 @@ func run() error {
 	if e != nil {
 		return e
 	}
+	rspamdWorker, e := transport.RspamdFromEnv(store)
+	if e != nil {
+		return e
+	}
+	milterWorker, e := transport.MilterFromEnv(store)
+	if e != nil {
+		return e
+	}
+	// Catch misconfigured listeners before accepting mail or opening admin routes.
+	seen := map[string]string{*web: "web"}
+	for _, pair := range []struct{ address, name string }{{func() string {
+		if rspamdWorker != nil {
+			return rspamdWorker.ListenAddress
+		}
+		return ""
+	}(), "rspamd-http"}, {func() string {
+		if milterWorker != nil {
+			return milterWorker.Addr
+		}
+		return ""
+	}(), "milter"}, {func() string {
+		if inbound != nil {
+			return inbound.Addr
+		}
+		return ""
+	}(), "smtp"}} {
+		if pair.address == "" {
+			continue
+		}
+		if previous, exists := seen[pair.address]; exists {
+			return fmt.Errorf("listener collision: %s and %s both use %s", previous, pair.name, pair.address)
+		}
+		seen[pair.address] = pair.name
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	srv := server.New(store, nil)
 	if relay != nil {
 		srv.Deliver = relay.Send
 	}
-	errorsCh := make(chan error, 2)
+	errorsCh := make(chan error, 4)
 	go func() { errorsCh <- srv.ListenAndServe(ctx, *web) }()
+	if rspamdWorker != nil {
+		go func() { errorsCh <- rspamdWorker.Listen(ctx) }()
+	}
+	if milterWorker != nil {
+		go func() { errorsCh <- milterWorker.Listen(ctx) }()
+	}
 	if inbound != nil {
 		go func() { errorsCh <- inbound.Listen(ctx) }()
 	}

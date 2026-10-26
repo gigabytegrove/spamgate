@@ -22,9 +22,13 @@ type Input struct {
 	Sender     string
 	Recipients []string
 	ClientIP   string
+	Helo       string
 	Connector  string
 }
-type Scanner struct{ Store *Store }
+type Scanner struct {
+	Store    *Store
+	Resolver SPFResolver
+}
 
 var urlPattern = regexp.MustCompile(`(?i)https?://[^\s<>"'()]+`)
 var htmlTag = regexp.MustCompile(`(?s)<[^>]*>`)
@@ -319,6 +323,53 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (Message, error) {
 				}
 			}
 		}
+	}
+	spf := SPFResult{Result: "none"}
+	if in.ClientIP != "" {
+		spf = SPFCheck(ctx, s.Resolver, in.ClientIP, in.Sender, in.Helo)
+		switch spf.Result {
+		case "pass":
+			add("R_SPF_ALLOW", "auth/spf/"+spf.Domain, spf.Explanation, -1)
+		case "fail":
+			add("R_SPF_FAIL", "auth/spf/"+spf.Domain, spf.Explanation, 4)
+		case "softfail":
+			add("R_SPF_SOFTFAIL", "auth/spf/"+spf.Domain, spf.Explanation, 1.5)
+		case "permerror":
+			add("R_SPF_PERMERROR", "auth/spf/"+spf.Domain, spf.Explanation, 1)
+		}
+	}
+	dkimResults := DKIMVerify(ctx, s.Resolver, in.Raw)
+	for _, dkim := range dkimResults {
+		switch dkim.Result {
+		case "pass":
+			add("R_DKIM_ALLOW", "auth/dkim/"+dkim.Domain, dkim.Detail, -1)
+		case "fail":
+			add("R_DKIM_REJECT", "auth/dkim/"+dkim.Domain, dkim.Detail, 2)
+		}
+	}
+	dmarc := DMARCCheck(ctx, s.Resolver, parsed.Header.Get("From"), spf, dkimResults)
+	switch dmarc.Result {
+	case "pass":
+		add("DMARC_PASS", "auth/dmarc/"+dmarc.Domain, dmarc.Detail, -1)
+	case "fail":
+		weight := 0.0
+		if dmarc.Policy == "quarantine" {
+			weight = 4
+		}
+		if dmarc.Policy == "reject" {
+			weight = 6
+		}
+		add("DMARC_FAIL", "auth/dmarc/"+dmarc.Domain, dmarc.Detail, weight)
+	case "permerror":
+		add("DMARC_PERMERROR", "auth/dmarc/"+dmarc.Domain, dmarc.Detail, 1)
+	}
+	malware, avErr := ClamAVScan(ctx, in.Raw)
+	if avErr != nil {
+		return Message{}, fmt.Errorf("antivirus service unavailable or scan failed: %w", avErr)
+	}
+	if malware != "" {
+		add("CLAMAV_MALWARE", "antivirus/clamav", malware, 100)
+		forced = "reject"
 	}
 	sort.SliceStable(findings, func(i, j int) bool { return findings[i].Score > findings[j].Score })
 	score := 0.0

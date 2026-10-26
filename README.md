@@ -2,7 +2,7 @@
 
 **Explainable mail filtering, policy management and quarantine — written in Go.**
 
-SpamGate is a new Gigabyte Grove mail-security platform designed to replace the operational role of Rspamd over time, not a finished drop-in Rspamd clone. **Current release: `0.1.0-alpha.1`.** It has a working scoring engine, browser control desk, persistent audit history and two integration modes. Native Milter, complete SPF/DKIM/DMARC/ARC, Bayesian learning, clustering and Rspamd protocol parity are **not** implemented. Do **not** replace a production filter with this alpha without a controlled mail-flow and security evaluation.
+SpamGate is a new Gigabyte Grove mail-security platform designed to replace the operational role of Rspamd over time, not a finished drop-in Rspamd clone. **Current development build: `0.2.0-alpha.1` (source).** It has a working scoring engine, browser control desk, persistent audit history and separate SMTP, Rspamd-HTTP and Milter integration modes. Milter and Rspamd-style HTTP now have tested protocol subsets; SPF, DKIM, exact-domain DMARC and optional ClamAV have initial implementations. **Full protocol parity, ARC, Bayesian learning, fuzzy matching and neural detection are not yet implemented.** Do **not** replace a production filter with this alpha without a controlled mail-flow and security evaluation.
 
 ## What works today
 
@@ -21,7 +21,11 @@ SpamGate is a new Gigabyte Grove mail-security platform designed to replace the 
 | First-run wizard with claim key, sessions, user accounts, CSRF and access restrictions | Implemented |
 | Personal sender allow/quarantine overrides for single-recipient mail | Implemented |
 | Persistent settings, retention limits and periodic log compaction | Implemented |
-| Full Rspamd milter/HTTP protocol parity, SPF, DKIM, DMARC, ARC, Bayes, fuzzy, neural, AV | **Not yet implemented** |
+| Milter v2–v6 wire listener (Postfix/Sendmail family) | Implemented tested subset; not certified against live MTAs |
+| Rspamd HTTP `/checkv2`, `/check`, `/symbols`, `/scanv2` | Implemented subset; distinct port |
+| SPF/DKIM/DMARC | Real DNS-backed SPF and DKIM verification; exact-domain DMARC subset |
+| Antivirus | Optional ClamAV INSTREAM with fail-closed errors |
+| ARC, Bayes, fuzzy, neural, **full protocol parity** | **Not yet implemented** |
 | Multi-node and enterprise directory integration | **Not yet implemented** |
 
 ## Quick install (Docker Compose)
@@ -35,11 +39,11 @@ docker compose up -d --build
 docker compose logs spamgate --tail=30
 ```
 
-Open `http://<server>:8080` on a **trusted private network**. Find the `setup_key` in `docker compose logs spamgate`, paste it into the first-run wizard, choose the site name and create your administrator account. The key is single-use and changes if an unconfigured instance restarts. It is never returned by the unauthenticated API.
+Open `http://<server>:38470` on a **trusted private network**. Find the `setup_key` in `docker compose logs spamgate`, paste it into the first-run wizard, choose the site name and create your administrator account. The key is single-use and changes if an unconfigured instance restarts. It is never returned by the unauthenticated API.
 
 Before putting the console on the internet, deploy an HTTPS reverse proxy and set `SPAMGATE_SECURE_COOKIES=true` in `compose.yaml`. Protect access using network rules. The HTTP listener has no built-in TLS; do not send credentials over cleartext public networks.
 
-**By default SMTP filtering is disabled:** the web console and HTTP API work without touching mail flow. To enable SMTP delivery, configure the five required SMTP variables described in [docs/OPERATIONS.md](docs/OPERATIONS.md), keep the filtering port within a trusted network, and route messages from your MTA into that port. SpamGate does not automatically modify any mail server.
+**By default all MTA-facing filtering listeners are disabled:** the web console and HTTP API work without touching mail flow. To enable SMTP delivery, configure the five required SMTP variables described in [docs/OPERATIONS.md](docs/OPERATIONS.md), keep the filtering port within a trusted network, and route messages from your MTA into that port. SpamGate does not automatically modify any mail server.
 
 ## Quick install (native Go)
 
@@ -50,7 +54,7 @@ go test ./...
 go vet ./...
 go build -trimpath -o spamgate ./cmd/spamgate
 mkdir -p ./data
-./spamgate -data ./data -listen 0.0.0.0:8080
+./spamgate -data ./data -listen 0.0.0.0:38470
 ```
 
 A single binary embeds the entire browser UI. No external database, Node.js runtime or frontend build step is required. The daemon writes `config.json`, `events.jsonl`, and `quarantine/` beneath the data directory. Take consistent backups of that directory and protect it as sensitive information.
@@ -76,6 +80,8 @@ curl --fail-with-body --request POST https://spamgate.example.com/api/v1/scan \
 - [Operations, environment configuration and backup](docs/OPERATIONS.md)
 - [HTTP API and JSON schemas](docs/API.md)
 - [Server/protocol compatibility](docs/COMPATIBILITY.md)
+- [Ports, Milter/HTTP wire contracts, antivirus configuration](docs/PROTOCOLS.md)
+- [Detection engines and precise supported scope](docs/DETECTION_ENGINES.md)
 - [Architecture and data handling](docs/ARCHITECTURE.md)
 - [Security model and production precautions](docs/SECURITY.md)
 - [Exhaustive feature plan and acceptance criteria](docs/ROADMAP.md)

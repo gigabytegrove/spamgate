@@ -17,17 +17,17 @@
 | Correlated composite symbols and exclusion rules | NEXT |
 | Per-recipient verdicts, quarantine policies and SMTP transaction splitting | NEXT |
 | Built-in detector scoring overrides and enable/disable management | DONE |
-| Real SPF (RFC 7208), DKIM (RFC 6376), DMARC (RFC 7489 and successor RFCs), ARC | NEXT |
+| Full RFC 7208 SPF / RFC 6376 DKIM / RFC 7489 DMARC / RFC 8617 ARC | NEXT (SPF/DKIM + exact-domain DMARC subsets implemented; ARC outstanding) |
 | Envelope validation, Received-chain trust, HELO/FQDN/MX/PTR consistency, DNSSEC awareness | NEXT |
 | MIME robustness, attachment/content disarm, archive recursion limits, signature detection | NEXT |
 | URI/domain/IDN homograph and phishing heuristics, URL shortener expansion, safe URL reputation | NEXT |
 | DNSBL/RHSBL/SURBL/URIBL, allowlists, private provider credentials, safe caching | NEXT |
 | Spam traps, disposable domains, age/reputation, per-ASN/country/location intelligence | NEXT |
 | Greylisting and rate limits (IP/sender/recipient/domain), retry compliance and backoff | NEXT |
-| Bayesian/Naive Bayes classifier with user-level ham/spam learning | LATER |
-| Fuzzy hashes, similarity graph, recurrent-campaign correlation | LATER |
-| Optional neural/ML and configurable model backends without cloud dependency | LATER |
-| Antivirus integration (ClamAV, ICAP, vendor scanning APIs) and executable detection | LATER |
+| Bayesian/Naive Bayes classifier with user-level ham/spam learning | NEXT |
+| Fuzzy hashes, similarity graph, recurrent-campaign correlation | NEXT |
+| Optional neural/ML and configurable model backends without cloud dependency | NEXT |
+| Antivirus integrations (ClamAV, ICAP, vendor APIs) | NEXT (ClamAV INSTREAM implemented; ICAP/vendors outstanding) |
 | Rules-as-code import/export, signed rulesets, versioning, staged rollout, rollback | LATER |
 | Rule package marketplace/community feeds with trust/expiry/reputation | LATER |
 
@@ -38,7 +38,7 @@
 | Go single binary for supported Go targets, embedded Web UI | DONE |
 | Authenticated HTTP raw-message scan protocol | DONE |
 | Trusted SMTP intake and onward authenticated TLS relay | DONE |
-| Milter (Postfix / Sendmail), TLS and local socket transport | NEXT |
+| Milter (Postfix / Sendmail), TLS and local socket transport | NEXT (Milter TCP wire subset implemented; TLS, socket + live qualification outstanding) |
 | Exim ACL/spamd, Postfix policy and after-queue content-filter setup | NEXT |
 | SMTP PIPELINING, STARTTLS, DSN, SMTPUTF8, CHUNKING/BDAT, LMTP | NEXT
 | Trusted MTA `XFORWARD ADDR` with separate receiving peer provenance | DONE |
@@ -46,7 +46,7 @@
 | Exchange Online and Microsoft 365 approved connector / tenant permissions | LATER |
 | MailEnable, SmarterMail, hMailServer, OpenSMTPD, Haraka, Dovecot/Sieve adapters | NEXT |
 | Custom webhook, gRPC, documented SDK for Go, .NET, Java, Python and Rust | NEXT |
-| Rspamd `/checkv2` and milter compatibility mode with migration tests | NEXT |
+| Rspamd `/checkv2` and milter compatibility mode with migration tests | NEXT (HTTP/Milter subsets implemented; full parity not validated) |
 | Rspamd maps/scores import, equivalence preview and migration rollback | NEXT |
 | Multi-MTA routing pools, connection pooling and failover | LATER |
 
@@ -68,7 +68,7 @@
 | Digest emails, user release requests, shared mailbox moderation, approval workflows | NEXT |
 | One-click learn ham/spam, mailbox-specific and global feedback training | NEXT |
 | Role permissions (admin/operator/auditor/support/user), SSO/OIDC/MFA/passkeys | NEXT |
-| LDAP/AD/IMAP login with aliases and group mapping | NEXT |
+| LDAP/AD/IMAP login with aliases and group mapping | LATER (deferred) |
 | In-console integrations wizard with MTA autoconfiguration diagnostics | NEXT |
 | Internationalization, accessibility audit and keyboard-first workflows | NEXT |
 | Bulk rule changes, staged/diff preview, undo and audit trail | NEXT |
@@ -85,7 +85,7 @@
 | Container health/liveness check, structured logs, process shutdown | DONE |
 | Durable transactional SMTP spool, dedupe, retry scheduler, DLQ and delivery receipts | NEXT |
 | SQLite durable option, migrations, online compaction, hot backups, encryption controls | NEXT |
-| Postgres clustered option, Redis cache, horizontal workers and queue replication | LATER |
+| Postgres clustered option, Redis cache, horizontal workers and queue replication | LATER (deferred) |
 | Atomic policy snapshot, concurrent write controls, imported rules consistency | NEXT |
 | Automated SMTP interoperability suites (success/reject/tempfail/retry/multi-RCPT) | NEXT |
 | SMTP/LMTP/Milter protocol fuzzing and MIME parser mutation corpus | NEXT |
