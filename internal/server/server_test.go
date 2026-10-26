@@ -3,10 +3,13 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gigabytegrove/spamgate/internal/core"
 )
@@ -141,5 +144,72 @@ func TestSecurityHeadersAndMethods(t *testing.T) {
 	}
 	if !strings.Contains(w.Header().Get("Content-Security-Policy"), "default-src 'none'") {
 		t.Fatal("CSP missing")
+	}
+}
+
+func TestMailboxPrivacyAndQuarantineDiscard(t *testing.T) {
+	st, err := core.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateConfig(func(c *core.Config) error {
+		c.SetupComplete = true
+		c.Users = append(c.Users,
+			core.User{Name: "admin", Role: "admin"},
+			core.User{Name: "alice", Email: "alice@example.org", Role: "mailbox"},
+		)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	m := core.Message{ID: core.ID(), Timestamp: time.Now().UTC(), Sender: "sender@example.net", Recipients: []string{"alice@example.org", "bob@example.org"}, Action: "quarantine", Delivery: "quarantined", Connector: "smtp"}
+	if err := st.Quarantine(m.ID, []byte("Subject: held\r\n\r\nPrivate")); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Save(m); err != nil {
+		t.Fatal(err)
+	}
+	s := New(st, nil)
+	s.sessions["alice-cookie"] = session{Identity: Identity{Name: "alice", Email: "alice@example.org", Role: "mailbox", Session: true, CSRF: "a"}, Expires: time.Now().Add(time.Hour)}
+	s.sessions["admin-cookie"] = session{Identity: Identity{Name: "admin", Role: "admin", Session: true, CSRF: "b"}, Expires: time.Now().Add(time.Hour)}
+	router := s.Router()
+	call := func(method, path, cookie, csrf string) *httptest.ResponseRecorder {
+		t.Helper()
+		r := httptest.NewRequest(method, path, nil)
+		r.AddCookie(&http.Cookie{Name: "spamgate_session", Value: cookie})
+		if csrf != "" {
+			r.Header.Set("X-CSRF-Token", csrf)
+		}
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		return w
+	}
+	for _, path := range []string{"/api/v1/messages", "/api/v1/messages/" + m.ID} {
+		w := call("GET", path, "alice-cookie", "")
+		if w.Code != 200 {
+			t.Fatalf("mailbox history %s: %d", path, w.Code)
+		}
+		if strings.Contains(w.Body.String(), "bob@example.org") {
+			t.Fatalf("co-recipient leaked at %s", path)
+		}
+	}
+	if w := call("GET", "/api/v1/statistics", "unknown", ""); w.Code != 401 {
+		t.Fatalf("missing identity saw stats: %d", w.Code)
+	}
+	if w := call("DELETE", "/api/v1/messages/"+m.ID+"/quarantine", "alice-cookie", "a"); w.Code != 403 {
+		t.Fatalf("mailbox deleted hold: %d", w.Code)
+	}
+	if w := call("DELETE", "/api/v1/messages/"+m.ID+"/quarantine", "admin-cookie", "b"); w.Code != 200 {
+		t.Fatalf("admin discard: %d %s", w.Code, w.Body.String())
+	}
+	if _, err := st.Quarantined(m.ID); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("original not deleted: %v", err)
+	}
+	stored, _ := st.Get(m.ID)
+	if stored.Delivery != "discarded" || stored.OverrideBy != "admin" {
+		t.Fatalf("discard not audited: %+v", stored)
+	}
+	if w := call("DELETE", "/api/v1/messages/"+m.ID+"/quarantine", "admin-cookie", "b"); w.Code != 409 {
+		t.Fatalf("repeat discard should conflict: %d", w.Code)
 	}
 }

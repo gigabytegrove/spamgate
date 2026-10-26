@@ -15,6 +15,7 @@ API root: `/api/v1`. All responses except export and static assets are JSON. Aut
 | GET | `/api/v1/messages/{id}` | Admin or receiving mailbox | Inspect full score and findings |
 | POST | `/api/v1/messages/{id}/override` | Admin | JSON `action`, `reason` (5–500 chars) |
 | POST | `/api/v1/messages/{id}/release` | Admin | Deliver held original to configured SMTP relay |
+| DELETE | `/api/v1/messages/{id}/quarantine` | Admin | Permanently delete held original; journal a discarded verdict |
 | GET | `/api/v1/statistics` | Admin or mailbox | Counts and score averages |
 | GET | `/api/v1/export` | Admin | All retained history as newline-delimited JSON |
 | GET | `/api/v1/config` | Admin or mailbox | Settings, rules and redacted accounts/tokens |

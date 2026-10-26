@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -226,6 +227,9 @@ func (s *Store) pruneLocked() {
 	for _, id := range s.order {
 		m := s.messages[id]
 		if m.Timestamp.Before(cutoff) {
+			if e := os.Remove(filepath.Join(s.dir, "quarantine", id+".eml")); e != nil && !errors.Is(e, os.ErrNotExist) {
+				slog.Error("expired quarantine purge failed", "id", id, "error", e)
+			}
 			delete(s.messages, id)
 			continue
 		}
@@ -234,6 +238,9 @@ func (s *Store) pruneLocked() {
 	if len(keep) > s.cfg.Settings.MaxHistory {
 		n := len(keep) - s.cfg.Settings.MaxHistory
 		for _, id := range keep[:n] {
+			if e := os.Remove(filepath.Join(s.dir, "quarantine", id+".eml")); e != nil && !errors.Is(e, os.ErrNotExist) {
+				slog.Error("evicted quarantine purge failed", "id", id, "error", e)
+			}
 			delete(s.messages, id)
 		}
 		keep = keep[n:]
@@ -306,13 +313,13 @@ func atomicBytes(path string, b []byte) error {
 	return os.Rename(name, path)
 }
 func (s *Store) Quarantined(id string) ([]byte, error) {
-	if len(id) != 32 {
+	if !validID(id) {
 		return nil, errors.New("bad ID")
 	}
 	return os.ReadFile(filepath.Join(s.dir, "quarantine", id+".eml"))
 }
 func (s *Store) RemoveQuarantine(id string) error {
-	if len(id) != 32 {
+	if !validID(id) {
 		return errors.New("bad ID")
 	}
 	e := os.Remove(filepath.Join(s.dir, "quarantine", id+".eml"))
@@ -333,4 +340,12 @@ func (s *Store) Export(w io.Writer) error {
 		}
 	}
 	return nil
+}
+
+func validID(id string) bool {
+	if len(id) != 32 {
+		return false
+	}
+	b, e := hex.DecodeString(id)
+	return e == nil && len(b) == 16
 }

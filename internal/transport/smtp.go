@@ -272,6 +272,7 @@ func (s *SMTP) handle(conn net.Conn) {
 	var recipients []string
 	greeted := false
 	mailIssued := false
+	forwardedIP := ""
 	for commands := 0; commands < 500; commands++ {
 		lineBytes, e := readLineLimited(reader, 4096)
 		line := string(lineBytes)
@@ -291,13 +292,15 @@ func (s *SMTP) handle(conn net.Conn) {
 		switch {
 		case strings.HasPrefix(upper, "EHLO "):
 			greeted = true
+			forwardedIP = ""
 			mailIssued = false
 			sender = ""
 			recipients = nil
-			_, _ = io.WriteString(writer, "250-SpamGate\r\n250-8BITMIME\r\n250 SIZE 10485760\r\n")
+			_, _ = io.WriteString(writer, "250-SpamGate\r\n250-XFORWARD ADDR\r\n250-8BITMIME\r\n250 SIZE 10485760\r\n")
 			_ = writer.Flush()
 		case strings.HasPrefix(upper, "HELO "):
 			greeted = true
+			forwardedIP = ""
 			mailIssued = false
 			sender = ""
 			recipients = nil
@@ -306,12 +309,32 @@ func (s *SMTP) handle(conn net.Conn) {
 			reply(250, "2.0.0 OK")
 		case upper == "RSET":
 			mailIssued = false
+			forwardedIP = ""
 			sender = ""
 			recipients = nil
 			reply(250, "2.0.0 Reset")
 		case upper == "QUIT":
 			reply(221, "2.0.0 Bye")
 			return
+		case strings.HasPrefix(upper, "XFORWARD "):
+			if !greeted || mailIssued {
+				reply(503, "5.5.1 XFORWARD only before MAIL FROM")
+				continue
+			}
+			proposed := ""
+			for _, field := range strings.Fields(line[len("XFORWARD "):]) {
+				if strings.HasPrefix(strings.ToUpper(field), "ADDR=") {
+					proposed = field[len("ADDR="):]
+				}
+			}
+			proposed = strings.Trim(proposed, "[]")
+			proposed = strings.TrimPrefix(proposed, "IPv6:")
+			if net.ParseIP(proposed) == nil {
+				reply(501, "5.5.2 XFORWARD requires valid ADDR")
+				continue
+			}
+			forwardedIP = proposed
+			reply(250, "2.0.0 Original IP recorded")
 		case strings.HasPrefix(upper, "MAIL FROM:"):
 			if !greeted {
 				reply(503, "5.5.1 HELO first")
@@ -385,15 +408,24 @@ func (s *SMTP) handle(conn net.Conn) {
 				reply(552, "5.3.4 Message too large")
 				sender = ""
 				mailIssued = false
+				forwardedIP = ""
 				recipients = nil
 				continue
 			}
 			clientIP, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
-			m, e := s.Scanner.Scan(context.Background(), core.Input{Raw: raw.Bytes(), Sender: sender, Recipients: recipients, ClientIP: clientIP, Connector: "smtp"})
+			originIP := clientIP
+			if forwardedIP != "" {
+				originIP = forwardedIP
+			}
+			m, e := s.Scanner.Scan(context.Background(), core.Input{Raw: raw.Bytes(), Sender: sender, Recipients: recipients, ClientIP: originIP, Connector: "smtp"})
+			if e == nil {
+				m.IngestIP = clientIP
+			}
 			if e != nil {
 				reply(550, "5.6.0 Invalid message")
 				sender = ""
 				mailIssued = false
+				forwardedIP = ""
 				recipients = nil
 				continue
 			}
@@ -412,6 +444,7 @@ func (s *SMTP) handle(conn net.Conn) {
 				}
 				sender = ""
 				mailIssued = false
+				forwardedIP = ""
 				recipients = nil
 				continue
 			}
@@ -424,6 +457,7 @@ func (s *SMTP) handle(conn net.Conn) {
 				}
 				sender = ""
 				mailIssued = false
+				forwardedIP = ""
 				recipients = nil
 				continue
 			}
@@ -432,6 +466,7 @@ func (s *SMTP) handle(conn net.Conn) {
 				reply(451, "4.3.0 Cannot write audit log")
 				sender = ""
 				mailIssued = false
+				forwardedIP = ""
 				recipients = nil
 				continue
 			}

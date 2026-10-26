@@ -3,8 +3,11 @@ package core
 import (
 	"context"
 	"encoding/hex"
+	"errors"
+	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPBKDF2Vector(t *testing.T) {
@@ -61,5 +64,25 @@ func TestMIMEFindings(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("missing URL finding")
+	}
+}
+
+func TestQuarantineRetentionDeletesExpiredOriginal(t *testing.T) {
+	st, e := Open(t.TempDir())
+	if e != nil {
+		t.Fatal(e)
+	}
+	id := ID()
+	if e := st.Quarantine(id, []byte("Subject: private\r\n\r\nsecret")); e != nil {
+		t.Fatal(e)
+	}
+	if e := st.Save(Message{ID: id, Timestamp: time.Now().AddDate(0, 0, -40), Sender: "old@example.org", Delivery: "quarantined"}); e != nil {
+		t.Fatal(e)
+	}
+	if _, ok := st.Get(id); ok {
+		t.Fatal("expired message remained in history")
+	}
+	if _, e := st.Quarantined(id); !errors.Is(e, os.ErrNotExist) {
+		t.Fatalf("expired quarantine original was not removed: %v", e)
 	}
 }

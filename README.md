@@ -15,7 +15,7 @@ SpamGate is a new Gigabyte Grove mail-security platform designed to replace the 
 | Configurable DNSBL zones and weights | Implemented; off by default |
 | HTTP raw `.eml` scan API; scoped API keys | Implemented |
 | Trusted SMTP content filter → outbound SMTP relay | Implemented; intentionally limited ESMTP, private network use only |
-| Quarantine original SMTP messages and manual release | Implemented |
+| Quarantine original SMTP messages, manual release/discard and retention purge | Implemented |
 | Event journal, history search, statistics, per-message investigation, exports | Implemented |
 | First-run wizard with claim key, sessions, user accounts, CSRF and access restrictions | Implemented |
 | Personal sender allow/quarantine overrides for single-recipient mail | Implemented |

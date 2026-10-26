@@ -4,7 +4,7 @@
 
 **Advisory API** (default): HTTP 8080 serves the management UI and `POST /api/v1/scan`. No SMTP traffic is accepted. No external DNSBL lookups are performed until enabled and configured. No messages are delivered.
 
-**SMTP filter**: an approved upstream MTA sends SMTP over a private network to port 2525. SpamGate accepts a message for an allowed recipient domain, records a decision, then rejects, quarantines or relays to your configured outbound MTA. This mode currently supports HELO/EHLO, MAIL, RCPT, DATA, RSET, NOOP and QUIT, with 8BITMIME and SIZE advertisement. No inbound SMTP AUTH/STARTTLS, CHUNKING, SMTPUTF8, LMTP, XFORWARD or Milter support is implemented.
+**SMTP filter**: an approved upstream MTA sends SMTP over a private network to port 2525. SpamGate accepts a message for an allowed recipient domain, records a decision, then rejects, quarantines or relays to your configured outbound MTA. This mode currently supports HELO/EHLO, MAIL, RCPT, DATA, RSET, NOOP and QUIT and trusted-client `XFORWARD ADDR` (records the original sender IP), with 8BITMIME and SIZE advertisement. No inbound SMTP AUTH/STARTTLS, CHUNKING, SMTPUTF8, LMTP or Milter support is implemented.
 
 ## Configuration
 
@@ -54,7 +54,7 @@ Reclassification of a history event is an *audit operation*. It does not change 
 
 History defaults to 30 days and 10,000 messages in an append-only JSONL journal with periodic compaction (daily, and after in-memory history eviction). Updates append replacement records using stable message IDs; the latest record wins on restart. Each successful journal append is fsynced. This simple format is convenient for backups and troubleshooting but is **not** a production multi-writer transactional database and is not intended for high-volume clustered deployments.
 
-A history record stores sender, recipients, subject, score, rules, findings and operational metadata. For accepted/rejected messages the full body is *not* saved. SMTP quarantine saves raw originals (`0700` folder, `0600` files). Quarantine blobs are not yet automatically purged by history retention and require a separate privacy/expiry workflow in production.
+A history record stores sender, recipients, subject, score, rules, findings and operational metadata. For accepted/rejected messages the full body is *not* saved. SMTP quarantine saves raw originals (`0700` folder, `0600` files). The store deletes quarantine blobs when records expire or are evicted by configured retention, and administrators can permanently discard held originals in History. Offline filesystem cleanup and audit of deletion failures remain operator responsibilities; the deletion is not guaranteed to be atomic across storage and the journal.
 
 SMTP rejects when an audit write fails; no success is acknowledged before the initial audit is durable. On an upstream delivery error it replies with a 451 temporary failure. If a message has been accepted by an upstream SMTP relay but local bookkeeping fails afterward, a warning is logged and the client still receives a success response to reduce duplicate delivery risk. **Crash-safe multi-stage queue recovery is not yet present.**
 

@@ -176,6 +176,7 @@ func (s *Server) Router() http.Handler {
 	m.HandleFunc("GET /api/v1/messages/{id}", s.message)
 	m.HandleFunc("POST /api/v1/messages/{id}/override", s.override)
 	m.HandleFunc("POST /api/v1/messages/{id}/release", s.release)
+	m.HandleFunc("DELETE /api/v1/messages/{id}/quarantine", s.discardQuarantine)
 	m.HandleFunc("GET /api/v1/statistics", s.stats)
 	m.HandleFunc("GET /api/v1/export", s.export)
 	m.HandleFunc("GET /api/v1/config", s.config)
@@ -387,7 +388,13 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request) {
 	if n, e := strconv.Atoi(r.URL.Query().Get("limit")); e == nil && n > 0 && n <= 1000 {
 		limit = n
 	}
-	jsonReply(w, 200, s.Store.List(limit, email))
+	out := s.Store.List(limit, email)
+	if id.Role != "admin" {
+		for i := range out {
+			out[i].Recipients = []string{id.Email}
+		}
+	}
+	jsonReply(w, 200, out)
 }
 func (s *Server) message(w http.ResponseWriter, r *http.Request) {
 	id, ok := s.authorized(w, r, false, false)
@@ -402,6 +409,9 @@ func (s *Server) message(w http.ResponseWriter, r *http.Request) {
 	if id.Role != "admin" && !hasEmail(m.Recipients, id.Email) {
 		fail(w, 403, "Not your mailbox")
 		return
+	}
+	if id.Role != "admin" {
+		m.Recipients = []string{id.Email}
 	}
 	jsonReply(w, 200, m)
 }
@@ -421,6 +431,10 @@ func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 	email := ""
 	if id.Role != "admin" {
 		email = id.Email
+		if email == "" {
+			fail(w, 403, "No mailbox is assigned to this account")
+			return
+		}
 	}
 	jsonReply(w, 200, s.Store.Stats(email))
 }
@@ -836,4 +850,33 @@ func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
 		return nil
 	}
 	return fmt.Errorf("web server: %w", err)
+}
+
+func (s *Server) discardQuarantine(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.authorized(w, r, true, true)
+	if !ok {
+		return
+	}
+	m, found := s.Store.Get(r.PathValue("id"))
+	if !found {
+		fail(w, 404, "Message not found")
+		return
+	}
+	if m.Delivery != "quarantined" {
+		fail(w, 409, "Message is not currently held in quarantine")
+		return
+	}
+	if e := s.Store.RemoveQuarantine(m.ID); e != nil {
+		fail(w, 503, "Unable to delete original message")
+		return
+	}
+	m.Delivery = "discarded"
+	m.OverrideBy = id.Name
+	m.OverrideReason = "Manual quarantine deletion"
+	m.Findings = append(m.Findings, core.Finding{Symbol: "QUARANTINE_DISCARDED", Source: "manual/" + id.Name, Detail: "Raw email permanently deleted", Score: 0})
+	if e := s.Store.Save(m); e != nil {
+		fail(w, 503, "Message deleted, but history update failed")
+		return
+	}
+	jsonReply(w, 200, m)
 }

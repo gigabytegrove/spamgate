@@ -39,7 +39,8 @@
 | Trusted SMTP intake and onward authenticated TLS relay | DONE |
 | Milter (Postfix / Sendmail), TLS and local socket transport | NEXT |
 | Exim ACL/spamd, Postfix policy and after-queue content-filter setup | NEXT |
-| SMTP PIPELINING, STARTTLS, DSN, SMTPUTF8, CHUNKING/BDAT, LMTP, XFORWARD | NEXT |
+| SMTP PIPELINING, STARTTLS, DSN, SMTPUTF8, CHUNKING/BDAT, LMTP | NEXT
+| Trusted MTA `XFORWARD ADDR` with separate receiving peer provenance | DONE |
 | Exchange Server transport adapter / Windows service / event log | NEXT |
 | Exchange Online and Microsoft 365 approved connector / tenant permissions | LATER |
 | MailEnable, SmarterMail, hMailServer, OpenSMTPD, Haraka, Dovecot/Sieve adapters | NEXT |

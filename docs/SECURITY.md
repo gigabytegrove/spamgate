@@ -20,7 +20,7 @@ This project handles sensitive email metadata and, for SMTP quarantine, complete
 2. **The web interface is HTTP.** Place behind a trusted HTTPS reverse proxy and set `SPAMGATE_SECURE_COOKIES=true` before public access. The app does not validate proxy forwarded headers.
 3. **Authentication checks are incomplete.** SPF, DKIM, DMARC, ARC, sender reputation, modern malware scanning, phishing feed APIs and ML detection are not implemented. Scores must not be considered an adequate standalone production spam verdict.
 4. **No transactional SMTP delivery queue.** The relay path is synchronous. End-to-end delivery, retry and crash safety require further work and testing.
-5. **History compaction does not purge stored quarantine blobs.** Set operating procedures for data erasure and mailbox-privacy compliance until a coordinated retention worker exists.
+5. **History eviction attempts to delete matching quarantine blobs; this is not transactional.** Monitor and manually remediate deletion failures, orphan files and any external backups to meet mail-privacy requirements.
 6. **Local JSONL storage has single-writer semantics.** Do not mount one store concurrently from multiple replicas. Interrupted or damaged event logs may stop startup; restore from backup as needed.
 7. **Mailbox identities are local.** Mail server directory authentication, signed mailbox verification, alias and group authorization, OIDC/MFA and delegated administration are not yet implemented.
 8. **SMTP clients are network trusted.** Use narrow `/32` or `/128` ranges, firewalls and network segmentation. A broad trusted LAN range can permit unwanted injection.

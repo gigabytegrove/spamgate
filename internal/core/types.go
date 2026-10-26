@@ -18,6 +18,7 @@ type Message struct {
 	Recipients     []string  `json:"recipients"`
 	Subject        string    `json:"subject"`
 	ClientIP       string    `json:"client_ip,omitempty"`
+	IngestIP       string    `json:"ingest_ip,omitempty"`
 	Connector      string    `json:"connector"`
 	Size           int       `json:"size"`
 	Score          float64   `json:"score"`
