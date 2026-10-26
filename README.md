@@ -1,8 +1,10 @@
 # SpamGate
 
+> **Windows distribution hold (2026-10-26):** Earlier alpha Windows binaries were unsigned and compiled with an outdated Go toolchain. See [release security](docs/RELEASE_SECURITY.md) before distributing executables. No Windows package is currently certified as Defender-clean.
+
 **Explainable mail filtering, policy management and quarantine — written in Go.**
 
-SpamGate is a new Gigabyte Grove mail-security platform designed to replace the operational role of Rspamd over time, not a finished drop-in Rspamd clone. **Current development build: `0.3.0-alpha.2` (native Windows/Linux packages and source).** It has a working scoring engine, browser control desk, persistent audit history and separate SMTP, Rspamd-HTTP, Milter and optional controller-style HTTP integration modes. Milter and Rspamd HTTP remain tested subsets; SPF, DKIM, exact-domain DMARC, Bayes, fuzzy similarity, a manually trained local neural network and optional ClamAV have limited implementations. **Full Rspamd parity, cryptographic ARC validation/sealing and production-ready model evaluation are not yet implemented.** Do **not** replace a production filter with this alpha without a controlled mail-flow and security evaluation.
+SpamGate is a new Gigabyte Grove mail-security platform designed to replace the operational role of Rspamd over time, not a finished drop-in Rspamd clone. **Current development source: `0.3.0-alpha.2` (native Windows release held pending signing and current-toolchain rebuild).** It has a working scoring engine, browser control desk, persistent audit history and separate SMTP, Rspamd-HTTP, Milter and optional controller-style HTTP integration modes. Milter and Rspamd HTTP remain tested subsets; SPF, DKIM, exact-domain DMARC, Bayes, fuzzy similarity, a manually trained local neural network and optional ClamAV have limited implementations. **Full Rspamd parity, cryptographic ARC validation/sealing and production-ready model evaluation are not yet implemented.** Do **not** replace a production filter with this alpha without a controlled mail-flow and security evaluation.
 
 ## What works today
 
@@ -35,7 +37,7 @@ SpamGate is a new Gigabyte Grove mail-security platform designed to replace the 
 
 ## Install: native binary (recommended)
 
-SpamGate runs as a **real operating-system service**, without Docker, a separate database, Node.js or Go on the machine being protected. Download the matching OS/CPU **binary archive** (`linux-amd64`, `linux-arm64`, `windows-amd64` or `windows-arm64`) from the distribution artifacts; do not try to run a source ZIP as an installer. Extract the archive and use the included script.
+SpamGate runs as a **real operating-system service**, without Docker, a separate database, Node.js or Go on the machine being protected. Download the matching OS/CPU **verified binary archive** (`linux-amd64`, `linux-arm64`, `windows-amd64` or `windows-arm64`) from a validated release; do not try to run a source ZIP as an installer. **Do not use the previous unsigned Windows alpha packages as production releases.** Extract the verified archive and use its included script.
 
 **Linux (systemd)**:
 
@@ -48,14 +50,14 @@ sudo journalctl -u spamgate --no-pager -n 40
 **Windows (elevated PowerShell 5.1+)**:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-windows.ps1
+.\install-windows.ps1
 Get-Service SpamGate
 Get-Content "$env:ProgramData\SpamGate\spamgate.log" -Tail 40
 ```
 
 Visit <http://127.0.0.1:38470> **from the same computer** and use the one-time setup key shown in the logs to configure an administrator. The service is installed to start at boot and uses a dedicated unprivileged identity (`spamgate` on Linux, `LocalService` on Windows). All settings and mail history persist across upgrades and remain available after uninstalling. To expose the console beyond localhost, deliberately set a trusted interface and protect access with an HTTPS reverse proxy; do not put HTTP administrator login on the public Internet.
 
-See [full Windows and Linux install/upgrade/uninstall instructions](docs/INSTALLATION.md). Native archives and checksums are created with `bash scripts/build-release.sh`, without GitHub Actions.
+See [full Windows and Linux install/upgrade/uninstall instructions](docs/INSTALLATION.md). **Only unsigned development archives** are created with `bash scripts/build-release.sh`; public Windows releases require the signing and verification steps in [release security](docs/RELEASE_SECURITY.md).
 
 ## Alternative install: Docker Compose
 

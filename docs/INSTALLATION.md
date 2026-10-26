@@ -1,6 +1,10 @@
 # SpamGate native installation: Windows and Linux
 
-**Preferred distribution:** self-contained native binary archives, without Docker, Node.js, a frontend build, or a database server. **Alternative:** Docker Compose (see project README). Binaries embed the management UI.
+**Preferred distribution:** self-contained native binary archives, without Docker, Node.js, a frontend build, or a database server.
+
+> **Windows release hold (October 26, 2026):** Previously shared SpamGate v0.3.0-alpha.2 Windows archives were built using outdated Go 1.23.2 and were not code-signed or cleared by Defender. Do not treat those archives as production-ready downloads. A vetted, Go 1.27.3-or-newer build, Authenticode signature, and on-Windows package/service validation are required before public release. Do not disable Defender or override script execution policy to install an unverified build. The build script now creates explicitly labeled development archives only.
+
+**Alternative deployment:** Docker Compose (see project README). Binaries embed the management UI.
 
 ## Requirements and security
 
@@ -34,25 +38,26 @@ Paths: executable `/usr/local/bin/spamgate`, systemd unit `/etc/systemd/system/s
 
 ## Windows x64 or ARM64
 
-Extract `spamgate_VERSION_windows-amd64.zip` or `spamgate_VERSION_windows-arm64.zip`. In an **elevated Windows PowerShell** window in the extracted directory:
+Once a signed, validated Windows release exists, extract the appropriate `windows-amd64` or `windows-arm64` archive. Confirm its SHA-256 digest against the independently published checksum and verify its Authenticode publisher signature. In an **elevated Windows PowerShell** window in the extracted directory:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-windows.ps1
+# After verifying the publisher's Authenticode signature and the SHA-256 digest:
+.\install-windows.ps1
 Get-Service -Name SpamGate
 Get-Content "$env:ProgramData\SpamGate\spamgate.log" -Tail 30
 ```
 
-The native Windows service runs as `NT AUTHORITY\LocalService` and starts automatically at boot. Program location: `C:\Program Files\SpamGate\spamgate.exe`; data/logs: `C:\ProgramData\SpamGate`. The Windows ACL grants access only to SYSTEM, local Administrators, and LocalService. One-time claim key is in `spamgate.log`. The management console is available at <http://127.0.0.1:38470> on the Windows host.
+Do **not** override an execution-policy denial with `-ExecutionPolicy Bypass`; resolve it via trusted, signed deployment procedures. The installer is optional for a local foreground test: use `spamgate.exe -version` and then the documented portable command. The native Windows service runs as `NT AUTHORITY\LocalService` and starts automatically at boot. Program location: `C:\Program Files\SpamGate\spamgate.exe`; data/logs: `C:\ProgramData\SpamGate`. The Windows ACL grants access only to SYSTEM, local Administrators, and LocalService. One-time claim key is in `spamgate.log`. The management console is available at <http://127.0.0.1:38470> on the Windows host.
 
 To bind only to a trusted LAN interface (configure Windows Firewall separately):
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install-windows.ps1 -Listen '192.168.1.10:38470'
+.\install-windows.ps1 -Listen '192.168.1.10:38470'
 ```
 
 **Update:** stop production routing and back up `%ProgramData%\SpamGate`, extract the new matching architecture ZIP and rerun `install-windows.ps1` elevated. Existing listen settings persist if `-Listen` is not specified. The installer stops the service, replaces the executable and starts it again without deleting data.
 
-**Uninstall:** `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\uninstall-windows.ps1` elevated. Existing data is intentionally **not** deleted.
+**Uninstall:** `.\uninstall-windows.ps1` elevated. Existing data is intentionally **not** deleted.
 
 ## Manual portable use (both operating systems)
 
@@ -86,6 +91,6 @@ The Compose profile explicitly binds the web listener to `0.0.0.0:38470` **insid
 
 ## Release validation and reproducibility
 
-Release maintainers can create four archives and `SHA256SUMS.txt` with `bash scripts/build-release.sh`. Builds are `CGO_ENABLED=0`, with UI assets compiled into the binaries. Verify package checksums before installing, confirm service logs contain no fatal startup errors, and run an actual Windows service integration smoke test before treating a Windows package as fully certified. The build script does not publish releases or use GitHub Actions.
+Release maintainers can create four **unsigned development archives** and `SHA256SUMS.txt` with `bash scripts/build-release.sh` after satisfying the patched-Go toolchain guard. Builds are `CGO_ENABLED=0`, with UI assets compiled into the binaries. Verify package checksums before installing, confirm service logs contain no fatal startup errors, and run an actual Windows service integration smoke test before treating a Windows package as fully certified. The build script refuses to claim public release readiness. Production Windows signing must be performed with a verified publisher certificate; on-Windows signature verification, antivirus scanning, and end-to-end service smoke tests are separate required steps. It does not publish releases or use GitHub Actions. See `docs/RELEASE_SECURITY.md`.
 
 **Not available in this alpha:** automatic in-UI binary updates, signed binaries/installers, MSI/MSIX or Debian/RPM packages, rollback automation, Windows native runtime smoke testing within Linux, and universal Rspamd production parity.
