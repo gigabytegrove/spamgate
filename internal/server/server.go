@@ -38,8 +38,22 @@ type throttle struct {
 	Failures int
 	Until    time.Time
 }
+
+// RuntimeService reports local listener configuration, not remote delivery health.
+type RuntimeService struct {
+	Enabled bool   `json:"enabled"`
+	Address string `json:"address,omitempty"`
+	Detail  string `json:"detail"`
+}
+
+type RuntimeStatus struct {
+	Services        map[string]RuntimeService `json:"services"`
+	RelayConfigured bool                      `json:"relay_configured"`
+}
+
 type Server struct {
 	Store      *core.Store
+	Runtime    RuntimeStatus
 	Scanner    *core.Scanner
 	Deliver    func(context.Context, core.Message, []byte) error
 	sessions   map[string]session
@@ -184,6 +198,7 @@ func (s *Server) Router() http.Handler {
 	m.HandleFunc("POST /api/v1/messages/{id}/release", s.release)
 	m.HandleFunc("DELETE /api/v1/messages/{id}/quarantine", s.discardQuarantine)
 	m.HandleFunc("GET /api/v1/statistics", s.stats)
+	m.HandleFunc("GET /api/v1/runtime", s.runtime)
 	m.HandleFunc("GET /api/v1/export", s.export)
 	m.HandleFunc("GET /api/v1/config", s.config)
 	m.HandleFunc("GET /api/v1/signals", s.signals)
@@ -439,6 +454,13 @@ func hasEmail(xs []string, value string) bool {
 	}
 	return false
 }
+func (s *Server) runtime(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.authorized(w, r, true, false); !ok {
+		return
+	}
+	jsonReply(w, http.StatusOK, s.Runtime)
+}
+
 func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 	id, ok := s.authorized(w, r, false, false)
 	if !ok {
@@ -848,7 +870,8 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	// Only known console paths serve the UI; unknown paths remain real 404s.
 	switch r.URL.Path {
 	case "/", "/overview", "/messages", "/rules", "/signals", "/learning",
-		"/blocklists", "/mailboxes", "/api-keys", "/policy", "/connections", "/help":
+		"/blocklists", "/mailboxes", "/api-keys", "/policy", "/connections", "/help",
+		"/quarantine", "/investigations", "/threat-intelligence", "/scan-workbench":
 	default:
 		http.NotFound(w, r)
 		return

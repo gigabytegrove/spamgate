@@ -4,7 +4,7 @@
 
 **Explainable mail filtering, policy management and quarantine — written in Go.**
 
-SpamGate is a new Gigabyte Grove mail-security platform designed to replace the operational role of Rspamd over time, not a finished drop-in Rspamd clone. **Current development source: `0.3.0-alpha.3` (redesigned Web UI and Windows GUI-subsystem preview; signed native release still pending).** It has a working scoring engine, browser control desk, persistent audit history and separate SMTP, Rspamd-HTTP, Milter and optional controller-style HTTP integration modes. Milter and Rspamd HTTP remain tested subsets; SPF, DKIM, exact-domain DMARC, Bayes, fuzzy similarity, a manually trained local neural network and optional ClamAV have limited implementations. **Full Rspamd parity, cryptographic ARC validation/sealing and production-ready model evaluation are not yet implemented.** Do **not** replace a production filter with this alpha without a controlled mail-flow and security evaluation.
+SpamGate is a new Gigabyte Grove mail-security platform designed to replace the operational role of Rspamd over time, not a finished drop-in Rspamd clone. **Current development source: `0.3.0-alpha.4` (redesigned Web UI and Windows GUI-subsystem preview; signed native release still pending).** It has a working scoring engine, browser control desk, persistent audit history and separate SMTP, Rspamd-HTTP, Milter and optional controller-style HTTP integration modes. Milter and Rspamd HTTP remain tested subsets; SPF, DKIM, exact-domain DMARC, Bayes, fuzzy similarity, a manually trained local neural network and optional ClamAV have limited implementations. **Full Rspamd parity, cryptographic ARC validation/sealing and production-ready model evaluation are not yet implemented.** Do **not** replace a production filter with this alpha without a controlled mail-flow and security evaluation.
 
 ## What works today
 
@@ -117,8 +117,17 @@ curl --fail-with-body --request POST https://spamgate.example.com/api/v1/scan \
 - [Security model and production precautions](docs/SECURITY.md)
 - [Exhaustive feature plan and acceptance criteria](docs/ROADMAP.md)
 
-The interface uses an **air-traffic operations ledger** identity: warm ivory `#F6F3EC`, charcoal `#252724`, signal orange `#BB432A`, amber `#E7BE58`, editorial typography, full-width verdict tables, and addressable management pages. No external fonts or images are required.
+The interface's visual direction is **postal dispatch ledger / contemporary operations typography**: warm limestone background, deep pine interface ink, vermilion alert accents, compact ledger tables, a message-decision inspector, and responsive administrative navigation. No external images or fonts are required.
 
 ## License
 
 Copyright © 2026 Gigabyte Grove. **All rights reserved until a software license is explicitly selected and added.** An empty repository was provided without licensing instructions; no open-source grant is implied. A license decision is tracked in the roadmap.
+
+
+## Threat operations interface (alpha.4)
+
+The Web UI has addressable operational screens: `/overview` (command center), `/investigations` (flagged evidence and manual reclassification), `/quarantine` (originals actually held by the SMTP filter), `/messages` (complete visible mail log), `/threat-intelligence` (reputation and signal frequency), and `/scan-workbench` (advisory .eml tests). Administration retains policy rules, DNS lists, signal weights, classifier training, access controls, and integration instructions. The command center uses real retained data, never fabricated demo statistics; its counts are **not** lifetime delivery metrics.
+
+Administrators see `/api/v1/runtime`, a configuration inventory that describes which listener processes were enabled at application startup. **Configured does not mean operational or connected to a real mail server.** Runtime details are never available to unauthenticated clients or mailbox-only accounts.
+
+The previous source-only and unsigned Windows development builds remain unsuitable for production use; see [release security](docs/RELEASE_SECURITY.md).

@@ -15,7 +15,7 @@ func TestUIRoutesServeEmbeddedInterface(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv := New(store, nil)
-	pages := []string{"/", "/overview", "/messages", "/rules", "/signals", "/learning", "/blocklists", "/mailboxes", "/api-keys", "/policy", "/connections", "/help"}
+	pages := []string{"/", "/overview", "/messages", "/rules", "/signals", "/learning", "/blocklists", "/mailboxes", "/api-keys", "/policy", "/connections", "/help", "/quarantine", "/investigations", "/threat-intelligence", "/scan-workbench"}
 	for _, path := range pages {
 		t.Run(path, func(t *testing.T) {
 			resp := httptest.NewRecorder()
@@ -41,5 +41,22 @@ func TestUIRoutesServeEmbeddedInterface(t *testing.T) {
 		if resp.Code != http.StatusOK || resp.Body.Len() < 1000 {
 			t.Fatalf("asset %s got %d bytes HTTP %d", path, resp.Body.Len(), resp.Code)
 		}
+	}
+}
+
+// The listener inventory must never be disclosed to unauthenticated clients.
+func TestRuntimeRequiresAdmin(t *testing.T) {
+	store, err := core.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := New(store, nil)
+	srv.Runtime = RuntimeStatus{Services: map[string]RuntimeService{
+		"milter": {Enabled: true, Address: "127.0.0.1:38472", Detail: "configured"},
+	}}
+	resp := httptest.NewRecorder()
+	srv.Router().ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/api/v1/runtime", nil))
+	if resp.Code != http.StatusServiceUnavailable || strings.Contains(resp.Body.String(), "38472") {
+		t.Fatalf("unauthenticated runtime inventory leaked: %d %s", resp.Code, resp.Body.String())
 	}
 }

@@ -146,6 +146,37 @@ func runApp(ctx context.Context, opts options) error {
 	if relay != nil {
 		srv.Deliver = relay.Send
 	}
+	srv.Runtime = server.RuntimeStatus{
+		RelayConfigured: relay != nil,
+		Services: map[string]server.RuntimeService{
+			"management":  {Enabled: true, Address: opts.listen, Detail: "Management HTTP listener configured"},
+			"rspamd_http": {Enabled: rspamdWorker != nil, Detail: "Rspamd-compatible HTTP scan listener configured"},
+			"milter":      {Enabled: milterWorker != nil, Detail: "Milter listener configured"},
+			"smtp":        {Enabled: inbound != nil, Detail: "SMTP filter listener configured"},
+			"controller":  {Enabled: controller != nil, Detail: "Rspamd-compatible controller configured"},
+		},
+	}
+	if rspamdWorker != nil {
+		x := srv.Runtime.Services["rspamd_http"]
+		x.Address = rspamdWorker.ListenAddress
+		srv.Runtime.Services["rspamd_http"] = x
+	}
+	if milterWorker != nil {
+		x := srv.Runtime.Services["milter"]
+		x.Address = milterWorker.Addr
+		srv.Runtime.Services["milter"] = x
+	}
+	if inbound != nil {
+		x := srv.Runtime.Services["smtp"]
+		x.Address = inbound.Addr
+		srv.Runtime.Services["smtp"] = x
+	}
+	if controller != nil {
+		x := srv.Runtime.Services["controller"]
+		x.Address = controller.ListenAddress
+		srv.Runtime.Services["controller"] = x
+	}
+
 	errorsCh := make(chan error, 5)
 	go func() { errorsCh <- srv.ListenAndServe(ctx, opts.listen) }()
 	// Interactive Windows launches use the native GUI subsystem, without a CMD

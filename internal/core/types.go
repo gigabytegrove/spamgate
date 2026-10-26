@@ -2,7 +2,7 @@ package core
 
 import "time"
 
-const Version = "0.3.0-alpha.3"
+const Version = "0.3.0-alpha.4"
 
 type Finding struct {
 	Symbol string  `json:"symbol"`
