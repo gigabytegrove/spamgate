@@ -24,7 +24,8 @@ type options struct {
 
 func defaultDataDir() string {
 	if runtime.GOOS == "windows" {
-		// Interactive sessions use a per-user, writable directory. Service installs explicitly pass -data. 
+		// An interactive first run must not require administrator privileges.
+		// The Windows Service installer explicitly passes -data ProgramData\SpamGate.
 		if base := os.Getenv("LOCALAPPDATA"); base != "" {
 			return filepath.Join(base, "SpamGate")
 		}
@@ -48,6 +49,7 @@ func defaultListen() string {
 func main() {
 	if err := execute(os.Args[1:]); err != nil {
 		slog.Error("SpamGate stopped", "error", err)
+		showFatalError(err)
 		os.Exit(1)
 	}
 }
@@ -71,8 +73,15 @@ func execute(args []string) error {
 	if *data == "" || *web == "" {
 		return fmt.Errorf("data and listen must not be empty")
 	}
+	// A GUI-subsystem EXE has no terminal. Persist startup failures and the one-time
+	// setup key for the interactive user without a script or administrator rights.
+	if *logPath == "" && runtime.GOOS == "windows" {
+		*logPath = filepath.Join(*data, "logs", "spamgate.log")
+	}
 	if *logPath != "" {
-		// The setup key is logged at startup; the log directory must be protected.
+		if err := os.MkdirAll(filepath.Dir(*logPath), 0700); err != nil {
+			return fmt.Errorf("create log directory: %w", err)
+		}
 		f, err := os.OpenFile(*logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 		if err != nil {
 			return fmt.Errorf("open application log: %w", err)
@@ -139,7 +148,9 @@ func runApp(ctx context.Context, opts options) error {
 	}
 	errorsCh := make(chan error, 5)
 	go func() { errorsCh <- srv.ListenAndServe(ctx, opts.listen) }()
-	openConsoleWhenReady(ctx, opts.listen)
+	// Interactive Windows launches use the native GUI subsystem, without a CMD
+	// console. The browser opens only after the real local health check passes.
+	openDashboardWhenReady(ctx, opts.listen, srv.SetupClaimKey())
 	if rspamdWorker != nil {
 		go func() { errorsCh <- rspamdWorker.Listen(ctx) }()
 	}

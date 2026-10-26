@@ -52,7 +52,7 @@ for platform in linux-amd64 linux-arm64 windows-amd64 windows-arm64; do
       tar -C "$tmp" -czf "$OUT/$base.tar.gz" .
       ;;
     windows)
-      GOOS="$os" GOARCH="$arch" go build -trimpath -buildvcs=false -ldflags='-s -w' -o "$tmp/spamgate.exe" ./cmd/spamgate
+      GOOS="$os" GOARCH="$arch" go build -trimpath -buildvcs=false -ldflags='-s -w -H=windowsgui' -o "$tmp/spamgate.exe" ./cmd/spamgate
       cp scripts/install-windows.ps1 scripts/uninstall-windows.ps1 docs/INSTALLATION.md "$tmp/"
       (cd "$tmp" && zip -q -X -r "$OUT/$base.zip" .)
       ;;

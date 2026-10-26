@@ -126,10 +126,11 @@ func runPlatform(app func(context.Context) error) error {
 	return fmt.Errorf("StartServiceCtrlDispatcher: %w", e)
 }
 
-
-// Foreground Windows launches open the browser only after the listener is
-// healthy; the service never opens a browser from Windows Session 0.
-func openConsoleWhenReady(ctx context.Context, address string) {
+// openConsoleWhenReady makes the native executable useful without an installer:
+// double-clicking spamgate.exe starts the local UI under the logged-in user.
+// No PowerShell, registry edits, privilege escalation, or network downloads.
+// A Windows Service never tries to open a browser in Session 0.
+func openDashboardWhenReady(ctx context.Context, address, setupKey string) {
 	if ctx.Value(serviceContextKey{}) == true || os.Getenv("SPAMGATE_OPEN_BROWSER") == "false" {
 		return
 	}
@@ -147,7 +148,7 @@ func openConsoleWhenReady(ctx context.Context, address string) {
 			if ctx.Err() != nil {
 				return
 			}
-			request, err := http.NewRequestWithContext(ctx, http.MethodGet, url + "healthz", nil)
+			request, err := http.NewRequestWithContext(ctx, http.MethodGet, url+"healthz", nil)
 			if err == nil {
 				response, callErr := client.Do(request)
 				if callErr == nil {
@@ -162,6 +163,9 @@ func openConsoleWhenReady(ctx context.Context, address string) {
 						} else {
 							slog.Info("Management console opened", "url", url)
 						}
+						if setupKey != "" {
+							showNativeDialog("SpamGate — First-run setup key", "SpamGate is ready.\n\nPaste this one-time claim key into the browser setup form:\n\n"+setupKey+"\n\nWindows tip: Press Ctrl+C in this dialog to copy its contents.\n\nThe key is also in your local SpamGate log file.")
+						}
 						return
 					}
 				}
@@ -173,4 +177,25 @@ func openConsoleWhenReady(ctx context.Context, address string) {
 			}
 		}
 	}()
+}
+
+// Windows GUI-subsystem processes have no terminal. Surface startup failures
+// and initial setup information through Windows itself, never PowerShell.
+func showNativeDialog(title, message string) {
+	caption, err1 := syscall.UTF16PtrFromString(title)
+	body, err2 := syscall.UTF16PtrFromString(message)
+	if err1 != nil || err2 != nil {
+		return
+	}
+	// MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TOPMOST
+	proc := syscall.NewLazyDLL("user32.dll").NewProc("MessageBoxW")
+	_, _, _ = proc.Call(0, uintptr(unsafe.Pointer(body)), uintptr(unsafe.Pointer(caption)), 0x00000040|0x00010000|0x00040000)
+}
+
+func showFatalError(err error) {
+	// An SCM-launched service has no interactive desktop. Never block Session 0.
+	if statusHandle != 0 || err == nil {
+		return
+	}
+	showNativeDialog("SpamGate — Could not start", "SpamGate could not start:\n\n"+err.Error()+"\n\nCheck the local application log for details.")
 }

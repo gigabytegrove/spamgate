@@ -58,6 +58,11 @@ func New(store *core.Store, deliver func(context.Context, core.Message, []byte) 
 	}
 	return s
 }
+
+// SetupClaimKey is for the local Windows first-run dialog only; the HTTP API
+// never exposes this secret and service-mode processes never display it.
+func (s *Server) SetupClaimKey() string { return s.setupToken }
+
 func jsonReply(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
@@ -839,7 +844,12 @@ func (s *Server) deleteDNSList(w http.ResponseWriter, r *http.Request) {
 	jsonReply(w, 200, map[string]bool{"removed": true})
 }
 func (s *Server) index(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
+	// Each view has a stable URL so refresh, bookmarks and browser navigation work.
+	// Only known console paths serve the UI; unknown paths remain real 404s.
+	switch r.URL.Path {
+	case "/", "/overview", "/messages", "/rules", "/signals", "/learning",
+		"/blocklists", "/mailboxes", "/api-keys", "/policy", "/connections", "/help":
+	default:
 		http.NotFound(w, r)
 		return
 	}

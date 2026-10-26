@@ -15,5 +15,6 @@ func runPlatform(app func(context.Context) error) error {
 	return app(ctx)
 }
 
-// The Linux service never implicitly opens a browser.
-func openConsoleWhenReady(context.Context, string) {}
+// Non-Windows processes do not launch a browser implicitly.
+func openDashboardWhenReady(context.Context, string, string) {}
+func showFatalError(error)                                   {}

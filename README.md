@@ -4,7 +4,7 @@
 
 **Explainable mail filtering, policy management and quarantine — written in Go.**
 
-SpamGate is a new Gigabyte Grove mail-security platform designed to replace the operational role of Rspamd over time, not a finished drop-in Rspamd clone. **Current development source: `0.3.0-alpha.2` (native Windows release held pending signing and current-toolchain rebuild).** It has a working scoring engine, browser control desk, persistent audit history and separate SMTP, Rspamd-HTTP, Milter and optional controller-style HTTP integration modes. Milter and Rspamd HTTP remain tested subsets; SPF, DKIM, exact-domain DMARC, Bayes, fuzzy similarity, a manually trained local neural network and optional ClamAV have limited implementations. **Full Rspamd parity, cryptographic ARC validation/sealing and production-ready model evaluation are not yet implemented.** Do **not** replace a production filter with this alpha without a controlled mail-flow and security evaluation.
+SpamGate is a new Gigabyte Grove mail-security platform designed to replace the operational role of Rspamd over time, not a finished drop-in Rspamd clone. **Current development source: `0.3.0-alpha.3` (redesigned Web UI and Windows GUI-subsystem preview; signed native release still pending).** It has a working scoring engine, browser control desk, persistent audit history and separate SMTP, Rspamd-HTTP, Milter and optional controller-style HTTP integration modes. Milter and Rspamd HTTP remain tested subsets; SPF, DKIM, exact-domain DMARC, Bayes, fuzzy similarity, a manually trained local neural network and optional ClamAV have limited implementations. **Full Rspamd parity, cryptographic ARC validation/sealing and production-ready model evaluation are not yet implemented.** Do **not** replace a production filter with this alpha without a controlled mail-flow and security evaluation.
 
 ## What works today
 
@@ -34,6 +34,12 @@ SpamGate is a new Gigabyte Grove mail-security platform designed to replace the 
 | Controller-style HTTP `/learnspam`, `/learnham`, `/stat`, `/symbols`, `/actions` | Optional, credentialed subset on its own port 38474 |
 | **Full Rspamd protocol parity, cryptographic ARC verification/sealing** | **Not yet implemented** |
 | Multi-node and enterprise directory integration | **Not yet implemented** |
+
+## Direct Windows preview (no shell)
+
+On Windows, double-click the **GUI-subsystem `spamgate.exe`** from a trusted build. A command window and PowerShell launcher are not required. SpamGate opens the browser-hosted console, displays the one-time claim key in a native Windows dialog, and stores local data in `%LOCALAPPDATA%\SpamGate`. Navigable management pages have permanent URLs such as `/overview`, `/messages`, `/rules`, `/signals`, `/policy` and `/connections`. See [portable Windows](docs/PORTABLE_WINDOWS.md).
+
+**This is still unsigned alpha software and has not been cleared by Windows Defender.** Do not disable Windows protections to run it. Signed distribution is tracked separately in [release security](docs/RELEASE_SECURITY.md).
 
 ## Install: native binary (recommended)
 
@@ -116,8 +122,3 @@ The interface's visual direction is **postal dispatch ledger / contemporary oper
 ## License
 
 Copyright © 2026 Gigabyte Grove. **All rights reserved until a software license is explicitly selected and added.** An empty repository was provided without licensing instructions; no open-source grant is implied. A license decision is tracked in the roadmap.
-
-
-## Windows portable first run (developer preview)
-
-A portable Windows build can now start without administrator privileges or the service installer. Extract the development package and double-click `Start-SpamGate.cmd` (or the executable). The UI opens automatically once the application is healthy. First-run claim key is shown in the console; local data is in `%LOCALAPPDATA%\SpamGate`. **The unsigned development preview has not been Defender-cleared and must not be used to process production email.** See [portable Windows guide](docs/PORTABLE_WINDOWS.md) and [release security](docs/RELEASE_SECURITY.md).

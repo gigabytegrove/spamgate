@@ -1,19 +1,19 @@
-# SpamGate — Windows portable first run
+# SpamGate — Windows desktop first run
 
-This developer-preview launcher makes the native Web UI available without installing a Windows service, running PowerShell, modifying the registry, or requiring administrator rights.
+**Windows binary first; optional Windows Service later. No command-window launcher.**
 
-1. Verify the ZIP archive SHA-256 hash. Extract the archive to an ordinary folder such as Downloads\SpamGate-Portable.
-2. Double-click Start-SpamGate.cmd (or spamgate.exe). The executable opens the default browser only after the loopback health check succeeds.
-3. Complete first-run administrator setup using the one-time claim key printed in the console window. Keep this key private.
-4. Leave the console open while using SpamGate. Ctrl+C stops it. The launcher retains the window when a startup error occurs.
-5. Persistent data: %LOCALAPPDATA%\SpamGate. Web UI: http://127.0.0.1:38470/. SMTP, Milter and Rspamd HTTP listeners are disabled by default.
+SpamGate is a Go executable compiled for the Windows GUI subsystem. Double-click `spamgate.exe` — **do not run a `.cmd` or PowerShell launcher**. It starts the local daemon and opens the browser-hosted management console at `http://127.0.0.1:38470`. A browser-based Web UI is intentional; there is no embedded WebView, Electron app, or console shell.
 
-If TCP port 38470 is occupied, stop the other process or manually run spamgate.exe -listen 127.0.0.1:38479 from a terminal. Never expose plain HTTP administration to the internet.
+1. Obtain a **trusted, security-reviewed** Windows archive from a verified release source. The current unsigned development build is not a production release and has not been validated on Windows Defender.
+2. Extract the ZIP and double-click **`spamgate.exe`**. Administrator privileges and Windows Service registration are not required for a portable test.
+3. On a new data directory, SpamGate displays a **native Windows first-run dialog** containing the one-time claim key. Use `Ctrl+C` in the dialog to copy its contents, then enter the claim key in the first-run browser form.
+4. Complete the administrator setup. The process continues to run until you stop it from Task Manager or Windows service management. **Closing the browser tab does not stop the filter.**
+5. Data and startup logs live in `%LOCALAPPDATA%\SpamGate`, including `%LOCALAPPDATA%\SpamGate\logs\spamgate.log`. The administrator claim key is written to the log; protect access to this directory. The Web UI binds to `127.0.0.1:38470` by default. Mail-facing ports are not automatically opened.
 
-## Security and verification limits
+To run continuously at boot, use the Windows Service installer from a **signed and verified release** instead; services do not display browser windows or claim-key dialogs. This portable profile and the service profile intentionally use different data paths.
 
-This unsigned development executable has not been approved for production mail processing or tested with Microsoft Defender on Windows. Defender may request a sample or prevent the executable from running. Do not disable Defender, add exclusions or override its block. Check Windows Security > Protection history for a named detection; report the finding and exact archive hash.
+## Troubleshooting
 
-The prior binary compiler Go 1.23.2 is outdated; source should be rebuilt using current security-patched Go 1.27.3 before broad distribution. A signed, validated Windows binary is still outstanding. See RELEASE_SECURITY.md.
+If the browser does not open, manually visit `http://127.0.0.1:38470/`. If the local health check fails, inspect `%LOCALAPPDATA%\SpamGate\logs\spamgate.log` and check whether another application is using TCP 38470. No special script execution policy is needed.
 
-A service deployment is separate from this portable profile and uses its own data directory. See INSTALLATION.md.
+Do not expose the administration HTTP listener over the public internet without TLS and access restrictions. If Defender flags the EXE or ZIP, inspect Protection History and report the detection; **do not disable Defender or create an antivirus exclusion**. The preview is unsigned and has not been verified on native Windows.
