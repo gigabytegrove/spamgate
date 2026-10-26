@@ -244,8 +244,10 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (Message, error) {
 	if p := strings.LastIndex(senderDomain, "@"); p >= 0 {
 		senderDomain = senderDomain[p+1:]
 	}
-	for _, rule := range cfg.Rules {
-		if !rule.Enabled || strings.TrimSpace(rule.Value) == "" {
+	rules := append([]Rule(nil), cfg.Rules...)
+	sort.SliceStable(rules, func(i, j int) bool { return rules[i].Priority > rules[j].Priority })
+	for _, rule := range rules {
+		if !rule.Enabled || (!rule.ExpiresAt.IsZero() && !time.Now().Before(rule.ExpiresAt)) || strings.TrimSpace(rule.Value) == "" {
 			continue
 		}
 		if rule.Owner != "" {
@@ -300,7 +302,8 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (Message, error) {
 		}
 		if matched {
 			add("CUSTOM_"+rule.ID, "rule/"+rule.Kind, rule.Name+" · "+rule.Value, rule.Score)
-			if rule.Action != "" {
+			if rule.Action != "" && forced == "" {
+				// Rules are sorted by descending priority: first forced action wins.
 				forced = rule.Action
 			}
 		}

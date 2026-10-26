@@ -1,5 +1,12 @@
 # SpamGate
 
+## v0.4.0-alpha.1 operational features
+
+Durable single-node SMTP outbox with retry and dead-letter review, first-class **Delivery queue** administration screen, time-bounded rule editing and priority, search across retained history, dry-run scan API, safe quarantine preview, relay TCP reachability probe and admin-only `/api/v1/metrics` counters. On-disk spool records are private and preserve accepted email until delivery or explicit discard; the outbox is **at-least-once**, not exactly-once, and does not yet send failure DSNs. The queue only operates when an upstream relay is configured; SMTP is disabled on a clean installation.
+
+**Important:** This is an alpha with no live Postfix/Sendmail/Exchange certification and no full Rspamd protocol parity. The project is still **not** a production replacement. Review [Postfix integration](docs/POSTFIX_SMTP_INTEGRATION.md) and [release capability/gaps](docs/RELEASE_0_4_0_ALPHA_1.md). All former unsigned Windows builds remain unreleased developer previews; do not bypass Defender.
+
+
 > **Windows distribution hold (2026-10-26):** Earlier alpha Windows binaries were unsigned and compiled with an outdated Go toolchain. See [release security](docs/RELEASE_SECURITY.md) before distributing executables. No Windows package is currently certified as Defender-clean.
 
 **Explainable mail filtering, policy management and quarantine — written in Go.**

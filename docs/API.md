@@ -83,3 +83,21 @@ Non-2xx errors use `{"error":"human-readable explanation"}`. Common status codes
 ## Learning safety
 
 Bayes, fuzzy and neural training all require administrator authorization and browser CSRF protection. They modify future scoring, not previous decisions. `fuzzy.json` fingerprints expire after 90 days; neural samples are keyed by historical message IDs and cannot currently be individually unlearned without resetting the model from backup. Neural signals deliberately exclude `NEURAL_*` and `FUZZY_*` symbols to prevent self-reinforcing training. All three datasets are considered sensitive; protect backups and use the Web UI to manage signals and fingerprints. Do not automatically train on delivery decisions.
+
+## 0.4.0-alpha.1 operational APIs
+
+All routes below are on the management listener (38470) and require a completed first-run setup. Browser writes require a valid session CSRF token; administration and all queue operations require an admin identity.
+
+| Method | Route | Role | Description |
+|---|---|---|---|
+| GET | `/api/v1/history/search?q=&action=&sender=&recipient=&offset=0&limit=50&from=&to=` | admin or mailbox | Full retained-record search; RFC 3339 time boundaries; limits 1–500, offset 0–500000; mailbox identity isolation |
+| PUT | `/api/v1/rules/{id}` | admin or rule owner | Replace matching rule, preserving server-assigned ID/owner; supports `priority`, `expires_at` RFC3339, and `enabled` |
+| POST | `/api/v1/scan/simulate` | admin | Raw RFC 5322 message with the normal scan metadata headers, returns verdict without saving it |
+| GET | `/api/v1/messages/{id}/preview` | admin | Truncated 4 KiB raw-text quarantine preview, JSON response; no HTML rendering |
+| GET | `/api/v1/delivery-queue` | admin | Queue status and metadata only, **never raw email body** |
+| POST | `/api/v1/delivery-queue/{id}/retry` | admin | Request immediate redelivery; may duplicate after uncertain remote SMTP completion |
+| DELETE | `/api/v1/delivery-queue/{id}` | admin | Permanently discard. Requires `X-Confirm-Discard: discard queued original` header |
+| GET | `/api/v1/integrations/diagnostics` | admin | Relay TCP reachability only; not a complete SMTP/TLS transaction test |
+| GET | `/api/v1/metrics` | admin | Prometheus text exposition of retained history and queue gauges |
+
+Do not publish management API or queue endpoints without HTTPS. Queue persistence requires a filesystem supporting atomic rename and file sync; on Windows directory sync cannot be guaranteed by this implementation. **Always keep backups** of the data directory while the service is quiescent; do not overwrite an active queue. Full DSN, idempotent downstream delivery and transactional multi-node replication are pending.

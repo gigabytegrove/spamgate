@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: spamgate:0.3.0-alpha.4
+    image: spamgate:0.4.0-alpha.1
     restart: unless-stopped
     init: true
     ports:
@@ -32,6 +32,8 @@ services:
       # SPAMGATE_ALLOWED_RECIPIENT_DOMAINS: "example.org"
       # SPAMGATE_RELAY_ADDRESS: "mail-relay.example.org:587"
       # SPAMGATE_RELAY_TLS: "required"
+      # New accepted SMTP messages are durably queued for retry, unless disabled.
+      # SPAMGATE_DURABLE_QUEUE: "true"
     volumes:
       - spamgate-data:/var/lib/spamgate
     security_opt:

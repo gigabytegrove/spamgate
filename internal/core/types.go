@@ -2,7 +2,7 @@ package core
 
 import "time"
 
-const Version = "0.3.0-alpha.4"
+const Version = "0.4.0-alpha.1"
 
 type Finding struct {
 	Symbol string  `json:"symbol"`
@@ -30,14 +30,16 @@ type Message struct {
 	Delivery       string    `json:"delivery,omitempty"`
 }
 type Rule struct {
-	Owner   string  `json:"owner,omitempty"`
-	ID      string  `json:"id"`
-	Name    string  `json:"name"`
-	Kind    string  `json:"kind"`
-	Value   string  `json:"value"`
-	Score   float64 `json:"score"`
-	Action  string  `json:"action,omitempty"`
-	Enabled bool    `json:"enabled"`
+	Owner     string    `json:"owner,omitempty"`
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Kind      string    `json:"kind"`
+	Value     string    `json:"value"`
+	Score     float64   `json:"score"`
+	Action    string    `json:"action,omitempty"`
+	Enabled   bool      `json:"enabled"`
+	Priority  int       `json:"priority,omitempty"`
+	ExpiresAt time.Time `json:"expires_at,omitempty"`
 }
 type DNSList struct {
 	Zone    string  `json:"zone"`

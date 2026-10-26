@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/gigabytegrove/spamgate/internal/core"
+	"github.com/gigabytegrove/spamgate/internal/transport"
 )
 
 type Identity struct {
@@ -52,6 +53,7 @@ type RuntimeStatus struct {
 }
 
 type Server struct {
+	Queue      *transport.DeliveryQueue
 	Store      *core.Store
 	Runtime    RuntimeStatus
 	Scanner    *core.Scanner
@@ -192,13 +194,22 @@ func (s *Server) Router() http.Handler {
 	m.HandleFunc("POST /api/v1/logout", s.logout)
 	m.HandleFunc("GET /api/v1/me", s.me)
 	m.HandleFunc("POST /api/v1/scan", s.scan)
+	m.HandleFunc("POST /api/v1/scan/simulate", s.simulateScan)
 	m.HandleFunc("GET /api/v1/messages", s.messages)
+	m.HandleFunc("GET /api/v1/history/search", s.searchHistory)
+	m.HandleFunc("GET /api/v1/messages/{id}/preview", s.quarantinePreview)
+
 	m.HandleFunc("GET /api/v1/messages/{id}", s.message)
 	m.HandleFunc("POST /api/v1/messages/{id}/override", s.override)
 	m.HandleFunc("POST /api/v1/messages/{id}/release", s.release)
 	m.HandleFunc("DELETE /api/v1/messages/{id}/quarantine", s.discardQuarantine)
 	m.HandleFunc("GET /api/v1/statistics", s.stats)
 	m.HandleFunc("GET /api/v1/runtime", s.runtime)
+	m.HandleFunc("GET /api/v1/integrations/diagnostics", s.integrationDiagnostics)
+	m.HandleFunc("GET /api/v1/delivery-queue", s.deliveryQueue)
+	m.HandleFunc("GET /api/v1/metrics", s.metrics)
+	m.HandleFunc("POST /api/v1/delivery-queue/{id}/retry", s.retryDelivery)
+	m.HandleFunc("DELETE /api/v1/delivery-queue/{id}", s.discardDelivery)
 	m.HandleFunc("GET /api/v1/export", s.export)
 	m.HandleFunc("GET /api/v1/config", s.config)
 	m.HandleFunc("GET /api/v1/signals", s.signals)
@@ -213,6 +224,7 @@ func (s *Server) Router() http.Handler {
 	m.HandleFunc("PUT /api/v1/signals/{symbol}", s.updateSignal)
 	m.HandleFunc("PUT /api/v1/settings", s.settings)
 	m.HandleFunc("POST /api/v1/rules", s.addRule)
+	m.HandleFunc("PUT /api/v1/rules/{id}", s.updateRule)
 	m.HandleFunc("DELETE /api/v1/rules/{id}", s.deleteRule)
 	m.HandleFunc("POST /api/v1/users", s.addUser)
 	m.HandleFunc("DELETE /api/v1/users/{name}", s.deleteUser)
@@ -540,6 +552,9 @@ func validRule(r core.Rule) error {
 	if r.Action != "" && r.Action != "accept" && r.Action != "tag" && r.Action != "quarantine" && r.Action != "reject" {
 		return errors.New("invalid forced action")
 	}
+	if r.Priority < -1000 || r.Priority > 1000 || (!r.ExpiresAt.IsZero() && r.ExpiresAt.Before(time.Now())) {
+		return errors.New("priority must be -1000..1000 and expiration must be in the future")
+	}
 	if r.Kind == "client_ip" && net.ParseIP(r.Value) == nil {
 		return errors.New("invalid IP address")
 	}
@@ -595,6 +610,60 @@ func (s *Server) addRule(w http.ResponseWriter, r *http.Request) {
 	}
 	jsonReply(w, 201, rule)
 }
+func (s *Server) updateRule(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.authorized(w, r, false, true)
+	if !ok {
+		return
+	}
+	var rule core.Rule
+	if err := decode(r, &rule); err != nil {
+		fail(w, 400, "Invalid rule JSON")
+		return
+	}
+	if id.Role != "admin" {
+		if id.Email == "" {
+			fail(w, 403, "Mailbox not assigned")
+			return
+		}
+		if rule.Kind != "sender_email" && rule.Kind != "sender_domain" {
+			fail(w, 403, "Mailbox rules can only match senders")
+			return
+		}
+		if rule.Action != "accept" && rule.Action != "quarantine" {
+			fail(w, 403, "Mailbox rule cannot force this action")
+			return
+		}
+		rule.Score = 0
+		rule.Priority = 0
+	}
+	if err := validRule(rule); err != nil {
+		fail(w, 400, err.Error())
+		return
+	}
+	var saved core.Rule
+	err := s.Store.UpdateConfig(func(c *core.Config) error {
+		for i, existing := range c.Rules {
+			if existing.ID != r.PathValue("id") {
+				continue
+			}
+			if id.Role != "admin" && (existing.Owner == "" || !strings.EqualFold(existing.Owner, id.Email)) {
+				return errors.New("not authorized for this rule")
+			}
+			rule.ID = existing.ID
+			rule.Owner = existing.Owner
+			c.Rules[i] = rule
+			saved = rule
+			return nil
+		}
+		return errors.New("rule not found")
+	})
+	if err != nil {
+		fail(w, 404, err.Error())
+		return
+	}
+	jsonReply(w, 200, saved)
+}
+
 func (s *Server) deleteRule(w http.ResponseWriter, r *http.Request) {
 	id, ok := s.authorized(w, r, false, true)
 	if !ok {
@@ -869,7 +938,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	// Each view has a stable URL so refresh, bookmarks and browser navigation work.
 	// Only known console paths serve the UI; unknown paths remain real 404s.
 	switch r.URL.Path {
-	case "/", "/overview", "/messages", "/rules", "/signals", "/learning",
+	case "/", "/overview", "/messages", "/delivery-queue", "/rules", "/signals", "/learning",
 		"/blocklists", "/mailboxes", "/api-keys", "/policy", "/connections", "/help",
 		"/quarantine", "/investigations", "/threat-intelligence", "/scan-workbench":
 	default:

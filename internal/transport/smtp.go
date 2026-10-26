@@ -114,6 +114,7 @@ func (r *Relay) Send(ctx context.Context, m core.Message, raw []byte) error {
 }
 
 type SMTP struct {
+	Queue   *DeliveryQueue
 	Store   *core.Store
 	Scanner *core.Scanner
 	Relay   *Relay
@@ -454,6 +455,31 @@ func (s *SMTP) handle(conn net.Conn) {
 					reply(451, "4.3.0 Cannot write audit log")
 				} else {
 					reply(250, "2.0.0 Quarantined id="+m.ID)
+				}
+				sender = ""
+				mailIssued = false
+				forwardedIP = ""
+				recipients = nil
+				continue
+			}
+			if s.Queue != nil {
+				// A successful spool fsync transfers SMTP delivery responsibility.
+				m.Delivery = "queued"
+				queuedRaw := raw.Bytes()
+				if m.Action == "tag" {
+					prefix := fmt.Sprintf("X-SpamGate-Result: tag\r\nX-SpamGate-Score: %.2f\r\nX-SpamGate-ID: %s\r\n", m.Score, m.ID)
+					queuedRaw = append([]byte(prefix), queuedRaw...)
+				}
+				if e = s.Queue.Enqueue(m, queuedRaw); e != nil {
+					s.log.Error("durable queue could not accept message", "id", m.ID, "error", e)
+					reply(451, "4.3.0 Durable queue unavailable")
+				} else {
+					// Queue is authoritative: failure to mirror into history must NOT
+					// make the client retry an already durably accepted message.
+					if e = s.Store.Save(m); e != nil {
+						s.log.Error("queued mail history record failed", "id", m.ID, "error", e)
+					}
+					reply(250, "2.0.0 Queued id="+m.ID)
 				}
 				sender = ""
 				mailIssued = false

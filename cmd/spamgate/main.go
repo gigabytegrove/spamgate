@@ -107,6 +107,17 @@ func runApp(ctx context.Context, opts options) error {
 	if err != nil {
 		return err
 	}
+	var queue *transport.DeliveryQueue
+	if relay != nil && os.Getenv("SPAMGATE_DURABLE_QUEUE") != "false" {
+		// Resume persisted jobs even if the SMTP intake listener is disabled.
+		queue, err = transport.NewDeliveryQueue(opts.dataDir, store, relay.Send)
+		if err != nil {
+			return fmt.Errorf("initialize SMTP delivery spool: %w", err)
+		}
+		if inbound != nil {
+			inbound.Queue = queue
+		}
+	}
 	rspamdWorker, err := transport.RspamdFromEnv(store)
 	if err != nil {
 		return err
@@ -146,6 +157,7 @@ func runApp(ctx context.Context, opts options) error {
 	if relay != nil {
 		srv.Deliver = relay.Send
 	}
+	srv.Queue = queue
 	srv.Runtime = server.RuntimeStatus{
 		RelayConfigured: relay != nil,
 		Services: map[string]server.RuntimeService{
@@ -193,6 +205,9 @@ func runApp(ctx context.Context, opts options) error {
 	}
 	if inbound != nil {
 		go func() { errorsCh <- inbound.Listen(ctx) }()
+	}
+	if queue != nil {
+		go queue.Run(ctx)
 	}
 	ticker := time.NewTicker(24 * time.Hour)
 	defer ticker.Stop()
