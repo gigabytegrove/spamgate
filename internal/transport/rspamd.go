@@ -110,7 +110,7 @@ func (s *RspamdWorker) Handler() http.Handler {
 				return
 			}
 		}
-		if !s.Store.Config().SetupComplete {
+		if r.URL.Path != "/ping" && !s.Store.Config().SetupComplete {
 			http.Error(w, "SpamGate setup incomplete", 503)
 			return
 		}

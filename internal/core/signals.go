@@ -37,6 +37,18 @@ func BuiltinCatalog() []SignalDefinition {
 		{Symbol: "LONG_HOSTNAME", Source: "builtin/url", Description: "Unusually long linked hostname", DefaultScore: 1},
 		{Symbol: "MANY_LINK_DOMAINS", Source: "builtin/url", Description: "Message contains more than eight distinct linked domains", DefaultScore: 2},
 	}
+	definitions = append(definitions,
+		SignalDefinition{Symbol: "R_SPF_ALLOW", Source: "auth/spf", Description: "Envelope domain SPF authorized client IP", DefaultScore: -1},
+		SignalDefinition{Symbol: "R_SPF_FAIL", Source: "auth/spf", Description: "Envelope domain SPF hard failure", DefaultScore: 4},
+		SignalDefinition{Symbol: "R_SPF_SOFTFAIL", Source: "auth/spf", Description: "Envelope domain SPF soft failure", DefaultScore: 1.5},
+		SignalDefinition{Symbol: "R_SPF_PERMERROR", Source: "auth/spf", Description: "Invalid SPF DNS policy", DefaultScore: 1},
+		SignalDefinition{Symbol: "R_DKIM_ALLOW", Source: "auth/dkim", Description: "Cryptographically valid DKIM signature", DefaultScore: -1},
+		SignalDefinition{Symbol: "R_DKIM_REJECT", Source: "auth/dkim", Description: "Present DKIM signature failed verification", DefaultScore: 2},
+		SignalDefinition{Symbol: "DMARC_PASS", Source: "auth/dmarc", Description: "From-domain aligned SPF or DKIM", DefaultScore: -1},
+		SignalDefinition{Symbol: "DMARC_FAIL", Source: "auth/dmarc", Description: "Exact-domain DMARC policy authentication failed (base weight; multiplied by policy)", DefaultScore: 1},
+		SignalDefinition{Symbol: "DMARC_PERMERROR", Source: "auth/dmarc", Description: "Invalid DMARC policy", DefaultScore: 1},
+		SignalDefinition{Symbol: "CLAMAV_MALWARE", Source: "antivirus/clamav", Description: "ClamAV detected malware (forces rejection regardless of weight)", DefaultScore: 100},
+	)
 	for _, word := range suspiciousWords {
 		symbol := "CONTENT_" + strings.ToUpper(strings.ReplaceAll(word.word, " ", "_"))
 		definitions = append(definitions, SignalDefinition{Symbol: symbol, Source: "builtin/content", Description: "Message contains phrase: " + word.word, DefaultScore: word.weight})
