@@ -2,7 +2,7 @@
 
 **Explainable mail filtering, policy management and quarantine — written in Go.**
 
-SpamGate is a new Gigabyte Grove mail-security platform designed to replace the operational role of Rspamd over time, not a finished drop-in Rspamd clone. **Current development build: `0.2.0-alpha.2` (source).** It has a working scoring engine, browser control desk, persistent audit history and separate SMTP, Rspamd-HTTP and Milter integration modes. Milter and Rspamd-style HTTP now have tested protocol subsets; SPF, DKIM, exact-domain DMARC and optional ClamAV have initial implementations. **Full protocol parity, ARC, fuzzy matching and neural detection are not yet implemented. Bayesian training now has a restricted Web UI and persistent per-installation model, but advanced anti-poisoning and sample unlearning are outstanding.** Do **not** replace a production filter with this alpha without a controlled mail-flow and security evaluation.
+SpamGate is a new Gigabyte Grove mail-security platform designed to replace the operational role of Rspamd over time, not a finished drop-in Rspamd clone. **Current development build: `0.3.0-alpha.1` (source).** It has a working scoring engine, browser control desk, persistent audit history and separate SMTP, Rspamd-HTTP, Milter and optional controller-style HTTP integration modes. Milter and Rspamd HTTP remain tested subsets; SPF, DKIM, exact-domain DMARC, Bayes, fuzzy similarity, a manually trained local neural network and optional ClamAV have limited implementations. **Full Rspamd parity, cryptographic ARC validation/sealing and production-ready model evaluation are not yet implemented.** Do **not** replace a production filter with this alpha without a controlled mail-flow and security evaluation.
 
 ## What works today
 
@@ -11,7 +11,7 @@ SpamGate is a new Gigabyte Grove mail-security platform designed to replace the 
 | Go scanner: RFC 5322 parser, multipart MIME text, subject/header/content/URL and attachment heuristics | Implemented with documented limitations |
 | Explainable weighted findings, exact symbol, detail, source and score | Implemented |
 | Custom rules: email/domain/IP/recipient/header/subject/body/URL-domain, forced actions | Implemented |
-| Admin-defined score thresholds: accept, tag, quarantine, reject | Implemented |
+| Admin-defined score thresholds: accept, tag, quarantine, reject | Implemented
 | Web-managed, persistent built-in signal weights and enable/disable overrides | Implemented |
 | Configurable DNSBL zones and weights | Implemented; off by default |
 | HTTP raw `.eml` scan API; scoped API keys | Implemented |
@@ -25,8 +25,12 @@ SpamGate is a new Gigabyte Grove mail-security platform designed to replace the 
 | Rspamd HTTP `/checkv2`, `/check`, `/symbols`, `/scanv2` | Implemented subset; distinct port |
 | SPF/DKIM/DMARC | Real DNS-backed SPF and DKIM verification; exact-domain DMARC subset |
 | Antivirus | Optional ClamAV INSTREAM with fail-closed errors |
-| Bayesian ham/spam training and bounded local classification | Implemented initial model and admin UI; no sample unlearning |
-| ARC, fuzzy, neural, **full protocol parity** | **Not yet implemented** |
+| ARC chain structure diagnostics | Implemented; **not cryptographic ARC authentication** |
+| Bayesian learning | Admin-supervised corpus and scoring with persistent state |
+| Fuzzy near-duplicate reputation | Persistent supervised SimHash fingerprints, 90-day expiry, deletion and admin UI |
+| Neural post-classification | CPU-only 12-unit hidden-layer model trained on confirmed historical symbol findings; alpha, no automatic labels |
+| Controller-style HTTP `/learnspam`, `/learnham`, `/stat`, `/symbols`, `/actions` | Optional, credentialed subset on its own port 38474 |
+| **Full Rspamd protocol parity, cryptographic ARC verification/sealing** | **Not yet implemented** |
 | Multi-node and enterprise directory integration | **Not yet implemented** |
 
 ## Quick install (Docker Compose)
@@ -58,7 +62,7 @@ mkdir -p ./data
 ./spamgate -data ./data -listen 0.0.0.0:38470
 ```
 
-A single binary embeds the entire browser UI. No external database, Node.js runtime or frontend build step is required. The daemon writes `config.json`, `events.jsonl`, and `quarantine/` beneath the data directory. Take consistent backups of that directory and protect it as sensitive information.
+A single binary embeds the entire browser UI. No external database, Node.js runtime or frontend build step is required. The daemon writes `config.json`, `events.jsonl`, `bayes.json`, `fuzzy.json`, `neural.json`, and `quarantine/` beneath the data directory (learning files appear once trained). Take consistent backups of that directory and protect it as sensitive information.
 
 ## Scan an email using the API
 

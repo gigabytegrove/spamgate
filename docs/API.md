@@ -21,6 +21,12 @@ API root: `/api/v1`. All responses except export and static assets are JSON. Aut
 | GET | `/api/v1/config` | Admin or mailbox | Settings, rules and redacted accounts/tokens |
 | GET | `/api/v1/bayes/stats` | Admin | Training sample counts, vocabulary size and readiness |
 | POST | `/api/v1/bayes/train?label=spam` or `label=ham` | Admin | Raw RFC 5322 .eml file, max 10 MiB; persists a confirmed model sample |
+| GET | `/api/v1/fuzzy/stats` | Admin | Active local near-duplicate fingerprints by class |
+| GET | `/api/v1/fuzzy/entries` | Admin | Active fingerprint entries (ID, hashed signature, class, age) |
+| POST | `/api/v1/fuzzy/train?label=spam` or `label=ham` | Admin | Raw `.eml` sample, 10 MiB max, at least 18 words; idempotent |
+| DELETE | `/api/v1/fuzzy/entries/{id}` | Admin | Remove one trained reference by its fingerprint ID |
+| GET | `/api/v1/neural/stats` | Admin | Count of confirmed historical messages used by local network |
+| POST | `/api/v1/neural/train/{id}?label=spam` or `label=ham` | Admin | Train on existing history record's scoring symbols, once per ID |
 | GET | `/api/v1/signals` | Authenticated | List every built-in detector with default and effective weights |
 | PUT | `/api/v1/signals/{symbol}` | Admin | JSON `score` (-100 to 100), `enabled` (boolean); future scans only |
 | PUT | `/api/v1/settings` | Admin | Update policy thresholds and retention |
@@ -73,3 +79,7 @@ Supported `kind` values: `sender_email`, `sender_domain`, `recipient_email`, `cl
 ## Error model
 
 Non-2xx errors use `{"error":"human-readable explanation"}`. Common status codes: 400 bad data; 401 unauthenticated; 403 insufficient permission; 404 not found; 409 conflict; 413 too large; 429 login throttled; 502 upstream relay problem; 503 storage or setup not ready. These endpoints are subject to change while the API is alpha.
+
+## Learning safety
+
+Bayes, fuzzy and neural training all require administrator authorization and browser CSRF protection. They modify future scoring, not previous decisions. `fuzzy.json` fingerprints expire after 90 days; neural samples are keyed by historical message IDs and cannot currently be individually unlearned without resetting the model from backup. Neural signals deliberately exclude `NEURAL_*` and `FUZZY_*` symbols to prevent self-reinforcing training. All three datasets are considered sensitive; protect backups and use the Web UI to manage signals and fingerprints. Do not automatically train on delivery decisions.

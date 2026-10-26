@@ -7,10 +7,10 @@ The engine MUST preserve the source and numerical weight of every verdict. The f
 | SPF | **Working limited implementation** | Envelope domain, DNS mechanism, result | RFC macro expansion, `ptr` policy, DNS timeout/error vector suite, HELO from every connector |
 | DKIM | **Working limited verification** | Signature result, selector, signed domain, algorithm | More RFC vectors, signing-policy tags, all canonicalization edge cases, test with real MTAs |
 | DMARC | **Exact-domain subset** | Policy, From domain, SPF/DKIM alignment | Public suffix aware organizational fallback, subdomain policy, PSD DMARC, detailed aggregate reporting |
-| ARC | **Not implemented** | None | Full RFC 8617 chain validation, sealer and trust policy |
+| ARC | **Structure-only diagnostics** | Triple completeness, numbering, claimed cv status (weight zero) | Cryptographic AMS/AS verification, sealing and trust policy |
 | Bayesian learning | **Local classifier and admin training UI implemented** | Probability, class count, feature vocabulary size | Sample-level unlearning, rollback, poisoning protection, decay, mailbox corpora and evaluation suite |
-| Fuzzy matching | **Not implemented** | None | Local fingerprint store, hash similarity, clustering, expiry and distributed exchange |
-| Neural scoring | **Not implemented** | None | Optional on-prem inference model with strict latency and CPU budgets, management UI and feature provenance |
+| Fuzzy matching | **Local trained SimHash implemented** | Similarity, sample ID, class, 90-day retention | Distributed Rspamd fuzzy protocol, feature tuning, robust false-positive evaluation |
+| Neural scoring | **Manual symbol-based neural classifier implemented** | Class probability, training counts, symbol features, admin feedback | Drift detection, rollback/retrain, model evaluation, compatibility with Rspamd KANN models |
 | Antivirus | **ClamAV INSTREAM implemented, optional** | Malware signature and forced rejection | ICAP/vendor integrations, archive policies, deeper MIME attachment extraction, malware event analytics |
 | URL/DNSBL | **Limited built-ins** | Explicit URL/DNSBL source | RHSBL/URIBL/SURBL, response code semantics, safe DNS query cache |
 | Rspamd HTTP | **Subset implementation** | Named symbol list in compatibility JSON | `/checkv3`, flags/controller parity, uncompressed/compressed body transforms |

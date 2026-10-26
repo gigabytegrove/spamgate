@@ -1,6 +1,6 @@
 # Protocol listeners and port isolation
 
-SpamGate uses four **distinct** listeners. Defaults are chosen to reduce accidental collisions with other mail software; they are unregistered TCP ports and can still be occupied by another program. All bind addresses are configurable. The process stops on listener-bind failure. Never point public SMTP traffic directly at the Milter or HTTP scan port.
+SpamGate uses five **distinct** listeners. Defaults are chosen to reduce accidental collisions with other mail software; they are unregistered TCP ports and can still be occupied by another program. All bind addresses are configurable. The process stops on listener-bind failure. Never point public SMTP traffic directly at the Milter or HTTP scan port.
 
 | Service | Port | Enablement | Access control | Enforcement |
 |---|---:|---|---|---|
@@ -8,6 +8,7 @@ SpamGate uses four **distinct** listeners. Defaults are chosen to reduce acciden
 | Rspamd-style HTTP worker | **38471** | Set `SPAMGATE_RSPAMD_LISTEN` | `SPAMGATE_RSPAMD_TRUSTED_CIDRS`, optional `SPAMGATE_RSPAMD_TOKEN` | Returns verdict to caller; caller applies action |
 | Milter worker | **38472** | Set `SPAMGATE_MILTER_LISTEN` | Mandatory `SPAMGATE_MILTER_TRUSTED_CIDRS` | Reject, MTA-side quarantine, or header addition over Milter protocol |
 | SMTP content filter | **38473** | Set `SPAMGATE_SMTP_LISTEN` plus upstream relay configuration | Mandatory `SPAMGATE_SMTP_TRUSTED_CIDRS` and accepted domains | Relays accepted mail, rejects spam and holds quarantine |
+| Rspamd-style learning controller | **38474** | Set `SPAMGATE_CONTROLLER_LISTEN` | Mandatory `SPAMGATE_CONTROLLER_TOKEN` (≥24 chars) **and** `SPAMGATE_CONTROLLER_TRUSTED_CIDRS` | Admin training and read-only symbol/stat/actions queries only |
 
 Do not reuse the Web UI listener for an MTA integration. For remote exposure prefer firewalled dedicated VLAN or internal Docker networks. Management must sit behind HTTPS with `SPAMGATE_SECURE_COOKIES=true`. Filtering listeners do **not** provide TLS themselves. Never expose these raw endpoints directly to the internet. Bind to an interface accessible only to a trusted MTA or use an authenticated network tunnel.
 
@@ -53,3 +54,17 @@ Host publication in `compose.yaml` is intentionally limited to port 38470. To en
 ### Learning service
 
 The authenticated Web UI on port **38470** includes **Spam learning**, with `GET /api/v1/bayes/stats` and `POST /api/v1/bayes/train?label=ham|spam` (raw `.eml` body). Training is admin-only and protected by CSRF for browser sessions. The classifier is stored at `bayes.json` within the SpamGate data directory; this is not a separately bound TCP service.
+
+### Dedicated Rspamd-style training controller
+
+The optional controller is deliberately separate from the port 38471 scanning worker and port 38470 management API. Configure `SPAMGATE_CONTROLLER_LISTEN=0.0.0.0:38474`, a narrow `SPAMGATE_CONTROLLER_TRUSTED_CIDRS`, and a randomly generated `SPAMGATE_CONTROLLER_TOKEN` (minimum 24 characters). Keep the port private. The token is accepted as the Rspamd-style `Password:` header or `Authorization: Bearer <secret>`; it is **not** interchangeable with SpamGate management API tokens. HTTP is unencrypted, so use a private tunnel/network. Unlike mail scanning, controller operations modify model state.
+
+Implemented: `GET /ping`, `/stat`, `/actions`, `/symbols`; `POST /learnspam`, `/learnham` with raw RFC 5322 content. Learning goes to SpamGate's persistent Bayes classifier; it does **not** imply compatibility with Rspamd model files. Other Rspamd controller commands (including `/fuzzyadd`, `/fuzzydel`, `/statreset`, settings maps, neural training, policy mutations) remain unsupported and return 404. These response objects are SpamGate-specific subsets, not full Rspamd controller JSON parity. **Do not point an existing Rspamd controller client at this endpoint without checking its expectations.**
+
+### Fuzzy, neural and ARC status
+
+Fuzzy: administrator-trained ordered four-word shingles produce a 64-bit SimHash; matches require a small Hamming distance and similar message length. Fingerprints persist as `fuzzy.json`, expire in 90 days, cap at 2,500 entries, and support deletion through the Web UI. No original message body is stored in this corpus. This is not Rspamd distributed fuzzy hash protocol parity.
+
+Neural: a small local feed-forward classifier observes the combination of previously detected scoring symbols. Admins can explicitly label previously scanned message history as spam or legitimate. It uses one 12-neuron hidden layer, 128 hashed symbol inputs, idempotent training and readiness after 10 examples per class. Model weights and the IDs of trained messages live in `neural.json`; there is no autotraining or third-party ML service. This is not Rspamd's KANN model serialization.
+
+ARC: header-chain structure is inspected for complete consecutive triples and `cv` sequence, but **ARC-Message-Signature and ARC-Seal are not cryptographically verified**. Status `ARC_UNVERIFIED` is informational only, with zero default score. No ARC authentication pass is ever emitted.

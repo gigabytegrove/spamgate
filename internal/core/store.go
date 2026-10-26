@@ -22,6 +22,8 @@ type Store struct {
 	cfg      Config
 	messages map[string]Message
 	bayes    BayesModel
+	fuzzy    []FuzzyEntry
+	neural   NeuralModel
 	order    []string
 }
 
@@ -49,6 +51,12 @@ func Open(dir string) (*Store, error) {
 		return nil, err
 	}
 	if err := s.loadBayes(); err != nil {
+		return nil, err
+	}
+	if err := s.loadFuzzy(); err != nil {
+		return nil, err
+	}
+	if err := s.loadNeural(); err != nil {
 		return nil, err
 	}
 	f, err := os.Open(filepath.Join(dir, "events.jsonl"))

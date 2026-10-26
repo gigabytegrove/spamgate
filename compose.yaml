@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: spamgate:0.2.0-alpha.2
+    image: spamgate:0.3.0-alpha.1
     restart: unless-stopped
     init: true
     ports:
@@ -14,12 +14,17 @@ services:
       # - "${SPAMGATE_RSPAMD_PORT:-38471}:38471"
       # - "${SPAMGATE_MILTER_PORT:-38472}:38472"
       # - "${SPAMGATE_SMTP_PORT:-38473}:38473"
+      # Controller/training port: admin-only, strict CIDR + secret, disabled by default.
+      # - "${SPAMGATE_CONTROLLER_PORT:-38474}:38474"
     environment:
       # Never enable an MTA-facing listener without restricting inbound networks.
       # SPAMGATE_RSPAMD_LISTEN: "0.0.0.0:38471"
       # SPAMGATE_RSPAMD_TRUSTED_CIDRS: "192.0.2.10/32"
       # SPAMGATE_MILTER_LISTEN: "0.0.0.0:38472"
       # SPAMGATE_MILTER_TRUSTED_CIDRS: "192.0.2.10/32"
+      # SPAMGATE_CONTROLLER_LISTEN: "0.0.0.0:38474"
+      # SPAMGATE_CONTROLLER_TRUSTED_CIDRS: "192.0.2.10/32"
+      # SPAMGATE_CONTROLLER_TOKEN: "${SPAMGATE_CONTROLLER_TOKEN:?Set a random secret before enabling controller}"
       SPAMGATE_SECURE_COOKIES: "${SPAMGATE_SECURE_COOKIES:-false}"
       # The SMTP settings below are intentionally not populated; no mail-flow changes on install.
       # SPAMGATE_SMTP_LISTEN: "0.0.0.0:38473"

@@ -184,6 +184,12 @@ func (s *Server) Router() http.Handler {
 	m.HandleFunc("GET /api/v1/signals", s.signals)
 	m.HandleFunc("GET /api/v1/bayes/stats", s.bayesStats)
 	m.HandleFunc("POST /api/v1/bayes/train", s.bayesTrain)
+	m.HandleFunc("GET /api/v1/fuzzy/stats", s.fuzzyStats)
+	m.HandleFunc("GET /api/v1/fuzzy/entries", s.fuzzyEntries)
+	m.HandleFunc("POST /api/v1/fuzzy/train", s.fuzzyTrain)
+	m.HandleFunc("DELETE /api/v1/fuzzy/entries/{id}", s.fuzzyDelete)
+	m.HandleFunc("GET /api/v1/neural/stats", s.neuralStats)
+	m.HandleFunc("POST /api/v1/neural/train/{id}", s.neuralTrain)
 	m.HandleFunc("PUT /api/v1/signals/{symbol}", s.updateSignal)
 	m.HandleFunc("PUT /api/v1/settings", s.settings)
 	m.HandleFunc("POST /api/v1/rules", s.addRule)
@@ -950,6 +956,81 @@ func (s *Server) bayesTrain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stats, err := s.Store.TrainBayes(raw, label)
+	if err != nil {
+		fail(w, 400, err.Error())
+		return
+	}
+	jsonReply(w, 200, stats)
+}
+
+// All learning mutations are administrator-only. They are deliberately
+// separate from the trusted, MTA-facing HTTP scanner.
+func (s *Server) fuzzyStats(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.authorized(w, r, true, false); !ok {
+		return
+	}
+	jsonReply(w, 200, s.Store.FuzzyStats())
+}
+func (s *Server) fuzzyEntries(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.authorized(w, r, true, false); !ok {
+		return
+	}
+	jsonReply(w, 200, s.Store.FuzzyEntries())
+}
+func (s *Server) fuzzyTrain(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.authorized(w, r, true, true); !ok {
+		return
+	}
+	label := r.URL.Query().Get("label")
+	if label != "spam" && label != "ham" {
+		fail(w, 400, "Training label must be spam or ham")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		fail(w, 413, "Training sample exceeds 10 MiB")
+		return
+	}
+	entry, err := s.Store.TrainFuzzy(raw, label)
+	if err != nil {
+		fail(w, 400, err.Error())
+		return
+	}
+	jsonReply(w, 200, entry)
+}
+func (s *Server) fuzzyDelete(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.authorized(w, r, true, true); !ok {
+		return
+	}
+	err := s.Store.DeleteFuzzy(r.PathValue("id"))
+	if err != nil {
+		fail(w, 404, err.Error())
+		return
+	}
+	jsonReply(w, 200, map[string]bool{"removed": true})
+}
+func (s *Server) neuralStats(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.authorized(w, r, true, false); !ok {
+		return
+	}
+	jsonReply(w, 200, s.Store.NeuralStats())
+}
+func (s *Server) neuralTrain(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.authorized(w, r, true, true); !ok {
+		return
+	}
+	label := r.URL.Query().Get("label")
+	if label != "spam" && label != "ham" {
+		fail(w, 400, "Training label must be spam or ham")
+		return
+	}
+	id := r.PathValue("id")
+	if len(id) != 32 {
+		fail(w, 400, "Invalid message ID")
+		return
+	}
+	stats, err := s.Store.TrainNeural(id, label)
 	if err != nil {
 		fail(w, 400, err.Error())
 		return

@@ -347,6 +347,15 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (Message, error) {
 			add("R_DKIM_REJECT", "auth/dkim/"+dkim.Domain, dkim.Detail, 2)
 		}
 	}
+	// Structural ARC evidence is informational only. Never promote an ARC
+	// "cv=pass" claim to authentication without cryptographic verification.
+	arc := CheckARCStructure(in.Raw)
+	switch arc.Status {
+	case "malformed":
+		add("ARC_MALFORMED", "auth/arc", arc.Detail, 0)
+	case "unverified":
+		add("ARC_UNVERIFIED", "auth/arc", arc.Detail, 0)
+	}
 	dmarc := DMARCCheck(ctx, s.Resolver, parsed.Header.Get("From"), spf, dkimResults)
 	switch dmarc.Result {
 	case "pass":
@@ -370,6 +379,22 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (Message, error) {
 		}
 		if bayes.Probability <= 0.05 {
 			add("BAYES_HAM", "learning/bayes", fmt.Sprintf("%.1f%% spam probability (%d spam / %d ham samples)", bayes.Probability*100, bayes.Spam, bayes.Ham), -2)
+		}
+	}
+	if fuzzy, err := s.Store.ScoreFuzzy(in.Raw); err == nil && fuzzy.Matched {
+		detail := fmt.Sprintf("near-duplicate of trained %s sample %s (similarity %.1f%%, distance %d/64)", fuzzy.Label, fuzzy.ID, fuzzy.Similarity*100, fuzzy.Distance)
+		if fuzzy.Label == "spam" {
+			add("FUZZY_SPAM", "learning/fuzzy/"+fuzzy.ID, detail, 6)
+		} else {
+			add("FUZZY_HAM", "learning/fuzzy/"+fuzzy.ID, detail, -3)
+		}
+	}
+	if neural := s.Store.ScoreNeural(findings); neural.Ready {
+		if neural.Probability >= 0.9 {
+			add("NEURAL_SPAM", "learning/neural", fmt.Sprintf("%.1f%% spam probability, manually trained on %d messages", neural.Probability*100, neural.Ham+neural.Spam), 3)
+		}
+		if neural.Probability <= 0.1 {
+			add("NEURAL_HAM", "learning/neural", fmt.Sprintf("%.1f%% spam probability, manually trained on %d messages", neural.Probability*100, neural.Ham+neural.Spam), -2)
 		}
 	}
 	malware, avErr := ClamAVScan(ctx, in.Raw)

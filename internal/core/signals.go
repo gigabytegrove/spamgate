@@ -38,6 +38,10 @@ func BuiltinCatalog() []SignalDefinition {
 		{Symbol: "MANY_LINK_DOMAINS", Source: "builtin/url", Description: "Message contains more than eight distinct linked domains", DefaultScore: 2},
 	}
 	definitions = append(definitions,
+		SignalDefinition{Symbol: "FUZZY_SPAM", Source: "learning/fuzzy", Description: "Near-duplicate of administrator-trained spam (90-day retention)", DefaultScore: 6},
+		SignalDefinition{Symbol: "FUZZY_HAM", Source: "learning/fuzzy", Description: "Near-duplicate of administrator-trained legitimate message", DefaultScore: -3},
+		SignalDefinition{Symbol: "NEURAL_SPAM", Source: "learning/neural", Description: "Neural network predicts spam from historical detection symbols", DefaultScore: 3},
+		SignalDefinition{Symbol: "NEURAL_HAM", Source: "learning/neural", Description: "Neural network predicts legitimate mail from historical detection symbols", DefaultScore: -2},
 		SignalDefinition{Symbol: "BAYES_SPAM", Source: "learning/bayes", Description: "Locally trained Bayesian spam probability >=95%", DefaultScore: 3.5},
 		SignalDefinition{Symbol: "BAYES_HAM", Source: "learning/bayes", Description: "Locally trained Bayesian spam probability <=5%", DefaultScore: -2},
 	)
@@ -48,6 +52,8 @@ func BuiltinCatalog() []SignalDefinition {
 		SignalDefinition{Symbol: "R_SPF_PERMERROR", Source: "auth/spf", Description: "Invalid SPF DNS policy", DefaultScore: 1},
 		SignalDefinition{Symbol: "R_DKIM_ALLOW", Source: "auth/dkim", Description: "Cryptographically valid DKIM signature", DefaultScore: -1},
 		SignalDefinition{Symbol: "R_DKIM_REJECT", Source: "auth/dkim", Description: "Present DKIM signature failed verification", DefaultScore: 2},
+		SignalDefinition{Symbol: "ARC_MALFORMED", Source: "auth/arc", Description: "ARC chain header structure invalid (informational; not cryptographic validation)", DefaultScore: 0},
+		SignalDefinition{Symbol: "ARC_UNVERIFIED", Source: "auth/arc", Description: "ARC header chain present, not cryptographically validated", DefaultScore: 0},
 		SignalDefinition{Symbol: "DMARC_PASS", Source: "auth/dmarc", Description: "From-domain aligned SPF or DKIM", DefaultScore: -1},
 		SignalDefinition{Symbol: "DMARC_FAIL", Source: "auth/dmarc", Description: "Exact-domain DMARC policy authentication failed (base weight; multiplied by policy)", DefaultScore: 1},
 		SignalDefinition{Symbol: "DMARC_PERMERROR", Source: "auth/dmarc", Description: "Invalid DMARC policy", DefaultScore: 1},

@@ -17,7 +17,7 @@
 | Correlated composite symbols and exclusion rules | NEXT |
 | Per-recipient verdicts, quarantine policies and SMTP transaction splitting | NEXT |
 | Built-in detector scoring overrides and enable/disable management | DONE |
-| Full RFC 7208 SPF / RFC 6376 DKIM / RFC 7489 DMARC / RFC 8617 ARC | NEXT (SPF/DKIM + exact-domain DMARC subsets implemented; ARC outstanding) |
+| Full RFC 7208 SPF / RFC 6376 DKIM / RFC 7489 DMARC / RFC 8617 ARC | NEXT (SPF/DKIM + exact-domain DMARC subsets implemented; ARC structural diagnostics added; cryptographic ARC outstanding) |
 | Envelope validation, Received-chain trust, HELO/FQDN/MX/PTR consistency, DNSSEC awareness | NEXT |
 | MIME robustness, attachment/content disarm, archive recursion limits, signature detection | NEXT |
 | URI/domain/IDN homograph and phishing heuristics, URL shortener expansion, safe URL reputation | NEXT |
@@ -25,8 +25,8 @@
 | Spam traps, disposable domains, age/reputation, per-ASN/country/location intelligence | NEXT |
 | Greylisting and rate limits (IP/sender/recipient/domain), retry compliance and backoff | NEXT |
 | Bayesian/Naive Bayes classifier with user-level ham/spam learning | NEXT (persistent global training and admin UI implemented; user-level corpora and unlearning pending) |
-| Fuzzy hashes, similarity graph, recurrent-campaign correlation | NEXT |
-| Optional neural/ML and configurable model backends without cloud dependency | NEXT |
+| Fuzzy hashes, similarity graph, recurrent-campaign correlation | NEXT (local trained near-duplicate SimHash implemented; graph and distributed protocols outstanding) |
+| Optional neural/ML and configurable model backends without cloud dependency | NEXT (local manually trained symbol neural model implemented; external backends and evaluation outstanding) |
 | Antivirus integrations (ClamAV, ICAP, vendor APIs) | NEXT (ClamAV INSTREAM implemented; ICAP/vendors outstanding) |
 | Rules-as-code import/export, signed rulesets, versioning, staged rollout, rollback | LATER |
 | Rule package marketplace/community feeds with trust/expiry/reputation | LATER |
@@ -66,7 +66,7 @@
 | Live traffic stream, health probes, connector status, response time histograms | NEXT |
 | Quarantine expiry, delete/restore, search, safe preview with sanitized HTML | NEXT |
 | Digest emails, user release requests, shared mailbox moderation, approval workflows | NEXT |
-| One-click learn ham/spam, mailbox-specific and global feedback training | NEXT |
+| One-click learn ham/spam, mailbox-specific and global feedback training | NEXT (administrator neural feedback from history and global fuzzy/Bayes training implemented; mailbox-specific training outstanding) |
 | Role permissions (admin/operator/auditor/support/user), SSO/OIDC/MFA/passkeys | NEXT |
 | LDAP/AD/IMAP login with aliases and group mapping | LATER (deferred) |
 | In-console integrations wizard with MTA autoconfiguration diagnostics | NEXT |

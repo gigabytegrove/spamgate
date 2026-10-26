@@ -46,6 +46,10 @@ func run() error {
 	if e != nil {
 		return e
 	}
+	controller, e := transport.ControllerFromEnv(store)
+	if e != nil {
+		return e
+	}
 	milterWorker, e := transport.MilterFromEnv(store)
 	if e != nil {
 		return e
@@ -58,6 +62,11 @@ func run() error {
 		}
 		return ""
 	}(), "rspamd-http"}, {func() string {
+		if controller != nil {
+			return controller.ListenAddress
+		}
+		return ""
+	}(), "rspamd-controller"}, {func() string {
 		if milterWorker != nil {
 			return milterWorker.Addr
 		}
@@ -82,13 +91,16 @@ func run() error {
 	if relay != nil {
 		srv.Deliver = relay.Send
 	}
-	errorsCh := make(chan error, 4)
+	errorsCh := make(chan error, 5)
 	go func() { errorsCh <- srv.ListenAndServe(ctx, *web) }()
 	if rspamdWorker != nil {
 		go func() { errorsCh <- rspamdWorker.Listen(ctx) }()
 	}
 	if milterWorker != nil {
 		go func() { errorsCh <- milterWorker.Listen(ctx) }()
+	}
+	if controller != nil {
+		go func() { errorsCh <- controller.Listen(ctx) }()
 	}
 	if inbound != nil {
 		go func() { errorsCh <- inbound.Listen(ctx) }()
