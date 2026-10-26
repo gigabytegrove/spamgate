@@ -1,0 +1,465 @@
+package transport
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"crypto/tls"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net"
+	"net/mail"
+	"net/smtp"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/gigabytegrove/spamgate/internal/core"
+)
+
+type Relay struct{ Address, Username, Password, TLSMode string }
+
+func RelayFromEnv() (*Relay, error) {
+	addr := os.Getenv("SPAMGATE_RELAY_ADDRESS")
+	if addr == "" {
+		return nil, nil
+	}
+	host, port, e := net.SplitHostPort(addr)
+	if e != nil || host == "" || port == "" {
+		return nil, errors.New("SPAMGATE_RELAY_ADDRESS must be host:port")
+	}
+	mode := os.Getenv("SPAMGATE_RELAY_TLS")
+	if mode == "" {
+		mode = "required"
+	}
+	if mode != "required" && mode != "implicit" && mode != "none" {
+		return nil, errors.New("SPAMGATE_RELAY_TLS must be required, implicit or none")
+	}
+	r := &Relay{Address: addr, Username: os.Getenv("SPAMGATE_RELAY_USERNAME"), Password: os.Getenv("SPAMGATE_RELAY_PASSWORD"), TLSMode: mode}
+	if r.Username != "" && mode == "none" {
+		return nil, errors.New("authentication over plaintext SMTP is forbidden")
+	}
+	return r, nil
+}
+func (r *Relay) Send(ctx context.Context, m core.Message, raw []byte) error {
+	if r == nil {
+		return errors.New("no relay configured")
+	}
+	host, _, e := net.SplitHostPort(r.Address)
+	if e != nil {
+		return e
+	}
+	d := net.Dialer{Timeout: 10 * time.Second}
+	conn, e := d.DialContext(ctx, "tcp", r.Address)
+	if e != nil {
+		return e
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(40 * time.Second))
+	if r.TLSMode == "implicit" {
+		conn = tls.Client(conn, &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12})
+		if e = conn.(*tls.Conn).HandshakeContext(ctx); e != nil {
+			return fmt.Errorf("relay TLS: %w", e)
+		}
+	}
+	client, e := smtp.NewClient(conn, host)
+	if e != nil {
+		return e
+	}
+	defer client.Close()
+	if r.TLSMode == "required" {
+		if ok, _ := client.Extension("STARTTLS"); !ok {
+			return errors.New("relay does not advertise STARTTLS")
+		}
+		if e = client.StartTLS(&tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}); e != nil {
+			return e
+		}
+	}
+	if r.Username != "" {
+		if e = client.Auth(smtp.PlainAuth("", r.Username, r.Password, host)); e != nil {
+			return e
+		}
+	}
+	sender := strings.TrimSpace(m.Sender)
+	if sender == "" {
+		sender = "<>"
+	}
+	sender = strings.Trim(sender, "<>")
+	if e = client.Mail(sender); e != nil {
+		return fmt.Errorf("relay MAIL: %w", e)
+	}
+	if len(m.Recipients) == 0 {
+		return errors.New("no recipients")
+	}
+	for _, recipient := range m.Recipients {
+		if e = client.Rcpt(recipient); e != nil {
+			return fmt.Errorf("relay RCPT: %w", e)
+		}
+	}
+	writer, e := client.Data()
+	if e != nil {
+		return e
+	}
+	if _, e = writer.Write(raw); e != nil {
+		return e
+	}
+	if e = writer.Close(); e != nil {
+		return fmt.Errorf("relay DATA: %w", e)
+	}
+	_ = client.Quit()
+	return nil
+}
+
+type SMTP struct {
+	Store   *core.Store
+	Scanner *core.Scanner
+	Relay   *Relay
+	Addr    string
+	CIDRs   []*net.IPNet
+	Domains []string
+	log     *slog.Logger
+}
+
+func SMTPFromEnv(store *core.Store, relay *Relay) (*SMTP, error) {
+	addr := os.Getenv("SPAMGATE_SMTP_LISTEN")
+	if addr == "" {
+		return nil, nil
+	}
+	if relay == nil {
+		return nil, errors.New("SMTP listener requires SPAMGATE_RELAY_ADDRESS")
+	}
+	cidrText := os.Getenv("SPAMGATE_SMTP_TRUSTED_CIDRS")
+	domainText := os.Getenv("SPAMGATE_ALLOWED_RECIPIENT_DOMAINS")
+	if cidrText == "" || domainText == "" {
+		return nil, errors.New("SMTP listener requires explicit trusted CIDRs and recipient domains")
+	}
+	s := &SMTP{Store: store, Scanner: &core.Scanner{Store: store}, Relay: relay, Addr: addr, log: slog.Default()}
+	for _, piece := range strings.Split(cidrText, ",") {
+		piece = strings.TrimSpace(piece)
+		if ip := net.ParseIP(piece); ip != nil {
+			bits := 128
+			if ip.To4() != nil {
+				bits = 32
+			}
+			piece += "/" + strconv.Itoa(bits)
+		}
+		_, network, e := net.ParseCIDR(piece)
+		if e != nil {
+			return nil, fmt.Errorf("invalid SMTP trusted CIDR: %w", e)
+		}
+		s.CIDRs = append(s.CIDRs, network)
+	}
+	for _, piece := range strings.Split(domainText, ",") {
+		piece = strings.ToLower(strings.TrimSpace(piece))
+		if piece == "" || strings.ContainsAny(piece, " @:/\\") || !strings.Contains(piece, ".") {
+			return nil, errors.New("invalid allowed recipient domain")
+		}
+		s.Domains = append(s.Domains, piece)
+	}
+	return s, nil
+}
+func (s *SMTP) Listen(ctx context.Context) error {
+	listener, e := net.Listen("tcp", s.Addr)
+	if e != nil {
+		return e
+	}
+	defer listener.Close()
+	go func() { <-ctx.Done(); _ = listener.Close() }()
+	slots := make(chan struct{}, 64)
+	s.log.Info("SMTP content filter listening", "address", s.Addr)
+	for {
+		conn, e := listener.Accept()
+		if e != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return e
+		}
+		select {
+		case slots <- struct{}{}:
+			go func() { defer func() { <-slots }(); s.handle(conn) }()
+		default:
+			_, _ = io.WriteString(conn, "421 SpamGate busy\r\n")
+			_ = conn.Close()
+		}
+	}
+}
+func (s *SMTP) allowedPeer(remote net.Addr) bool {
+	host, _, e := net.SplitHostPort(remote.String())
+	if e != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	for _, n := range s.CIDRs {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+func (s *SMTP) allowedRecipient(address string) bool {
+	p := strings.LastIndex(address, "@")
+	if p < 0 {
+		return false
+	}
+	domain := strings.ToLower(address[p+1:])
+	for _, d := range s.Domains {
+		if domain == d {
+			return true
+		}
+	}
+	return false
+}
+func parseAddress(line, prefix string) (string, error) {
+	if !strings.HasPrefix(strings.ToUpper(line), prefix) {
+		return "", errors.New("syntax")
+	}
+	value := strings.TrimSpace(line[len(prefix):])
+	if strings.HasPrefix(value, "<") {
+		end := strings.IndexByte(value, '>')
+		if end < 0 {
+			return "", errors.New("missing >")
+		}
+		value = value[1:end]
+	} else {
+		fields := strings.Fields(value)
+		if len(fields) == 0 {
+			return "", errors.New("empty address")
+		}
+		value = fields[0]
+	}
+	if strings.ContainsAny(value, "\r\n ") || len(value) > 254 {
+		return "", errors.New("invalid address")
+	}
+	if value != "" {
+		if _, e := mail.ParseAddress(value); e != nil {
+			return "", e
+		}
+	}
+	return value, nil
+}
+func readLineLimited(reader *bufio.Reader, limit int) ([]byte, error) {
+	var out []byte
+	for {
+		part, e := reader.ReadSlice('\n')
+		if len(out)+len(part) > limit {
+			return nil, errors.New("SMTP line too long")
+		}
+		out = append(out, part...)
+		if e == nil {
+			return out, nil
+		}
+		if !errors.Is(e, bufio.ErrBufferFull) {
+			return nil, e
+		}
+	}
+}
+func (s *SMTP) handle(conn net.Conn) {
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(4 * time.Minute))
+	reader := bufio.NewReaderSize(conn, 64*1024)
+	writer := bufio.NewWriter(conn)
+	reply := func(code int, msg string) { _, _ = fmt.Fprintf(writer, "%d %s\r\n", code, msg); _ = writer.Flush() }
+	if !s.allowedPeer(conn.RemoteAddr()) {
+		reply(554, "5.7.1 Client network not trusted")
+		return
+	}
+	reply(220, "SpamGate ESMTP filtering gateway ready")
+	var sender string
+	var recipients []string
+	greeted := false
+	mailIssued := false
+	for commands := 0; commands < 500; commands++ {
+		lineBytes, e := readLineLimited(reader, 4096)
+		line := string(lineBytes)
+		if e != nil {
+			return
+		}
+		if len(line) > 4096 {
+			reply(500, "5.5.2 Command line too long")
+			return
+		}
+		line = strings.TrimSpace(line)
+		if line == "" {
+			reply(500, "5.5.2 Empty command")
+			continue
+		}
+		upper := strings.ToUpper(line)
+		switch {
+		case strings.HasPrefix(upper, "EHLO "):
+			greeted = true
+			mailIssued = false
+			sender = ""
+			recipients = nil
+			_, _ = io.WriteString(writer, "250-SpamGate\r\n250-8BITMIME\r\n250 SIZE 10485760\r\n")
+			_ = writer.Flush()
+		case strings.HasPrefix(upper, "HELO "):
+			greeted = true
+			mailIssued = false
+			sender = ""
+			recipients = nil
+			reply(250, "SpamGate")
+		case upper == "NOOP":
+			reply(250, "2.0.0 OK")
+		case upper == "RSET":
+			mailIssued = false
+			sender = ""
+			recipients = nil
+			reply(250, "2.0.0 Reset")
+		case upper == "QUIT":
+			reply(221, "2.0.0 Bye")
+			return
+		case strings.HasPrefix(upper, "MAIL FROM:"):
+			if !greeted {
+				reply(503, "5.5.1 HELO first")
+				continue
+			}
+			addr, e := parseAddress(line, "MAIL FROM:")
+			if e != nil {
+				reply(501, "5.1.7 Invalid sender")
+				continue
+			}
+			sender = addr
+			mailIssued = true
+			recipients = nil
+			reply(250, "2.1.0 Sender accepted")
+		case strings.HasPrefix(upper, "RCPT TO:"):
+			if !greeted {
+				reply(503, "5.5.1 HELO first")
+				continue
+			}
+			if !mailIssued {
+				reply(503, "5.5.1 Need MAIL FROM first")
+				continue
+			}
+			addr, e := parseAddress(line, "RCPT TO:")
+			if e != nil || addr == "" {
+				reply(501, "5.1.3 Invalid recipient")
+				continue
+			}
+			if !s.allowedRecipient(addr) {
+				reply(550, "5.7.1 Relaying denied for recipient domain")
+				continue
+			}
+			if len(recipients) >= 100 {
+				reply(452, "4.5.3 Too many recipients")
+				continue
+			}
+			recipients = append(recipients, addr)
+			reply(250, "2.1.5 Recipient accepted")
+		case upper == "DATA":
+			if !s.Store.Config().SetupComplete {
+				reply(451, "4.3.0 SpamGate requires initial setup")
+				continue
+			}
+			if !mailIssued || len(recipients) == 0 {
+				reply(503, "5.5.1 Need RCPT TO first")
+				continue
+			}
+			reply(354, "End data with <CR><LF>.<CR><LF>")
+			var raw bytes.Buffer
+			tooLarge := false
+			terminated := false
+			for {
+				part, e := readLineLimited(reader, 16*1024)
+				if e != nil {
+					return
+				}
+				if bytes.Equal(part, []byte(".\r\n")) || bytes.Equal(part, []byte(".\n")) {
+					terminated = true
+					break
+				}
+				if len(part) > 0 && part[0] == '.' {
+					part = part[1:]
+				}
+				if raw.Len()+len(part) > 10<<20 {
+					tooLarge = true
+				} else if !tooLarge {
+					raw.Write(part)
+				}
+			}
+			if !terminated || tooLarge {
+				reply(552, "5.3.4 Message too large")
+				sender = ""
+				mailIssued = false
+				recipients = nil
+				continue
+			}
+			clientIP, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
+			m, e := s.Scanner.Scan(context.Background(), core.Input{Raw: raw.Bytes(), Sender: sender, Recipients: recipients, ClientIP: clientIP, Connector: "smtp"})
+			if e != nil {
+				reply(550, "5.6.0 Invalid message")
+				sender = ""
+				mailIssued = false
+				recipients = nil
+				continue
+			}
+			if m.Action == "quarantine" {
+				if e = s.Store.Quarantine(m.ID, raw.Bytes()); e != nil {
+					reply(451, "4.3.0 Could not save quarantine")
+					continue
+				}
+			}
+			if m.Action == "reject" {
+				m.Delivery = "rejected"
+				if e = s.Store.Save(m); e != nil {
+					reply(451, "4.3.0 Cannot write audit log")
+				} else {
+					reply(550, "5.7.1 Rejected by SpamGate id="+m.ID)
+				}
+				sender = ""
+				mailIssued = false
+				recipients = nil
+				continue
+			}
+			if m.Action == "quarantine" {
+				m.Delivery = "quarantined"
+				if e = s.Store.Save(m); e != nil {
+					reply(451, "4.3.0 Cannot write audit log")
+				} else {
+					reply(250, "2.0.0 Quarantined id="+m.ID)
+				}
+				sender = ""
+				mailIssued = false
+				recipients = nil
+				continue
+			}
+			m.Delivery = "pending"
+			if e = s.Store.Save(m); e != nil {
+				reply(451, "4.3.0 Cannot write audit log")
+				sender = ""
+				mailIssued = false
+				recipients = nil
+				continue
+			}
+			outgoing := raw.Bytes()
+			if m.Action == "tag" {
+				prefix := fmt.Sprintf("X-SpamGate-Result: tag\r\nX-SpamGate-Score: %.2f\r\nX-SpamGate-ID: %s\r\n", m.Score, m.ID)
+				outgoing = append([]byte(prefix), outgoing...)
+			}
+			relayCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+			e = s.Relay.Send(relayCtx, m, outgoing)
+			cancel()
+			if e != nil {
+				s.log.Error("SMTP relay failure", "id", m.ID, "error", e)
+				m.Delivery = "relay_failed"
+				_ = s.Store.Save(m)
+				reply(451, "4.4.1 Upstream delivery unavailable")
+			} else {
+				m.Delivery = "relayed"
+				if saveErr := s.Store.Save(m); saveErr != nil {
+					s.log.Error("post-delivery audit update failed", "id", m.ID, "error", saveErr)
+				}
+				reply(250, "2.0.0 Accepted id="+m.ID)
+			}
+			sender = ""
+			recipients = nil
+		default:
+			reply(502, "5.5.1 Command not supported")
+		}
+	}
+	reply(421, "4.5.3 Too many commands")
+}

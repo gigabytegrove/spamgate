@@ -1,0 +1,40 @@
+services:
+  spamgate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: spamgate:0.1.0-alpha.1
+    restart: unless-stopped
+    init: true
+    ports:
+      # For private-network testing. Put behind HTTPS reverse proxy for remote management.
+      - "${SPAMGATE_WEB_PORT:-8080}:8080"
+      # SMTP filtering is DISABLED unless its required environment is configured.
+      # For SMTP access add a port mapping restricted to trusted mail servers.
+    expose:
+      - "2525"
+    environment:
+      SPAMGATE_SECURE_COOKIES: "${SPAMGATE_SECURE_COOKIES:-false}"
+      # The SMTP settings below are intentionally not populated; no mail-flow changes on install.
+      # SPAMGATE_SMTP_LISTEN: "0.0.0.0:2525"
+      # SPAMGATE_SMTP_TRUSTED_CIDRS: "192.0.2.10/32"
+      # SPAMGATE_ALLOWED_RECIPIENT_DOMAINS: "example.org"
+      # SPAMGATE_RELAY_ADDRESS: "mail-relay.example.org:587"
+      # SPAMGATE_RELAY_TLS: "required"
+    volumes:
+      - spamgate-data:/var/lib/spamgate
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+volumes:
+  spamgate-data:

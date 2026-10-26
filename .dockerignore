@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+.env.*
+data
+var
+*.log
+*.eml
+*.db
+*.sqlite*
+*.jsonl
+*.zip
+*.tar.gz
+README.md
+docs

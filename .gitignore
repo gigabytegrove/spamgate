@@ -1,0 +1,22 @@
+# Sensitive persistent state
+/data/
+/var/
+*.eml
+*.db
+*.sqlite*
+*.jsonl
+.env
+.env.*
+!.env.example
+# Binaries, logs and local tooling
+/spamgate
+/spamgate.exe
+/spamgate.test
+*.log
+*.out
+.coverage/
+coverage.out
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
