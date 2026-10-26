@@ -182,6 +182,8 @@ func (s *Server) Router() http.Handler {
 	m.HandleFunc("GET /api/v1/export", s.export)
 	m.HandleFunc("GET /api/v1/config", s.config)
 	m.HandleFunc("GET /api/v1/signals", s.signals)
+	m.HandleFunc("GET /api/v1/bayes/stats", s.bayesStats)
+	m.HandleFunc("POST /api/v1/bayes/train", s.bayesTrain)
 	m.HandleFunc("PUT /api/v1/signals/{symbol}", s.updateSignal)
 	m.HandleFunc("PUT /api/v1/settings", s.settings)
 	m.HandleFunc("POST /api/v1/rules", s.addRule)
@@ -924,4 +926,33 @@ func (s *Server) updateSignal(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	fail(w, 500, "Signal configuration unavailable")
+}
+
+func (s *Server) bayesStats(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.authorized(w, r, true, false); !ok {
+		return
+	}
+	jsonReply(w, 200, s.Store.BayesStats())
+}
+func (s *Server) bayesTrain(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.authorized(w, r, true, true); !ok {
+		return
+	}
+	label := r.URL.Query().Get("label")
+	if label != "ham" && label != "spam" {
+		fail(w, 400, "Training label must be ham or spam")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		fail(w, 413, "Training message exceeds 10 MiB")
+		return
+	}
+	stats, err := s.Store.TrainBayes(raw, label)
+	if err != nil {
+		fail(w, 400, err.Error())
+		return
+	}
+	jsonReply(w, 200, stats)
 }

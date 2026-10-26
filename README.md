@@ -2,7 +2,7 @@
 
 **Explainable mail filtering, policy management and quarantine — written in Go.**
 
-SpamGate is a new Gigabyte Grove mail-security platform designed to replace the operational role of Rspamd over time, not a finished drop-in Rspamd clone. **Current development build: `0.2.0-alpha.1` (source).** It has a working scoring engine, browser control desk, persistent audit history and separate SMTP, Rspamd-HTTP and Milter integration modes. Milter and Rspamd-style HTTP now have tested protocol subsets; SPF, DKIM, exact-domain DMARC and optional ClamAV have initial implementations. **Full protocol parity, ARC, Bayesian learning, fuzzy matching and neural detection are not yet implemented.** Do **not** replace a production filter with this alpha without a controlled mail-flow and security evaluation.
+SpamGate is a new Gigabyte Grove mail-security platform designed to replace the operational role of Rspamd over time, not a finished drop-in Rspamd clone. **Current development build: `0.2.0-alpha.2` (source).** It has a working scoring engine, browser control desk, persistent audit history and separate SMTP, Rspamd-HTTP and Milter integration modes. Milter and Rspamd-style HTTP now have tested protocol subsets; SPF, DKIM, exact-domain DMARC and optional ClamAV have initial implementations. **Full protocol parity, ARC, fuzzy matching and neural detection are not yet implemented. Bayesian training now has a restricted Web UI and persistent per-installation model, but advanced anti-poisoning and sample unlearning are outstanding.** Do **not** replace a production filter with this alpha without a controlled mail-flow and security evaluation.
 
 ## What works today
 
@@ -25,7 +25,8 @@ SpamGate is a new Gigabyte Grove mail-security platform designed to replace the 
 | Rspamd HTTP `/checkv2`, `/check`, `/symbols`, `/scanv2` | Implemented subset; distinct port |
 | SPF/DKIM/DMARC | Real DNS-backed SPF and DKIM verification; exact-domain DMARC subset |
 | Antivirus | Optional ClamAV INSTREAM with fail-closed errors |
-| ARC, Bayes, fuzzy, neural, **full protocol parity** | **Not yet implemented** |
+| Bayesian ham/spam training and bounded local classification | Implemented initial model and admin UI; no sample unlearning |
+| ARC, fuzzy, neural, **full protocol parity** | **Not yet implemented** |
 | Multi-node and enterprise directory integration | **Not yet implemented** |
 
 ## Quick install (Docker Compose)

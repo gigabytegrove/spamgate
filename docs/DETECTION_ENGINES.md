@@ -8,7 +8,7 @@ The engine MUST preserve the source and numerical weight of every verdict. The f
 | DKIM | **Working limited verification** | Signature result, selector, signed domain, algorithm | More RFC vectors, signing-policy tags, all canonicalization edge cases, test with real MTAs |
 | DMARC | **Exact-domain subset** | Policy, From domain, SPF/DKIM alignment | Public suffix aware organizational fallback, subdomain policy, PSD DMARC, detailed aggregate reporting |
 | ARC | **Not implemented** | None | Full RFC 8617 chain validation, sealer and trust policy |
-| Bayesian learning | **Not implemented** | None | Train/retrain UI, mailbox/global corpora, ham/spam rollback, poisoning protection and decay |
+| Bayesian learning | **Local classifier and admin training UI implemented** | Probability, class count, feature vocabulary size | Sample-level unlearning, rollback, poisoning protection, decay, mailbox corpora and evaluation suite |
 | Fuzzy matching | **Not implemented** | None | Local fingerprint store, hash similarity, clustering, expiry and distributed exchange |
 | Neural scoring | **Not implemented** | None | Optional on-prem inference model with strict latency and CPU budgets, management UI and feature provenance |
 | Antivirus | **ClamAV INSTREAM implemented, optional** | Malware signature and forced rejection | ICAP/vendor integrations, archive policies, deeper MIME attachment extraction, malware event analytics |
@@ -25,3 +25,7 @@ The engine MUST preserve the source and numerical weight of every verdict. The f
 3. Learning and intelligence: persistent Bayes training, fuzzy signatures, optional neural inference, anti-poisoning controls.
 4. Threat detection and safety: ClamAV and ICAP handling, archive limits, fail policies, asynchronous reporting and safe quarantine.
 5. Large-scale deployment: multi-node replication and enterprise directory connectors. **Deferred.**
+
+### Bayesian learning safety and privacy
+
+The administrator can upload manually confirmed spam or ham .eml samples in **Spam learning** or use `POST /api/v1/bayes/train?label=spam` / `label=ham` with an authorized admin session and CSRF protection. The on-disk `bayes.json` file persists word vocabulary and document frequencies (it does not store original message bodies). Treat this file as sensitive: **vocabulary terms can themselves contain personal information.** It is held in the protected application data directory and should be backed up alongside `config.json`. Classifier effects are disabled until at least 10 confirmed spam and 10 confirmed ham samples exist. Scores from the model are part of the historical findings, and the weights can be managed under **Built-in signals**. There is no automatic feedback training; only explicitly authorized administrators can mutate the corpus.

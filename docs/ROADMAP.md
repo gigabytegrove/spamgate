@@ -24,7 +24,7 @@
 | DNSBL/RHSBL/SURBL/URIBL, allowlists, private provider credentials, safe caching | NEXT |
 | Spam traps, disposable domains, age/reputation, per-ASN/country/location intelligence | NEXT |
 | Greylisting and rate limits (IP/sender/recipient/domain), retry compliance and backoff | NEXT |
-| Bayesian/Naive Bayes classifier with user-level ham/spam learning | NEXT |
+| Bayesian/Naive Bayes classifier with user-level ham/spam learning | NEXT (persistent global training and admin UI implemented; user-level corpora and unlearning pending) |
 | Fuzzy hashes, similarity graph, recurrent-campaign correlation | NEXT |
 | Optional neural/ML and configurable model backends without cloud dependency | NEXT |
 | Antivirus integrations (ClamAV, ICAP, vendor APIs) | NEXT (ClamAV INSTREAM implemented; ICAP/vendors outstanding) |

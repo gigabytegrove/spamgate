@@ -49,3 +49,7 @@ These mechanisms produce detailed evidence in the message inspector; DNS/service
 ### Collision and container networking
 
 Host publication in `compose.yaml` is intentionally limited to port 38470. To enable mail services, uncomment only the needed `ports` mapping and corresponding environment variables and specify a trusted address/CIDR. When changing the internal listener port, update BOTH the listen environment variable and the container port in its mapping. Check host availability with `ss -lnt` (Linux) or `netstat -ano -p tcp` (Windows) before starting. Never edit an existing mail server's live Milter settings until a dedicated integration test confirms correct responses on the new port.
+
+### Learning service
+
+The authenticated Web UI on port **38470** includes **Spam learning**, with `GET /api/v1/bayes/stats` and `POST /api/v1/bayes/train?label=ham|spam` (raw `.eml` body). Training is admin-only and protected by CSRF for browser sessions. The classifier is stored at `bayes.json` within the SpamGate data directory; this is not a separately bound TCP service.

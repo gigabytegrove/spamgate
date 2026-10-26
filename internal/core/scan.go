@@ -171,7 +171,7 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (Message, error) {
 	text, attachments, urls, hasHTML := bodyParts(parsed.Header, body, 0)
 	var findings []Finding
 	add := func(symbol, source, detail string, weight float64) {
-		if strings.HasPrefix(source, "builtin/") || strings.HasPrefix(source, "auth/") || strings.HasPrefix(source, "antivirus/") {
+		if strings.HasPrefix(source, "builtin/") || strings.HasPrefix(source, "auth/") || strings.HasPrefix(source, "antivirus/") || strings.HasPrefix(source, "learning/") {
 			if p, ok := cfg.SignalPolicies[symbol]; ok {
 				if !p.Enabled {
 					return
@@ -362,6 +362,15 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (Message, error) {
 		add("DMARC_FAIL", "auth/dmarc/"+dmarc.Domain, dmarc.Detail, weight)
 	case "permerror":
 		add("DMARC_PERMERROR", "auth/dmarc/"+dmarc.Domain, dmarc.Detail, 1)
+	}
+	bayes, bayesErr := s.Store.ScoreBayes(in.Raw)
+	if bayesErr == nil && bayes.Ready {
+		if bayes.Probability >= 0.95 {
+			add("BAYES_SPAM", "learning/bayes", fmt.Sprintf("%.1f%% spam probability (%d spam / %d ham samples)", bayes.Probability*100, bayes.Spam, bayes.Ham), 3.5)
+		}
+		if bayes.Probability <= 0.05 {
+			add("BAYES_HAM", "learning/bayes", fmt.Sprintf("%.1f%% spam probability (%d spam / %d ham samples)", bayes.Probability*100, bayes.Spam, bayes.Ham), -2)
+		}
 	}
 	malware, avErr := ClamAVScan(ctx, in.Raw)
 	if avErr != nil {

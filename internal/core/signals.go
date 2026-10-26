@@ -38,6 +38,10 @@ func BuiltinCatalog() []SignalDefinition {
 		{Symbol: "MANY_LINK_DOMAINS", Source: "builtin/url", Description: "Message contains more than eight distinct linked domains", DefaultScore: 2},
 	}
 	definitions = append(definitions,
+		SignalDefinition{Symbol: "BAYES_SPAM", Source: "learning/bayes", Description: "Locally trained Bayesian spam probability >=95%", DefaultScore: 3.5},
+		SignalDefinition{Symbol: "BAYES_HAM", Source: "learning/bayes", Description: "Locally trained Bayesian spam probability <=5%", DefaultScore: -2},
+	)
+	definitions = append(definitions,
 		SignalDefinition{Symbol: "R_SPF_ALLOW", Source: "auth/spf", Description: "Envelope domain SPF authorized client IP", DefaultScore: -1},
 		SignalDefinition{Symbol: "R_SPF_FAIL", Source: "auth/spf", Description: "Envelope domain SPF hard failure", DefaultScore: 4},
 		SignalDefinition{Symbol: "R_SPF_SOFTFAIL", Source: "auth/spf", Description: "Envelope domain SPF soft failure", DefaultScore: 1.5},

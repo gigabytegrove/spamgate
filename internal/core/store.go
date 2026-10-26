@@ -21,6 +21,7 @@ type Store struct {
 	dir      string
 	cfg      Config
 	messages map[string]Message
+	bayes    BayesModel
 	order    []string
 }
 
@@ -45,6 +46,9 @@ func Open(dir string) (*Store, error) {
 			return nil, errors.New("invalid persisted settings")
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if err := s.loadBayes(); err != nil {
 		return nil, err
 	}
 	f, err := os.Open(filepath.Join(dir, "events.jsonl"))

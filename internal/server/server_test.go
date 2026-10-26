@@ -263,3 +263,51 @@ func TestSignalPoliciesRBACAndPersistence(t *testing.T) {
 		t.Fatalf("persisted signal changed: %+v", p)
 	}
 }
+
+func TestBayesTrainingAPIAccessControl(t *testing.T) {
+	st, err := core.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateConfig(func(c *core.Config) error {
+		c.SetupComplete = true
+		c.Users = []core.User{{Name: "admin", Role: "admin"}, {Name: "mailbox", Role: "mailbox", Email: "user@example.org"}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s := New(st, nil)
+	s.sessions["admin"] = session{Identity: Identity{Name: "admin", Role: "admin", Session: true, CSRF: "correct"}, Expires: time.Now().Add(time.Hour)}
+	s.sessions["mailbox"] = session{Identity: Identity{Name: "mailbox", Role: "mailbox", Email: "user@example.org", Session: true, CSRF: "correct"}, Expires: time.Now().Add(time.Hour)}
+	sample := []byte("From: sender@example.org\r\nSubject: Verify your account now\r\n\r\nConfirm password security account identity immediately today")
+	call := func(user, csrf string) int {
+		t.Helper()
+		req := httptest.NewRequest("POST", "/api/v1/bayes/train?label=spam", bytes.NewReader(sample))
+		req.AddCookie(&http.Cookie{Name: "spamgate_session", Value: user})
+		if csrf != "" {
+			req.Header.Set("X-CSRF-Token", csrf)
+		}
+		res := httptest.NewRecorder()
+		s.Router().ServeHTTP(res, req)
+		return res.Code
+	}
+	if code := call("mailbox", "correct"); code != 403 {
+		t.Fatal("mailbox trained global classifier", code)
+	}
+	if code := call("admin", ""); code != 403 {
+		t.Fatal("missing CSRF allowed", code)
+	}
+	if code := call("admin", "correct"); code != 200 {
+		t.Fatal("admin train failed", code)
+	}
+	if st.BayesStats().Spam != 1 {
+		t.Fatal("admin training not persisted")
+	}
+	req := httptest.NewRequest("GET", "/api/v1/bayes/stats", nil)
+	req.AddCookie(&http.Cookie{Name: "spamgate_session", Value: "mailbox"})
+	out := httptest.NewRecorder()
+	s.Router().ServeHTTP(out, req)
+	if out.Code != 403 {
+		t.Fatal("mailbox read global model statistics", out.Code)
+	}
+}
