@@ -45,7 +45,7 @@ function authLayout(){const first=S.setup;return `<div class="auth-layout"><asid
 
 function layout(body){
  const selected=navigation.find(x=>x[0]===S.section)||navigation[0];
- const links=(area)=>navigation.filter(x=>x[3]===area&&permitted(x[0])).map(([id,label,path])=>`<a class="worknav-link ${id===S.section?'selected':''}" href="${path}" data-route="${id}" ${id===S.section?'aria-current="page"':''}>${esc(label)}${id===S.section?'<span aria-hidden="true">▰</span>':''}</a>`).join('');
+ const links=(area)=>navigation.filter(x=>x[3]===area&&permitted(x[0])&&!primarySections.has(x[0])).map(([id,label,path])=>`<a class="worknav-link ${id===S.section?'selected':''}" href="${path}" data-route="${id}" ${id===S.section?'aria-current="page"':''}>${esc(label)}${id===S.section?'<span aria-hidden="true">▰</span>':''}</a>`).join('');
  const queue=S.messages.filter(m=>m.delivery==='quarantined').length;
  const transports=S.runtime?.services||{};
  const active=['milter','smtp','rspamd_http'].filter(id=>transports[id]?.enabled).length;
@@ -97,9 +97,9 @@ function previewRows(rows,limit=8){return `<div class="incident-list" role="list
 function configurationStatus(){
  const services=S.runtime?.services||{};
  const enabled=['smtp','milter','rspamd_http'].filter(x=>services[x]?.enabled);
- const unknown=S.me?.role==='admin'&&!S.runtime;
+ const unknown=!S.runtime;
  const configured=enabled.length>0;
- return `<div class="integrity-strip ${configured?'configured':'attention'}"><span class="strip-symbol" aria-hidden="true">${configured?'◇':unknown?'?':'!'}</span><div><strong>${configured?'Filtering listener configured':unknown?'Listener status unavailable':'Mail protection is not yet configured'}</strong><p>${configured?`The application has ${enabled.length} MTA-facing listener${enabled.length===1?'':'s'} configured. This does not confirm external mail delivery or healthy upstream routing.`:unknown?'SpamGate could not verify the currently configured listeners. Check application logs and API permissions.':'The Web UI is responding. That alone does not mean any real email is protected. Configure a trusted Milter, SMTP, or Rspamd HTTP integration.'}</p></div><a href="/connections" data-route="connect">Review integrations →</a></div>`;
+ return `<div class="integrity-strip ${configured?'configured':'attention'}"><span class="strip-symbol" aria-hidden="true">${configured?'◇':unknown?'?':'!'}</span><div><strong>${configured?'Filtering listener configured':unknown?'Listener status unavailable':'Mail protection is not yet configured'}</strong><p>${configured?`The application has ${enabled.length} MTA-facing listener${enabled.length===1?'':'s'} configured. This does not confirm external mail delivery or healthy upstream routing.`:unknown?(S.me?.role==='admin'?'SpamGate could not verify the currently configured listeners. Check application logs and API permissions.':'Detailed listener status is visible to administrators. Contact your mail system administrator to verify filtering.'):'The Web UI is responding. That alone does not mean any real email is protected. Configure a trusted Milter, SMTP, or Rspamd HTTP integration.'}</p></div><a href="/connections" data-route="connect">Review integrations →</a></div>`;
 }
 function verdictBars(){
  const c=counts(); const total=Object.values(c).reduce((a,b)=>a+b,0);
@@ -202,8 +202,8 @@ document.addEventListener('click',async event=>{const el=event.target.closest('b
   if(el.dataset.route){event.preventDefault();routeTo(el.dataset.route);return}if(id==='retry'){start();return}if(id==='nav-toggle'){S.menu=!S.menu;render();return}if(el.dataset.section){routeTo(el.dataset.section);return}
   if(id==='reload'){await refresh();alertUser('Message history refreshed');return}
   if(id==='signout'){await api('/api/v1/logout',{method:'POST'});S.authenticated=false;S.me=null;S.onceToken=null;render();return}
-  if(el.dataset.inspect){S.inspect=S.messages.find(m=>m.id===el.dataset.inspect)||await api('/api/v1/messages/'+encodeURIComponent(el.dataset.inspect));render();$('#close-detail')?.focus();return}
-  if(id==='close-detail'||id==='detail-layer'){S.inspect=null;render();return}
+  if(el.dataset.inspect){S.lastInspectedId=el.dataset.inspect;S.inspect=S.messages.find(m=>m.id===el.dataset.inspect)||await api('/api/v1/messages/'+encodeURIComponent(el.dataset.inspect));render();$('#close-detail')?.focus();return}
+  if(id==='close-detail'||id==='detail-layer'){S.inspect=null;render();restoreInspectionFocus();return}
   if(id==='copy-token'){await navigator.clipboard.writeText(S.onceToken);alertUser('Key copied');return}
   if(el.dataset.neuralLabel){const label=el.dataset.neuralLabel;if(!S.inspect || !confirm(`Train the neural model with this confirmed ${label} message? This modifies future scoring.`))return;await api('/api/v1/neural/train/'+encodeURIComponent(S.inspect.id)+'?label='+label,{method:'POST'});await refresh();alertUser('Neural classifier trained');return}
   if(el.dataset.fuzzyDelete){if(!confirm('Delete this fuzzy fingerprint? Future scans will no longer match it.'))return;await api('/api/v1/fuzzy/entries/'+encodeURIComponent(el.dataset.fuzzyDelete),{method:'DELETE'});await refresh();alertUser('Fingerprint deleted');return}
@@ -214,7 +214,19 @@ document.addEventListener('click',async event=>{const el=event.target.closest('b
 }catch(e){alertUser(e.message,true)}});
 document.addEventListener('change',event=>{if(event.target.id==='action-filter'){S.filterAction=event.target.value;render()}});
 document.addEventListener('input',event=>{if(event.target.id==='search'){const pos=event.target.selectionStart;S.search=event.target.value;render();const el=$('#search');if(el){el.focus();el.setSelectionRange(pos,pos)}}});
-document.addEventListener('keydown',event=>{if(event.key==='Escape'&&S.inspect){S.inspect=null;render()}});
+function restoreInspectionFocus(){const target=[...document.querySelectorAll('[data-inspect]')].find(el=>el.dataset.inspect===S.lastInspectedId);target?.focus()}
+document.addEventListener('keydown',event=>{
+  if(!S.inspect)return;
+  if(event.key==='Escape'){S.inspect=null;render();restoreInspectionFocus();return}
+  if(event.key!=='Tab')return;
+  const dialog=document.querySelector('.detail-panel');
+  if(!dialog)return;
+  const els=[...dialog.querySelectorAll('a[href],button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),[tabindex="0"]')].filter(el=>el.getClientRects().length);
+  if(!els.length)return;
+  const first=els[0],last=els[els.length-1];
+  if(event.shiftKey&&(document.activeElement===first||!dialog.contains(document.activeElement))){event.preventDefault();last.focus()}
+  else if(!event.shiftKey&&(document.activeElement===last||!dialog.contains(document.activeElement))){event.preventDefault();first.focus()}
+});
 document.addEventListener('submit',async event=>{const form=event.target;if(!(form instanceof HTMLFormElement))return;event.preventDefault();const id=form.id;const submit=form.querySelector('[type="submit"],button:not([type])');if(submit)submit.disabled=true;
   try{const fields=Object.fromEntries(new FormData(form).entries());let data;
     if(form.classList.contains('signal-form')){
