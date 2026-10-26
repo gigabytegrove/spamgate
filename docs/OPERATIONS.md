@@ -41,7 +41,7 @@ For reverse proxies, preserve the original `Host` header. Do not strip `X-CSRF-T
 
 ## Mail decision rules
 
-Default thresholds: tag at score 5, quarantine at 10, reject at 20. Scores are sums of built-in signals, custom rules and optionally DNSBL findings. The **Decision Inspector** lists symbols, source IDs, evidence and weights. A custom rule can force an action regardless of numeric thresholds. With multiple matching forced rules, the last matching rule in configured order wins.
+Default thresholds: tag at score 5, quarantine at 10, reject at 20. Scores are sums of built-in signals, custom rules and optionally DNSBL findings. The **Decision Inspector** lists symbols, source IDs, evidence and weights. In **Built-in signals** admins can override each detector weight (−100 to +100) or disable the detector; updates apply only to subsequent scans and are persisted in the configuration. A custom rule can force an action regardless of numeric thresholds. With multiple matching forced rules, the last matching rule in configured order wins.
 
 - **accept**: SMTP connector passes the original message to its relay.
 - **tag**: SMTP connector prepends `X-SpamGate-Result`, `X-SpamGate-Score` and `X-SpamGate-ID` before relay.

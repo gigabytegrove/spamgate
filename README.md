@@ -11,7 +11,8 @@ SpamGate is a new Gigabyte Grove mail-security platform designed to replace the 
 | Go scanner: RFC 5322 parser, multipart MIME text, subject/header/content/URL and attachment heuristics | Implemented with documented limitations |
 | Explainable weighted findings, exact symbol, detail, source and score | Implemented |
 | Custom rules: email/domain/IP/recipient/header/subject/body/URL-domain, forced actions | Implemented |
-| Admin-defined score thresholds: accept, tag, quarantine, reject | Implemented |
+| Admin-defined score thresholds: accept, tag, quarantine, reject | Implemented
+| Web-managed, persistent built-in signal weights and enable/disable overrides | Implemented |
 | Configurable DNSBL zones and weights | Implemented; off by default |
 | HTTP raw `.eml` scan API; scoped API keys | Implemented |
 | Trusted SMTP content filter → outbound SMTP relay | Implemented; intentionally limited ESMTP, private network use only |

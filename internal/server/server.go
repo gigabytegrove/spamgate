@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -180,6 +181,8 @@ func (s *Server) Router() http.Handler {
 	m.HandleFunc("GET /api/v1/statistics", s.stats)
 	m.HandleFunc("GET /api/v1/export", s.export)
 	m.HandleFunc("GET /api/v1/config", s.config)
+	m.HandleFunc("GET /api/v1/signals", s.signals)
+	m.HandleFunc("PUT /api/v1/signals/{symbol}", s.updateSignal)
 	m.HandleFunc("PUT /api/v1/settings", s.settings)
 	m.HandleFunc("POST /api/v1/rules", s.addRule)
 	m.HandleFunc("DELETE /api/v1/rules/{id}", s.deleteRule)
@@ -879,4 +882,46 @@ func (s *Server) discardQuarantine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonReply(w, 200, m)
+}
+
+// signals lists the effective built-in detector weights for all authenticated users.
+func (s *Server) signals(w http.ResponseWriter, r *http.Request) {
+	_, ok := s.authorized(w, r, false, false)
+	if !ok {
+		return
+	}
+	jsonReply(w, 200, core.ConfiguredSignals(s.Store.Config()))
+}
+func (s *Server) updateSignal(w http.ResponseWriter, r *http.Request) {
+	_, ok := s.authorized(w, r, true, true)
+	if !ok {
+		return
+	}
+	symbol := r.PathValue("symbol")
+	if !core.IsBuiltinSymbol(symbol) {
+		fail(w, 404, "Unknown built-in detector")
+		return
+	}
+	var p core.SignalPolicy
+	if e := decode(r, &p); e != nil || p.Score < -100 || p.Score > 100 || math.IsNaN(p.Score) || math.IsInf(p.Score, 0) {
+		fail(w, 400, "Invalid signal configuration: score must be between -100 and 100")
+		return
+	}
+	if e := s.Store.UpdateConfig(func(c *core.Config) error {
+		if c.SignalPolicies == nil {
+			c.SignalPolicies = make(map[string]core.SignalPolicy)
+		}
+		c.SignalPolicies[symbol] = p
+		return nil
+	}); e != nil {
+		fail(w, 503, "Unable to store signal policy")
+		return
+	}
+	for _, v := range core.ConfiguredSignals(s.Store.Config()) {
+		if v.Symbol == symbol {
+			jsonReply(w, 200, v)
+			return
+		}
+	}
+	fail(w, 500, "Signal configuration unavailable")
 }

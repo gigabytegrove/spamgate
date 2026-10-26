@@ -67,17 +67,18 @@ type Settings struct {
 	MaxHistory          int     `json:"max_history"`
 }
 type Config struct {
-	Settings      Settings  `json:"settings"`
-	Rules         []Rule    `json:"rules"`
-	DNSLists      []DNSList `json:"dns_lists"`
-	Users         []User    `json:"users"`
-	Tokens        []Token   `json:"tokens"`
-	SetupComplete bool      `json:"setup_complete"`
+	Settings       Settings                `json:"settings"`
+	SignalPolicies map[string]SignalPolicy `json:"signal_policies"`
+	Rules          []Rule                  `json:"rules"`
+	DNSLists       []DNSList               `json:"dns_lists"`
+	Users          []User                  `json:"users"`
+	Tokens         []Token                 `json:"tokens"`
+	SetupComplete  bool                    `json:"setup_complete"`
 }
 
 func DefaultConfig() Config {
 	return Config{Settings: Settings{SiteName: "SpamGate", TagThreshold: 5, QuarantineThreshold: 10, RejectThreshold: 20, RetentionDays: 30, MaxHistory: 10000},
-		Rules: []Rule{}, DNSLists: []DNSList{{Zone: "zen.spamhaus.org", Score: 5, Enabled: false}}}
+		SignalPolicies: map[string]SignalPolicy{}, Rules: []Rule{}, DNSLists: []DNSList{{Zone: "zen.spamhaus.org", Score: 5, Enabled: false}}}
 }
 func (s Settings) Valid() bool {
 	return s.SiteName != "" && s.RetentionDays >= 1 && s.RetentionDays <= 3650 && s.MaxHistory >= 100 && s.MaxHistory <= 500000 && s.TagThreshold >= 0 && s.QuarantineThreshold > s.TagThreshold && s.RejectThreshold > s.QuarantineThreshold && s.RejectThreshold <= 1000

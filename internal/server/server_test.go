@@ -213,3 +213,53 @@ func TestMailboxPrivacyAndQuarantineDiscard(t *testing.T) {
 		t.Fatalf("repeat discard should conflict: %d", w.Code)
 	}
 }
+
+func TestSignalPoliciesRBACAndPersistence(t *testing.T) {
+	dir := t.TempDir()
+	st, err := core.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateConfig(func(c *core.Config) error {
+		c.SetupComplete = true
+		c.Users = append(c.Users, core.User{Name: "admin", Role: "admin"}, core.User{Name: "alice", Email: "alice@example.org", Role: "mailbox"})
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s := New(st, nil)
+	s.sessions["admin-test"] = session{Identity: Identity{Name: "admin", Role: "admin", Session: true, CSRF: "adm"}, Expires: time.Now().Add(time.Hour)}
+	s.sessions["alice-test"] = session{Identity: Identity{Name: "alice", Email: "alice@example.org", Role: "mailbox", Session: true, CSRF: "usr"}, Expires: time.Now().Add(time.Hour)}
+	invoke := func(cookie, method, path, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.AddCookie(&http.Cookie{Name: "spamgate_session", Value: cookie})
+		req.Header.Set("X-CSRF-Token", map[string]string{"admin-test": "adm", "alice-test": "usr"}[cookie])
+		w := httptest.NewRecorder()
+		s.Router().ServeHTTP(w, req)
+		return w
+	}
+	if w := invoke("alice-test", "PUT", "/api/v1/signals/MISSING_FROM", `{"score":4,"enabled":false}`); w.Code != 403 {
+		t.Fatalf("mailbox edited signals: %d", w.Code)
+	}
+	if w := invoke("admin-test", "PUT", "/api/v1/signals/NONEXISTENT", `{"score":4,"enabled":false}`); w.Code != 404 {
+		t.Fatalf("unknown signal accepted: %d", w.Code)
+	}
+	if w := invoke("admin-test", "PUT", "/api/v1/signals/MISSING_FROM", `{"score":101,"enabled":false}`); w.Code != 400 {
+		t.Fatalf("invalid weight accepted: %d", w.Code)
+	}
+	if w := invoke("admin-test", "PUT", "/api/v1/signals/MISSING_FROM", `{"score":9,"enabled":false}`); w.Code != 200 {
+		t.Fatalf("signal update: %d %s", w.Code, w.Body.String())
+	}
+	if w := invoke("alice-test", "GET", "/api/v1/signals", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"score":9`) {
+		t.Fatalf("mailbox signals view: %d %s", w.Code, w.Body.String())
+	}
+	reopened, err := core.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := reopened.Config().SignalPolicies["MISSING_FROM"]
+	if p.Enabled || p.Score != 9 {
+		t.Fatalf("persisted signal changed: %+v", p)
+	}
+}

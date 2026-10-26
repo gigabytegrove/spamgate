@@ -167,6 +167,14 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (Message, error) {
 	text, attachments, urls, hasHTML := bodyParts(parsed.Header, body, 0)
 	var findings []Finding
 	add := func(symbol, source, detail string, weight float64) {
+		if strings.HasPrefix(source, "builtin/") {
+			if p, ok := cfg.SignalPolicies[symbol]; ok {
+				if !p.Enabled {
+					return
+				}
+				weight = p.Score
+			}
+		}
 		findings = append(findings, Finding{symbol, source, detail, weight})
 	}
 	if parsed.Header.Get("From") == "" {

@@ -16,6 +16,7 @@
 | Structured policy conditions (AND/OR/NOT, header selectors, regex with time limits) | NEXT |
 | Correlated composite symbols and exclusion rules | NEXT |
 | Per-recipient verdicts, quarantine policies and SMTP transaction splitting | NEXT |
+| Built-in detector scoring overrides and enable/disable management | DONE |
 | Real SPF (RFC 7208), DKIM (RFC 6376), DMARC (RFC 7489 and successor RFCs), ARC | NEXT |
 | Envelope validation, Received-chain trust, HELO/FQDN/MX/PTR consistency, DNSSEC awareness | NEXT |
 | MIME robustness, attachment/content disarm, archive recursion limits, signature detection | NEXT |

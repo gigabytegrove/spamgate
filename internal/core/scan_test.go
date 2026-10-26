@@ -86,3 +86,46 @@ func TestQuarantineRetentionDeletesExpiredOriginal(t *testing.T) {
 		t.Fatalf("expired quarantine original was not removed: %v", e)
 	}
 }
+
+func TestBuiltinScoringPolicy(t *testing.T) {
+	st, e := Open(t.TempDir())
+	if e != nil {
+		t.Fatal(e)
+	}
+	policy := SignalPolicy{Enabled: false, Score: 9}
+	if e := st.UpdateConfig(func(c *Config) error {
+		c.SignalPolicies["MISSING_DATE"] = policy
+		c.SignalPolicies["CONTENT_VERIFY_YOUR_ACCOUNT"] = SignalPolicy{Enabled: true, Score: 17}
+		return nil
+	}); e != nil {
+		t.Fatal(e)
+	}
+	raw := []byte("From: no-reply@example.net\r\nMessage-ID: <m@example.net>\r\nTo: alice@example.org\r\nSubject: verify your account\r\n\r\nMessage")
+	m, e := (&Scanner{Store: st}).Scan(context.Background(), Input{Raw: raw, Recipients: []string{"alice@example.org"}})
+	if e != nil {
+		t.Fatal(e)
+	}
+	seen := false
+	for _, f := range m.Findings {
+		if f.Symbol == "MISSING_DATE" {
+			t.Fatal("disabled built-in detector contributed to scan")
+		}
+		if f.Symbol == "CONTENT_VERIFY_YOUR_ACCOUNT" {
+			seen = true
+			if f.Score != 17 {
+				t.Fatalf("custom score not applied: %+v", f)
+			}
+		}
+	}
+	if !seen || m.Score != 17 || m.Action != "quarantine" {
+		t.Fatalf("unexpected weighted scan: %+v", m)
+	}
+	opened, e := Open(st.dir)
+	if e != nil {
+		t.Fatal(e)
+	}
+	got := opened.Config().SignalPolicies["MISSING_DATE"]
+	if got.Enabled || got.Score != 9 {
+		t.Fatalf("signal policy not persisted: %+v", got)
+	}
+}

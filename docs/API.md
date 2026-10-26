@@ -19,6 +19,8 @@ API root: `/api/v1`. All responses except export and static assets are JSON. Aut
 | GET | `/api/v1/statistics` | Admin or mailbox | Counts and score averages |
 | GET | `/api/v1/export` | Admin | All retained history as newline-delimited JSON |
 | GET | `/api/v1/config` | Admin or mailbox | Settings, rules and redacted accounts/tokens |
+| GET | `/api/v1/signals` | Authenticated | List every built-in detector with default and effective weights |
+| PUT | `/api/v1/signals/{symbol}` | Admin | JSON `score` (-100 to 100), `enabled` (boolean); future scans only |
 | PUT | `/api/v1/settings` | Admin | Update policy thresholds and retention |
 | POST | `/api/v1/rules` | Admin or mailbox | Create scoring rule (mailbox users only sender policies) |
 | DELETE | `/api/v1/rules/{id}` | Admin or rule owner | Remove rule |
