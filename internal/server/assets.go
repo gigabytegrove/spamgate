@@ -29,6 +29,8 @@ func serveAsset(w http.ResponseWriter, r *http.Request, path, typ string) {
 		return
 	}
 	w.Header().Set("Content-Type", typ)
-	w.Header().Set("Cache-Control", "public, max-age=3600")
+	// Development builds update embedded HTML, JS and CSS together. Never cache
+	// stale assets across binary upgrades or users can see the previous UI.
+	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(b)
 }

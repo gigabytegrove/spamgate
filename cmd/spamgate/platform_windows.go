@@ -126,7 +126,7 @@ func runPlatform(app func(context.Context) error) error {
 	return fmt.Errorf("StartServiceCtrlDispatcher: %w", e)
 }
 
-// openConsoleWhenReady makes the native executable useful without an installer:
+// openDashboardWhenReady makes the native GUI executable useful without an installer:
 // double-clicking spamgate.exe starts the local UI under the logged-in user.
 // No PowerShell, registry edits, privilege escalation, or network downloads.
 // A Windows Service never tries to open a browser in Session 0.

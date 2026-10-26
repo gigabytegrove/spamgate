@@ -35,6 +35,9 @@ func TestUIRoutesServeEmbeddedInterface(t *testing.T) {
 	for _, path := range []string{"/assets/app.css", "/assets/app.js"} {
 		resp := httptest.NewRecorder()
 		srv.Router().ServeHTTP(resp, httptest.NewRequest(http.MethodGet, path, nil))
+		if got := resp.Header().Get("Cache-Control"); got != "no-store" {
+			t.Fatalf("asset %s has stale-cache policy %q", path, got)
+		}
 		if resp.Code != http.StatusOK || resp.Body.Len() < 1000 {
 			t.Fatalf("asset %s got %d bytes HTTP %d", path, resp.Body.Len(), resp.Code)
 		}

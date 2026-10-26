@@ -117,7 +117,7 @@ curl --fail-with-body --request POST https://spamgate.example.com/api/v1/scan \
 - [Security model and production precautions](docs/SECURITY.md)
 - [Exhaustive feature plan and acceptance criteria](docs/ROADMAP.md)
 
-The interface's visual direction is **postal dispatch ledger / contemporary operations typography**: warm limestone background, deep pine interface ink, vermilion alert accents, compact ledger tables, a message-decision inspector, and responsive administrative navigation. No external images or fonts are required.
+The interface uses an **air-traffic operations ledger** identity: warm ivory `#F6F3EC`, charcoal `#252724`, signal orange `#BB432A`, amber `#E7BE58`, editorial typography, full-width verdict tables, and addressable management pages. No external fonts or images are required.
 
 ## License
 
