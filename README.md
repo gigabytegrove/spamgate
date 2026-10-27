@@ -1,5 +1,20 @@
 # SpamGate
 
+## Install directly on a Linux mail server — no ZIP or Docker
+
+The native source-to-service installer downloads and verifies the official patched Go 1.27.3 toolchain (only if missing), tests and builds SpamGate, and installs its systemd service **without modifying your mail server configuration**:
+
+```bash
+git clone https://github.com/gigabytegrove/spamgate.git
+cd spamgate
+bash scripts/install-native-from-source.sh
+```
+
+Run as a regular user; it prompts for `sudo` only when installing the service. This repository is private, so `git clone` requires GitHub access. For a non-installing build use `bash scripts/install-native-from-source.sh --build-only`. The local Web UI is at `http://127.0.0.1:38470` after first-run setup. **Alpha: do not attach live MTA mail routing until qualified.**
+
+Prebuilt native artifacts are planned for [GitHub Releases](https://github.com/gigabytegrove/spamgate/releases), but are unavailable until the [build workflow](https://github.com/gigabytegrove/spamgate/actions/workflows/native-prerelease.yml) passes. The previous chat ZIP links are not dependable distribution.
+
+
 ## v0.4.0-alpha.2 native-first mail-server deployment
 
 - Install SpamGate directly on the existing Linux mail host as a native binary/systemd service, without Docker or SMTP reinjection.
