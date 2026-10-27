@@ -32,3 +32,7 @@ SpamGate's goal is OS-independent compatibility. The **protocol boundary**, not 
 - Mailbox identities over OIDC/LDAP/IMAP authentication — **not implemented**.
 
 A supported email-user override requires reliable identity binding to recipients and knowledge of aliases/shared mailboxes. The alpha supports manually created users for exact mailbox addresses only. Multi-recipient transactions do not apply per-user forced rules unless every recipient is the same permitted mailbox.
+
+## Native-first installation status
+
+The primary installation is a local Go binary/systemd daemon on a pre-existing mail server, **not Docker**. [Native mail-server deployment](NATIVE_MAIL_SERVERS.md) distinguishes qualified protocol subsets from hosting-panel-native integration. Unmanaged Postfix has a guarded opt-in Milter attachment script. ISPConfig-managed Postfix requires panel-safe manual persistence. cPanel uses Exim; an automatic WHM-compatible adapter remains outstanding. Docker is optional.

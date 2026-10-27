@@ -11,7 +11,9 @@ import (
 	"runtime"
 	"time"
 
+	"encoding/json"
 	"github.com/gigabytegrove/spamgate/internal/core"
+	"github.com/gigabytegrove/spamgate/internal/hostinspect"
 	"github.com/gigabytegrove/spamgate/internal/server"
 	"github.com/gigabytegrove/spamgate/internal/transport"
 )
@@ -60,6 +62,7 @@ func execute(args []string) error {
 	web := flags.String("listen", defaultListen(), "Management HTTP listener (use an HTTPS reverse proxy for remote access)")
 	logPath := flags.String("log-file", "", "Optional append-only application log (useful for Windows services)")
 	version := flags.Bool("version", false, "Print version")
+	mailReport := flags.Bool("mailserver-report", false, "Read-only report of local MTA and hosting-panel integration")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -69,6 +72,9 @@ func execute(args []string) error {
 	if *version {
 		fmt.Println(core.Version)
 		return nil
+	}
+	if *mailReport {
+		return json.NewEncoder(os.Stdout).Encode(hostinspect.Detect(context.Background()))
 	}
 	if *data == "" || *web == "" {
 		return fmt.Errorf("data and listen must not be empty")

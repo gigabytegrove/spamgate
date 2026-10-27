@@ -4,13 +4,15 @@
 
 > **Windows release hold (October 26, 2026):** Previously shared SpamGate v0.3.0-alpha.2 Windows archives were built using outdated Go 1.23.2 and were not code-signed or cleared by Defender. Do not treat those archives as production-ready downloads. A vetted, Go 1.27.3-or-newer build, Authenticode signature, and on-Windows package/service validation are required before public release. Do not disable Defender or override script execution policy to install an unverified build. The build script now creates explicitly labeled development archives only.
 
+**Primary deployment:** a Go binary and systemd service installed directly on an existing Linux mail server. A fresh native installation enables a **loopback-only Milter listener** but does not modify the mail server. Follow [native mail server integration](NATIVE_MAIL_SERVERS.md) for panel-aware steps.
+
 **Alternative deployment:** Docker Compose (see project README). Binaries embed the management UI.
 
 ## Requirements and security
 
 - Linux x64/ARM64: systemd-based distribution with glibc or musl and network access for DNS authentication checks. Installer must be run as root; daemon runs under a dedicated unprivileged `spamgate` account.
 - Windows x64/ARM64: Windows 10/11 or supported Windows Server, PowerShell 5.1+, administrator permission for service installation. Native Windows Service Control Manager registration uses `LocalService` (no third-party service wrapper).
-- Default admin Web UI listener: `127.0.0.1:38470` (loopback only). **No MTA-facing listeners start until explicitly configured.** Use an HTTPS reverse proxy for remote console administration. Never send administrator credentials over unencrypted HTTP on public networks.
+- Default admin Web UI listener: `127.0.0.1:38470` (loopback only). **Native Linux fresh installations enable only the loopback TCP Milter on port 38472; Docker and Windows still require explicit configuration.** No mail-server configuration is changed automatically. Use an HTTPS reverse proxy for remote console administration. Never send administrator credentials over unencrypted HTTP on public networks.
 - Port 38471: Rspamd-style HTTP; 38472: Milter; 38473: SMTP filter; 38474: controller. Each requires explicit enablement and the documented trusted-CIDR/credential controls.
 - Do not direct live production mail to SpamGate alpha until mail-flow and conformance testing is completed.
 
@@ -20,6 +22,7 @@ Extract `spamgate_VERSION_linux-amd64.tar.gz` or `spamgate_VERSION_linux-arm64.t
 
 ```bash
 sudo ./install-linux.sh
+sudo /usr/local/bin/spamgate -mailserver-report
 sudo systemctl status spamgate --no-pager
 sudo journalctl -u spamgate --no-pager -n 50
 ```
@@ -30,15 +33,13 @@ The one-time setup key is written to the systemd journal before admin creation. 
 sudo ./install-linux.sh --listen 192.168.1.10:38470
 ```
 
-Paths: executable `/usr/local/bin/spamgate`, systemd unit `/etc/systemd/system/spamgate.service`, editable service environment `/etc/spamgate/spamgate.env`, data `/var/lib/spamgate` (permissions restricted). To enable a mail listener, add its documented `SPAMGATE_*` environment variables to the service environment file and run `sudo systemctl restart spamgate`. **Changing `--listen` never removes other variables.**
+Paths: executable `/usr/local/bin/spamgate`, systemd unit `/etc/systemd/system/spamgate.service`, editable service environment `/etc/spamgate/spamgate.env`, data `/var/lib/spamgate` (permissions restricted). On an existing installation, enable the loopback Milter with `sudo ./install-linux.sh --enable-local-milter` from a verified native package. To opt out during a fresh install, use `--no-local-milter`. Attach Postfix only after read-only inspection: `sudo /usr/local/libexec/spamgate/configure-postfix --preview`. Hosting-panel managed configurations are never changed automatically.
+
+To enable a mail listener, add its documented `SPAMGATE_*` environment variables to the service environment file and run `sudo systemctl restart spamgate`. **Changing `--listen` never removes other variables.**
 
 **Update:** stop mail flow, back up the data directory, extract the newer archive, run `sudo ./install-linux.sh` again. The updater restarts the service and preserves history, policies, credentials, keys, models and quarantines. Check `/healthz` and the journal before restoring mail flow. Do not run multiple binaries against one data directory.
 
 **Uninstall:** `sudo ./uninstall-linux.sh`. Data and environment files remain on disk. No installer automatically deletes the stored email data or service account.
-
-## Windows portable developer preview (no administrator required)
-
-For local evaluation only, extract the portable development ZIP and double-click `Start-SpamGate.cmd` or `spamgate.exe`. The management console opens automatically after the application passes its health check; data is stored under `%LOCALAPPDATA%\SpamGate`. No service, elevation or PowerShell execution-policy override is involved. This unsigned preview remains subject to Defender scanning and must not be used for production mail filtering. See [portable Windows guide](PORTABLE_WINDOWS.md).
 
 ## Windows x64 or ARM64
 

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/gigabytegrove/spamgate/internal/core"
+	"github.com/gigabytegrove/spamgate/internal/hostinspect"
 	"github.com/gigabytegrove/spamgate/internal/transport"
 )
 
@@ -205,6 +206,7 @@ func (s *Server) Router() http.Handler {
 	m.HandleFunc("DELETE /api/v1/messages/{id}/quarantine", s.discardQuarantine)
 	m.HandleFunc("GET /api/v1/statistics", s.stats)
 	m.HandleFunc("GET /api/v1/runtime", s.runtime)
+	m.HandleFunc("GET /api/v1/host", s.hostReport)
 	m.HandleFunc("GET /api/v1/integrations/diagnostics", s.integrationDiagnostics)
 	m.HandleFunc("GET /api/v1/delivery-queue", s.deliveryQueue)
 	m.HandleFunc("GET /api/v1/metrics", s.metrics)
@@ -466,6 +468,13 @@ func hasEmail(xs []string, value string) bool {
 	}
 	return false
 }
+func (s *Server) hostReport(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.authorized(w, r, true, false); !ok {
+		return
+	}
+	jsonReply(w, http.StatusOK, hostinspect.Detect(r.Context()))
+}
+
 func (s *Server) runtime(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.authorized(w, r, true, false); !ok {
 		return

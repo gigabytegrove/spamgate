@@ -60,3 +60,17 @@ func TestRuntimeRequiresAdmin(t *testing.T) {
 		t.Fatalf("unauthenticated runtime inventory leaked: %d %s", resp.Code, resp.Body.String())
 	}
 }
+
+// Mail host inventory exposes MTA metadata only to authenticated administrators.
+func TestHostInventoryRequiresAdmin(t *testing.T) {
+	store, err := core.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := New(store, nil)
+	resp := httptest.NewRecorder()
+	srv.Router().ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/api/v1/host", nil))
+	if resp.Code != http.StatusServiceUnavailable || strings.Contains(resp.Body.String(), "mail_server") {
+		t.Fatalf("host inventory leaked: HTTP %d %s", resp.Code, resp.Body.String())
+	}
+}

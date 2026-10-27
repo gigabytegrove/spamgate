@@ -8,7 +8,8 @@ fi
 if command -v systemctl >/dev/null; then
   systemctl disable --now spamgate.service 2>/dev/null || true
 fi
-rm -f /etc/systemd/system/spamgate.service /usr/local/bin/spamgate
+rm -f /etc/systemd/system/spamgate.service /usr/local/bin/spamgate /usr/local/libexec/spamgate/configure-postfix
+rmdir /usr/local/libexec/spamgate 2>/dev/null || true
 if command -v systemctl >/dev/null; then systemctl daemon-reload; fi
 printf '%s\n' 'SpamGate service and executable removed.' \
   'Existing settings remain in /etc/spamgate and mail history remains in /var/lib/spamgate.' \

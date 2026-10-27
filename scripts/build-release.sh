@@ -47,7 +47,7 @@ for platform in linux-amd64 linux-arm64 windows-amd64 windows-arm64; do
   case "$os" in
     linux)
       GOOS="$os" GOARCH="$arch" go build -trimpath -buildvcs=false -ldflags='-s -w' -o "$tmp/spamgate" ./cmd/spamgate
-      install -m 0755 scripts/install-linux.sh scripts/uninstall-linux.sh "$tmp/"
+      install -m 0755 scripts/install-linux.sh scripts/uninstall-linux.sh scripts/configure-postfix.sh "$tmp/"
       cp docs/INSTALLATION.md "$tmp/INSTALLATION.md"
       tar -C "$tmp" -czf "$OUT/$base.tar.gz" .
       ;;

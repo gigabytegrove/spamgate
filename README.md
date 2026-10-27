@@ -1,5 +1,13 @@
 # SpamGate
 
+## v0.4.0-alpha.2 native-first mail-server deployment
+
+- Install SpamGate directly on the existing Linux mail host as a native binary/systemd service, without Docker or SMTP reinjection.
+- New native installations enable a loopback-only Postfix-compatible Milter (`127.0.0.1:38472`), without touching MTA or hosting-panel settings.
+- Run `sudo spamgate -mailserver-report` or use the Mail integrations screen for read-only identification of the local Postfix/Exim and common hosting panels.
+- On **unmanaged Postfix**, use `sudo /usr/local/libexec/spamgate/configure-postfix --preview` then an explicitly confirmed, backup/validation/rollback-protected apply. On ISPConfig, cPanel, Plesk and DirectAdmin, the helper refuses writes.
+- **cPanel/Exim is not integrated yet.** Docker remains supported as an optional deployment. Read the [native integration guide](docs/NATIVE_MAIL_SERVERS.md) before directing live email at this alpha.
+
 ## v0.4.0-alpha.1 operational features
 
 Durable single-node SMTP outbox with retry and dead-letter review, first-class **Delivery queue** administration screen, time-bounded rule editing and priority, search across retained history, dry-run scan API, safe quarantine preview, relay TCP reachability probe and admin-only `/api/v1/metrics` counters. On-disk spool records are private and preserve accepted email until delivery or explicit discard; the outbox is **at-least-once**, not exactly-once, and does not yet send failure DSNs. The queue only operates when an upstream relay is configured; SMTP is disabled on a clean installation.
@@ -10,6 +18,8 @@ Durable single-node SMTP outbox with retry and dead-letter review, first-class *
 > **Windows distribution hold (2026-10-26):** Earlier alpha Windows binaries were unsigned and compiled with an outdated Go toolchain. See [release security](docs/RELEASE_SECURITY.md) before distributing executables. No Windows package is currently certified as Defender-clean.
 
 **Explainable mail filtering, policy management and quarantine — written in Go.**
+
+**Primary deployment: native Linux binary on the existing mail server.** Docker is optional. For Postfix (including ISPConfig), the local Milter is the integration path. For cPanel/WHM the native Exim adapter is **not yet certified**. See [Native mail server installation](docs/NATIVE_MAIL_SERVERS.md).
 
 SpamGate is a new Gigabyte Grove mail-security platform designed to replace the operational role of Rspamd over time, not a finished drop-in Rspamd clone. **Current development source: `0.3.0-alpha.4` (redesigned Web UI and Windows GUI-subsystem preview; signed native release still pending).** It has a working scoring engine, browser control desk, persistent audit history and separate SMTP, Rspamd-HTTP, Milter and optional controller-style HTTP integration modes. Milter and Rspamd HTTP remain tested subsets; SPF, DKIM, exact-domain DMARC, Bayes, fuzzy similarity, a manually trained local neural network and optional ClamAV have limited implementations. **Full Rspamd parity, cryptographic ARC validation/sealing and production-ready model evaluation are not yet implemented.** Do **not** replace a production filter with this alpha without a controlled mail-flow and security evaluation.
 
@@ -56,6 +66,7 @@ SpamGate runs as a **real operating-system service**, without Docker, a separate
 
 ```bash
 sudo ./install-linux.sh
+sudo /usr/local/bin/spamgate -mailserver-report
 sudo systemctl status spamgate --no-pager
 sudo journalctl -u spamgate --no-pager -n 40
 ```
@@ -68,11 +79,11 @@ Get-Service SpamGate
 Get-Content "$env:ProgramData\SpamGate\spamgate.log" -Tail 40
 ```
 
-Visit <http://127.0.0.1:38470> **from the same computer** and use the one-time setup key shown in the logs to configure an administrator. The service is installed to start at boot and uses a dedicated unprivileged identity (`spamgate` on Linux, `LocalService` on Windows). All settings and mail history persist across upgrades and remain available after uninstalling. To expose the console beyond localhost, deliberately set a trusted interface and protect access with an HTTPS reverse proxy; do not put HTTP administrator login on the public Internet.
+Visit <http://127.0.0.1:38470> **from the same computer** and use the one-time setup key shown in the logs to configure an administrator. The native Linux installer starts a **loopback-only local Milter** on a new installation, but does not touch any MTA configuration. The service is installed to start at boot and uses a dedicated unprivileged identity (`spamgate` on Linux, `LocalService` on Windows). All settings and mail history persist across upgrades and remain available after uninstalling. To expose the console beyond localhost, deliberately set a trusted interface and protect access with an HTTPS reverse proxy; do not put HTTP administrator login on the public Internet.
 
 See [full Windows and Linux install/upgrade/uninstall instructions](docs/INSTALLATION.md). **Only unsigned development archives** are created with `bash scripts/build-release.sh`; public Windows releases require the signing and verification steps in [release security](docs/RELEASE_SECURITY.md).
 
-## Alternative install: Docker Compose
+## Optional deployment: Docker Compose
 
 ```bash
 git clone https://github.com/gigabytegrove/spamgate.git
