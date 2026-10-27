@@ -159,14 +159,31 @@ func milterHeader(data []byte) ([]byte, error) {
 		}
 	}
 	v := bytes.TrimRight(fields[1], "\r\n")
-	// Don't let malformed callbacks turn a single field into arbitrary headers.
-	if bytes.ContainsAny(v, "\r\n") {
-		return nil, errors.New("multiline milter headers unsupported")
+	// RFC 5322 permits folded field values (CRLF followed by SP/HTAB).
+	// Some Postfix Milter callbacks use bare LF for an existing fold.
+	// Normalize safe folds while rejecting new-field injection.
+	clean := make([]byte, 0, len(v)+8)
+	for i := 0; i < len(v); i++ {
+		switch v[i] {
+		case '\r':
+			if i+1 >= len(v) || v[i+1] != '\n' {
+				return nil, errors.New("bare carriage return in milter header")
+			}
+			i++
+			fallthrough
+		case '\n':
+			if i+1 >= len(v) || (v[i+1] != ' ' && v[i+1] != '\t') {
+				return nil, errors.New("invalid header continuation: newline not followed by whitespace")
+			}
+			clean = append(clean, '\r', '\n')
+		default:
+			clean = append(clean, v[i])
+		}
 	}
-	line := make([]byte, 0, len(fields[0])+len(v)+4)
+	line := make([]byte, 0, len(fields[0])+len(clean)+4)
 	line = append(line, fields[0]...)
 	line = append(line, ':', ' ')
-	line = append(line, v...)
+	line = append(line, clean...)
 	line = append(line, '\r', '\n')
 	return line, nil
 }
@@ -235,10 +252,12 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 		case 'L':
 			line, err := milterHeader(data)
 			if err != nil {
+				slog.Warn("milter rejected header callback", "reason", "invalid_header", "error", err)
 				reply = 't'
 				break
 			}
 			if msg.headers.Len()+len(line) > milterMaxMessage {
+				slog.Warn("milter rejected header callback", "reason", "headers_exceed_message_size_limit")
 				reply = 't'
 				break
 			}
@@ -248,6 +267,7 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 		case 'T', 'U': // DATA and unknown SMTP commands; continue
 		case 'B':
 			if msg.body.Len()+len(data) > milterMaxMessage {
+				slog.Warn("milter rejected body callback", "reason", "body_exceeds_message_size_limit")
 				reply = 't'
 				break
 			}
@@ -262,7 +282,14 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 		case 'Q':
 			return nil
 		case 'E':
-			if !msg.hasEOH || msg.headers.Len()+msg.body.Len()+2 > milterMaxMessage {
+			if !msg.hasEOH {
+				slog.Warn("milter could not finish message", "reason", "missing_end_of_headers")
+				reply = 't'
+				reset()
+				break
+			}
+			if msg.headers.Len()+msg.body.Len()+2 > milterMaxMessage {
+				slog.Warn("milter could not finish message", "reason", "message_too_large")
 				reply = 't'
 				reset()
 				break
@@ -272,17 +299,20 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 			raw = append(raw, '\r', '\n')
 			raw = append(raw, msg.body.Bytes()...)
 			if !m.Store.Config().SetupComplete {
+				slog.Warn("milter could not finish message", "reason", "administrator_setup_incomplete")
 				reply = 't'
 				reset()
 				break
 			}
 			scanned, err := m.Scanner.Scan(ctx, core.Input{Raw: raw, Sender: msg.sender, Recipients: msg.recipients, ClientIP: clientIP, Helo: helo, Connector: "milter"})
 			if err != nil {
+				slog.Error("milter could not finish message", "reason", "scan_failed", "error", err)
 				reply = 't'
 				reset()
 				break
 			}
 			if err = m.Store.Save(scanned); err != nil {
+				slog.Error("milter could not finish message", "reason", "history_write_failed", "error", err)
 				reply = 't'
 				reset()
 				break
@@ -297,6 +327,7 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 					}
 					reply = 'c'
 				} else {
+					slog.Warn("milter could not enforce message verdict", "reason", "quarantine_action_not_negotiated", "scan_id", scanned.ID)
 					reply = 't'
 				} // fail closed, do not silently deliver a hold verdict
 			case "tag":
@@ -306,6 +337,7 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 					}
 					reply = 'c'
 				} else {
+					slog.Warn("milter could not enforce message verdict", "reason", "add_header_action_not_negotiated", "scan_id", scanned.ID)
 					reply = 't'
 				}
 			default:
