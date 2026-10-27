@@ -2,7 +2,7 @@ package core
 
 import "time"
 
-const Version = "0.4.0-alpha.2"
+const Version = "0.4.0-alpha.3"
 
 type Finding struct {
 	Symbol string  `json:"symbol"`
@@ -28,6 +28,9 @@ type Message struct {
 	OverrideReason string    `json:"override_reason,omitempty"`
 	OriginalAction string    `json:"original_action,omitempty"`
 	Delivery       string    `json:"delivery,omitempty"`
+	ReviewStatus   string    `json:"review_status,omitempty"`
+	ReviewedBy     string    `json:"reviewed_by,omitempty"`
+	ReviewedAt     time.Time `json:"reviewed_at,omitempty"`
 }
 type Rule struct {
 	Owner     string    `json:"owner,omitempty"`
@@ -68,7 +71,16 @@ type Settings struct {
 	RetentionDays       int     `json:"retention_days"`
 	MaxHistory          int     `json:"max_history"`
 }
+
+// Onboarding is a saved configuration plan, not proof of live mail flow.
+type Onboarding struct {
+	Completed bool   `json:"completed"`
+	Server    string `json:"server"`
+	Mode      string `json:"mode"`
+	Policy    string `json:"policy"`
+}
 type Config struct {
+	Onboarding     Onboarding              `json:"onboarding"`
 	Settings       Settings                `json:"settings"`
 	SignalPolicies map[string]SignalPolicy `json:"signal_policies"`
 	Rules          []Rule                  `json:"rules"`

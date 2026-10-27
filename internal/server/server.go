@@ -189,11 +189,13 @@ func (s *Server) Router() http.Handler {
 	m.HandleFunc("GET /", s.index)
 	m.HandleFunc("GET /assets/app.css", assetCSS)
 	m.HandleFunc("GET /assets/app.js", assetJS)
+	m.HandleFunc("GET /assets/{name}", assetImage)
 	m.HandleFunc("GET /api/v1/status", s.status)
 	m.HandleFunc("POST /api/v1/setup", s.setup)
 	m.HandleFunc("POST /api/v1/login", s.login)
 	m.HandleFunc("POST /api/v1/logout", s.logout)
 	m.HandleFunc("GET /api/v1/me", s.me)
+	m.HandleFunc("PUT /api/v1/onboarding", s.saveOnboarding)
 	m.HandleFunc("POST /api/v1/scan", s.scan)
 	m.HandleFunc("POST /api/v1/scan/simulate", s.simulateScan)
 	m.HandleFunc("GET /api/v1/messages", s.messages)
@@ -202,6 +204,7 @@ func (s *Server) Router() http.Handler {
 
 	m.HandleFunc("GET /api/v1/messages/{id}", s.message)
 	m.HandleFunc("POST /api/v1/messages/{id}/override", s.override)
+	m.HandleFunc("POST /api/v1/messages/{id}/review", s.reviewMessage)
 	m.HandleFunc("POST /api/v1/messages/{id}/release", s.release)
 	m.HandleFunc("DELETE /api/v1/messages/{id}/quarantine", s.discardQuarantine)
 	m.HandleFunc("GET /api/v1/statistics", s.stats)
@@ -949,7 +952,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/", "/overview", "/messages", "/delivery-queue", "/rules", "/signals", "/learning",
 		"/blocklists", "/mailboxes", "/api-keys", "/policy", "/connections", "/help",
-		"/quarantine", "/investigations", "/threat-intelligence", "/scan-workbench":
+		"/quarantine", "/investigations", "/threat-intelligence", "/scan-workbench", "/welcome":
 	default:
 		http.NotFound(w, r)
 		return
@@ -1147,4 +1150,129 @@ func (s *Server) neuralTrain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonReply(w, 200, stats)
+}
+
+// saveOnboarding records choices and safe filtering thresholds. It deliberately
+// does not modify an MTA, start a listener, or claim that mail is protected.
+func (s *Server) saveOnboarding(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.authorized(w, r, true, true); !ok {
+		return
+	}
+	var in core.Onboarding
+	if e := decode(r, &in); e != nil {
+		fail(w, 400, "Invalid setup choices")
+		return
+	}
+	validServer := map[string]bool{"testing": true, "postfix": true, "ispconfig": true, "cpanel": true, "exim": true, "custom": true}
+	validMode := map[string]bool{"test": true, "local": true, "remote": true}
+	thresholds := map[string][3]float64{"balanced": {5, 10, 20}, "careful": {7, 13, 25}, "strict": {4, 8, 14}}
+	policy, validPolicy := thresholds[in.Policy]
+	if !in.Completed || !validServer[in.Server] || !validMode[in.Mode] || !validPolicy {
+		fail(w, 400, "Choose a valid mail server, installation type and protection level")
+		return
+	}
+	err := s.Store.UpdateConfig(func(c *core.Config) error {
+		if !c.SetupComplete {
+			return errors.New("Create an administrator first")
+		}
+		c.Onboarding = in
+		c.Settings.TagThreshold = policy[0]
+		c.Settings.QuarantineThreshold = policy[1]
+		c.Settings.RejectThreshold = policy[2]
+		return nil
+	})
+	if err != nil {
+		fail(w, 503, "Could not save setup preferences")
+		return
+	}
+	jsonReply(w, 200, map[string]any{"onboarding": in, "mail_flow_verified": false})
+}
+
+// reviewMessage gives a plain-language, auditable feedback action. History
+// reclassification is separate from SMTP delivery: quarantined originals are
+// never released by this endpoint. An explicit sender trust choice creates a
+// narrow rule, which is visible and reversible in the rules workspace.
+func (s *Server) reviewMessage(w http.ResponseWriter, r *http.Request) {
+	id, ok := s.authorized(w, r, true, true)
+	if !ok {
+		return
+	}
+	var in struct {
+		Decision    string `json:"decision"`
+		TrustSender bool   `json:"trust_sender"`
+	}
+	if e := decode(r, &in); e != nil {
+		fail(w, 400, "Invalid review request")
+		return
+	}
+	if in.Decision != "correct" && in.Decision != "not_spam" {
+		fail(w, 400, "Select correct or not_spam")
+		return
+	}
+	if in.Decision != "not_spam" && in.TrustSender {
+		fail(w, 400, "Sender trust requires a not-spam correction")
+		return
+	}
+	msg, found := s.Store.Get(r.PathValue("id"))
+	if !found {
+		fail(w, 404, "Message not found")
+		return
+	}
+	var ruleID string
+	if in.TrustSender {
+		sender := strings.ToLower(strings.TrimSpace(msg.Sender))
+		if len(sender) > 254 || strings.ContainsAny(sender, " \r\n<>") || strings.Count(sender, "@") != 1 || strings.HasPrefix(sender, "@") || strings.HasSuffix(sender, "@") {
+			fail(w, 400, "Sender address is unavailable or invalid; correct this message without creating a rule")
+			return
+		}
+		ruleID = core.ID()
+		e := s.Store.UpdateConfig(func(c *core.Config) error {
+			if len(c.Rules) >= 20000 {
+				return errors.New("Rule limit reached")
+			}
+			// Only the exact envelope address is matched. This does NOT provide
+			// authentication and may be spoofed; administrators opt in explicitly.
+			c.Rules = append(c.Rules, core.Rule{ID: ruleID, Name: "Trusted sender: " + sender, Kind: "sender_email", Value: sender, Score: 0, Action: "accept", Enabled: true, Priority: 100})
+			return nil
+		})
+		if e != nil {
+			fail(w, 409, "Could not save sender exception")
+			return
+		}
+	}
+	if in.Decision == "not_spam" {
+		if msg.OriginalAction == "" {
+			msg.OriginalAction = msg.Action
+		}
+		msg.Action = "accept"
+		msg.ReviewStatus = "not_spam"
+	} else {
+		msg.ReviewStatus = "correct"
+	}
+	msg.ReviewedBy = id.Name
+	msg.ReviewedAt = time.Now().UTC()
+	detail := "Administrator confirmed the original decision"
+	if in.Decision == "not_spam" {
+		detail = "Administrator marked this message not spam; original delivery state is unchanged"
+	}
+	if ruleID != "" {
+		detail += "; created exact-sender exception " + ruleID
+	}
+	msg.Findings = append(msg.Findings, core.Finding{Symbol: "HUMAN_REVIEW", Source: "review/" + id.Name, Detail: detail, Score: 0})
+	if e := s.Store.Save(msg); e != nil {
+		if ruleID != "" {
+			_ = s.Store.UpdateConfig(func(c *core.Config) error {
+				for i, r := range c.Rules {
+					if r.ID == ruleID {
+						c.Rules = append(c.Rules[:i], c.Rules[i+1:]...)
+						break
+					}
+				}
+				return nil
+			})
+		}
+		fail(w, 503, "Could not save reviewed decision")
+		return
+	}
+	jsonReply(w, 200, map[string]any{"message": msg, "sender_rule_id": ruleID, "delivery_changed": false})
 }

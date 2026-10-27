@@ -15,7 +15,7 @@ func TestUIRoutesServeEmbeddedInterface(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv := New(store, nil)
-	pages := []string{"/", "/overview", "/messages", "/rules", "/signals", "/learning", "/blocklists", "/mailboxes", "/api-keys", "/policy", "/connections", "/help", "/quarantine", "/investigations", "/threat-intelligence", "/scan-workbench"}
+	pages := []string{"/", "/overview", "/messages", "/rules", "/signals", "/learning", "/blocklists", "/mailboxes", "/api-keys", "/policy", "/connections", "/help", "/quarantine", "/investigations", "/threat-intelligence", "/scan-workbench", "/welcome"}
 	for _, path := range pages {
 		t.Run(path, func(t *testing.T) {
 			resp := httptest.NewRecorder()
@@ -72,5 +72,28 @@ func TestHostInventoryRequiresAdmin(t *testing.T) {
 	srv.Router().ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/api/v1/host", nil))
 	if resp.Code != http.StatusServiceUnavailable || strings.Contains(resp.Body.String(), "mail_server") {
 		t.Fatalf("host inventory leaked: HTTP %d %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestBrandAssetsAreTransparentAndEmbedded(t *testing.T) {
+	store, err := core.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := New(store, nil)
+	for _, path := range []string{"/assets/spamgate-logo.png", "/assets/spamgate-icon.png", "/assets/favicon.png"} {
+		resp := httptest.NewRecorder()
+		srv.Router().ServeHTTP(resp, httptest.NewRequest(http.MethodGet, path, nil))
+		if resp.Code != http.StatusOK || resp.Header().Get("Content-Type") != "image/png" || resp.Body.Len() < 1000 {
+			t.Fatalf("brand image %s HTTP %d, bytes %d", path, resp.Code, resp.Body.Len())
+		}
+		if resp.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("brand image %s caching unexpected", path)
+		}
+	}
+	resp := httptest.NewRecorder()
+	srv.Router().ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/assets/not-a-logo.png", nil))
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("unexpected brand image returned HTTP %d", resp.Code)
 	}
 }
