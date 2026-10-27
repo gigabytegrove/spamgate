@@ -1,0 +1,2 @@
+3d56754650fe105ec7fec4644e8ff4207b0744ecd032bdeb1304af5cedad31fd  SpamGate-v0.4.0-alpha.2-Windows-x64-STANDALONE-TEST.zip
+5cb9b51d9b4ab48f1c9257fee5316db25beab5fa777daf0a885302b06f394e4e  SpamGate-v0.4.0-alpha.2-Linux-x64-STANDALONE-TEST.zip
