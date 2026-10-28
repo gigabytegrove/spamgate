@@ -52,6 +52,12 @@ func lastRecordPath(dir string) string { return filepath.Join(updateDir(dir), "l
 // account; the root-owned fallback remains immutable and is never overwritten.
 // Older installations retain the original updates/running overlay until migrated.
 func ActiveBinaryPath(dir string) string {
+	// An independent, non-updating spamgate-run process supplies the real
+	// installed worker path, allowing native /opt/spamgate deployments to
+	// replace the executable in place without changing the runner itself.
+	if worker := os.Getenv("SPAMGATE_INSTALLED_WORKER"); filepath.IsAbs(worker) {
+		return filepath.Clean(worker)
+	}
 	if runtime.GOOS == "linux" && os.Getenv(InPlaceEnv) == "1" {
 		return filepath.Join(dir, "bin", "spamgate")
 	}

@@ -1,7 +1,7 @@
 {
   "name":"spamgate-web-assets",
   "private":true,
-  "version":"0.6.0-alpha.12",
+  "version":"0.6.0-alpha.13",
   "type":"module",
   "scripts":{"build:css":"node scripts/build-tailwind.mjs","check:js":"node --check internal/server/assets/app.js"},
   "devDependencies":{"tailwindcss":"4.1.10"}

@@ -1,3 +1,5 @@
+> **Native foreground mode (alpha.13):** For manually launched `/opt/spamgate` use the independent `spamgate-run` binary and the separate `spamgate` worker, not the systemd/Docker overlay architecture below. Actual in-place worker updates are described in [RUNNER_ALPHA13.md](RUNNER_ALPHA13.md). Initial alpha.9 migration requires a one-time two-binary install while the old worker is stopped.
+
 # SpamGate v0.6.0-alpha.12 — stable installed-worker updates
 
 ## The defect corrected
