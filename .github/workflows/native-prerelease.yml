@@ -1,14 +1,7 @@
 name: Native development releases
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/native-prerelease.yml'
-      - 'cmd/**'
-      - 'internal/**'
-      - 'scripts/**'
-      - 'go.mod'
+  # Legacy native build retained only for manual diagnostics; no automatic publish.
   workflow_dispatch:
 
 permissions:

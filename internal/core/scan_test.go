@@ -101,7 +101,9 @@ func TestBuiltinScoringPolicy(t *testing.T) {
 		t.Fatal(e)
 	}
 	raw := []byte("From: no-reply@example.net\r\nMessage-ID: <m@example.net>\r\nTo: alice@example.org\r\nSubject: verify your account\r\n\r\nMessage")
-	m, e := (&Scanner{Store: st}).Scan(context.Background(), Input{Raw: raw, Recipients: []string{"alice@example.org"}})
+	// This test checks local signal-policy weights, not live DNS policy.
+	// A public DMARC record for example.net must not change the expected score.
+	m, e := (&Scanner{Store: st, Resolver: stubDNS{}}).Scan(context.Background(), Input{Raw: raw, Recipients: []string{"alice@example.org"}})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -127,5 +129,44 @@ func TestBuiltinScoringPolicy(t *testing.T) {
 	got := opened.Config().SignalPolicies["MISSING_DATE"]
 	if got.Enabled || got.Score != 9 {
 		t.Fatalf("signal policy not persisted: %+v", got)
+	}
+}
+// A separate, deterministic regression test verifies that real DMARC policy
+// evidence still influences scoring when the resolver supplies a reject policy.
+// Do not disable DMARC in production to make the built-in policy test pass.
+func TestBuiltinScoringPolicyWithDMARCReject(t *testing.T) {
+	st, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateConfig(func(c *Config) error {
+		c.SignalPolicies["MISSING_DATE"] = SignalPolicy{Enabled: false, Score: 9}
+		c.SignalPolicies["CONTENT_VERIFY_YOUR_ACCOUNT"] = SignalPolicy{Enabled: true, Score: 17}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	resolver := stubDNS{txt: map[string][]string{
+		"_dmarc.example.net": {"v=DMARC1; p=reject"},
+	}}
+	raw := []byte("From: no-reply@example.net\r\nMessage-ID: <m@example.net>\r\nTo: alice@example.org\r\nSubject: verify your account\r\n\r\nMessage")
+	m, err := (&Scanner{Store: st, Resolver: resolver}).Scan(context.Background(), Input{Raw: raw, Recipients: []string{"alice@example.org"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Score != 23 || m.Action != "reject" {
+		t.Fatalf("expected 17 content + 6 DMARC and reject, got score=%v action=%q", m.Score, m.Action)
+	}
+	var found bool
+	for _, f := range m.Findings {
+		if f.Symbol == "DMARC_FAIL" {
+			found = true
+			if f.Score != 6 {
+				t.Fatalf("expected DMARC reject penalty 6, got %+v", f)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected DMARC_FAIL finding, got %+v", m.Findings)
 	}
 }

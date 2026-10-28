@@ -1,8 +1,8 @@
 name: SpamGate release
 on:
-  push:
-    tags:
-      - 'v*'
+  # Local gh release publishing on dockeradm is the authoritative release path.
+  # Explicit manual dispatch only; tag pushes must not race with gh release create.
+  workflow_dispatch:
 permissions:
   contents: write
 jobs:
