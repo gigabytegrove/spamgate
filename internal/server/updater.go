@@ -25,7 +25,9 @@ func (s *Server) checkUpdate(w http.ResponseWriter, r *http.Request) {
 // annotateUpdateStatus preserves supervisor capability in check and stage responses.
 func (s *Server) annotateUpdateStatus(result updater.Status) updater.Status {
 	result.InstallMode = "requires_supervisor"
-	if os.Getenv(updater.SupervisedEnv) == "1" { result.InstallMode = "supervised" }
+	if os.Getenv(updater.SupervisedEnv) == "1" { result.InstallMode = "supervised"
+		result.InstallPath = updater.ActiveBinaryPath(s.Store.DataDir())
+	}
 	if record,e:=updater.LastRecord(s.Store.DataDir());e==nil { result.LastUpdate=record }
 	return result
 }

@@ -44,6 +44,7 @@ type Status struct {
 	Staged      bool          `json:"staged"`
 	Message     string        `json:"message,omitempty"`
 	InstallMode string        `json:"install_mode,omitempty"`
+	InstallPath string        `json:"install_path,omitempty"`
 	LastUpdate  *UpdateRecord `json:"last_update,omitempty"`
 }
 type Client struct {

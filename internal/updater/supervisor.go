@@ -17,12 +17,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
 
 const UpdateRestartExitCode = 75
 const SupervisedEnv = "SPAMGATE_SUPERVISED"
+const InPlaceEnv = "SPAMGATE_INPLACE_UPDATES"
 
 // UpdateRecord records an observable result. The API must not report an
 // upgrade as successful merely because an HTTP request terminated the child.
@@ -44,6 +46,76 @@ func mustExecutableName() string {
 	return "spamgate"
 }
 func lastRecordPath(dir string) string { return filepath.Join(updateDir(dir), "last-update.json") }
+
+// ActiveBinaryPath is the real, persistent installed executable for supervised
+// Linux services and containers. Its parent directory is private to the worker
+// account; the root-owned fallback remains immutable and is never overwritten.
+// Older installations retain the original updates/running overlay until migrated.
+func ActiveBinaryPath(dir string) string {
+	if runtime.GOOS == "linux" && os.Getenv(InPlaceEnv) == "1" {
+		return filepath.Join(dir, "bin", "spamgate")
+	}
+	return runningPath(dir)
+}
+
+// seedInPlaceBinary migrates the latest trusted, executable version into the
+// stable installed path. This preserves a newer pre-migration overlay instead of
+// silently reverting it to the old, baked-in systemd/Docker base executable.
+// It runs before any listener is started and never overwrites the fallback.
+func seedInPlaceBinary(dir, base string) error {
+	target := ActiveBinaryPath(dir)
+	if target == runningPath(dir) {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		return err
+	}
+	best := base
+	baseVersion, err := executableVersion(base)
+	if err != nil {
+		return fmt.Errorf("check protected base version: %w", err)
+	}
+	bestVersion := baseVersion
+	for _, candidate := range []string{runningPath(dir), target} {
+		info, err := os.Lstat(candidate)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		// Never execute symlinks or non-regular files inside the data volume.
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("refusing non-regular installed executable %s", candidate)
+		}
+		version, err := executableVersion(candidate)
+		if err != nil {
+			continue // an invalid saved overlay cannot replace the known-good base
+		}
+		if cmp, err := compare(version, bestVersion); err == nil && cmp > 0 {
+			best, bestVersion = candidate, version
+		}
+	}
+	if best == target {
+		return nil
+	}
+	return copyExecutable(best, target)
+}
+
+func executableVersion(path string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, path, "-version").Output()
+	if err != nil {
+		return "", err
+	}
+	version := strings.TrimSpace(string(out))
+	if _, err := compare(version, version); err != nil {
+		return "", fmt.Errorf("invalid executable version %q: %w", version, err)
+	}
+	return version, nil
+}
+
 
 func Record(dir, state, version, detail string) error {
 	if err := os.MkdirAll(updateDir(dir), 0700); err != nil {
@@ -146,7 +218,10 @@ func promoteStaged(dir, base string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	current := runningPath(dir)
+	current := ActiveBinaryPath(dir)
+	if err := os.MkdirAll(filepath.Dir(current), 0700); err != nil {
+		return "", err
+	}
 	previous := filepath.Join(updateDir(dir), "running.previous"+filepath.Ext(mustExecutableName()))
 	active := current
 	if _, err := os.Stat(active); errors.Is(err, os.ErrNotExist) {
@@ -175,7 +250,7 @@ func verifyExecutableVersion(binary, expected string) error {
 }
 func rollback(dir string) error {
 	previous := filepath.Join(updateDir(dir), "running.previous"+filepath.Ext(mustExecutableName()))
-	return copyExecutable(previous, runningPath(dir))
+	return copyExecutable(previous, ActiveBinaryPath(dir))
 }
 func clearPending(dir string) {
 	_ = os.Remove(filepath.Join(updateDir(dir), "pending.json"))
@@ -263,18 +338,20 @@ func Supervise(ctx context.Context, args []string, dir string) error {
 		return err
 	}
 	active := base
-	if info, e := os.Stat(runningPath(dir)); e == nil && info.Mode().IsRegular() {
-		// A newer immutable base image or native install takes precedence over
-		// an older persistent overlay; never silently downgrade on restart.
-		baseOutput, baseErr := exec.Command(base, "-version").Output()
-		overlayOutput, overlayErr := exec.Command(runningPath(dir), "-version").Output()
-		if baseErr == nil && overlayErr == nil {
-			cmp, err := compare(strings.TrimSpace(string(overlayOutput)), strings.TrimSpace(string(baseOutput)))
-			if err == nil && cmp >= 0 {
-				active = runningPath(dir)
-			}
+	if ActiveBinaryPath(dir) != runningPath(dir) {
+		if err := seedInPlaceBinary(dir, base); err != nil {
+			_ = Record(dir, "failed", "", "Installed binary migration failed; using protected base: "+err.Error())
 		} else {
-			active = runningPath(dir)
+			active = ActiveBinaryPath(dir)
+		}
+	} else if info, e := os.Stat(runningPath(dir)); e == nil && info.Mode().IsRegular() {
+		// Preserve legacy Windows/standalone updater behavior.
+		if baseVersion, e1 := executableVersion(base); e1 == nil {
+			if savedVersion, e2 := executableVersion(runningPath(dir)); e2 == nil {
+				if cmp, e3 := compare(savedVersion, baseVersion); e3 == nil && cmp >= 0 {
+					active = ActiveBinaryPath(dir)
+				}
+			}
 		}
 	}
 	url := readyURL(args)
@@ -313,19 +390,19 @@ func Supervise(ctx context.Context, args []string, dir string) error {
 			_ = Record(dir, "failed", "", "Update did not install; restarting previous worker: "+err.Error())
 			continue
 		}
-		if err = verifyExecutableVersion(runningPath(dir), version); err != nil {
+		if err = verifyExecutableVersion(ActiveBinaryPath(dir), version); err != nil {
 			if e := rollback(dir); e != nil {
 				return fmt.Errorf("version mismatch and rollback failed: %w; %v", err, e)
 			}
 			_ = Record(dir, "rolled_back", version, "Replacement rejected before startup: "+err.Error())
 			clearPending(dir)
-			active = runningPath(dir)
+			active = ActiveBinaryPath(dir)
 			continue
 		}
 		if err = Record(dir, "checking", version, "Installed; checking the replacement process before reporting success"); err != nil {
 			return err
 		}
-		active = runningPath(dir)
+		active = ActiveBinaryPath(dir)
 		replacement, healthDone, startErr := superviseChild(ctx, active, args)
 		if startErr == nil {
 			healthCtx, cancel := context.WithCancel(ctx)
@@ -345,7 +422,7 @@ func Supervise(ctx context.Context, args []string, dir string) error {
 				return fmt.Errorf("update failed: %w; rollback failed: %v", startErr, e)
 			}
 			_ = Record(dir, "rolled_back", version, "Replacement did not become healthy; prior executable restored: "+startErr.Error())
-			active = runningPath(dir)
+			active = ActiveBinaryPath(dir)
 			clearPending(dir)
 			continue
 		}

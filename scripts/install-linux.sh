@@ -73,14 +73,27 @@ if [[ "$LOCAL_MILTER" == yes ]]; then
   fi
 fi
 
-TMP_BIN="$(mktemp /usr/local/bin/.spamgate.XXXXXXXX)"
-trap 'rm -f -- "$TMP_BIN"' EXIT
-install -m 0755 "$SOURCE" "$TMP_BIN"
+# The service runs its working executable in a persistent, unprivileged path.
+# The root-owned supervisor is deliberately never replaced by in-app updates.
+ACTIVE_DIR="/var/lib/spamgate/bin"
+ACTIVE_BIN="$ACTIVE_DIR/spamgate"
+BASE_BIN="/usr/local/bin/spamgate"
+install -d -m 0700 -o spamgate -g spamgate "$ACTIVE_DIR"
+install -d -m 0755 /usr/local/libexec/spamgate
 if systemctl is-active --quiet spamgate.service; then
   systemctl stop spamgate.service
 fi
-mv -f -- "$TMP_BIN" /usr/local/bin/spamgate
-install -d -m 0755 /usr/local/libexec/spamgate
+TMP_BASE="$(mktemp /usr/local/bin/.spamgate-base.XXXXXXXX)"
+trap 'rm -f -- "$TMP_BASE"' EXIT
+install -m 0755 "$SOURCE" "$TMP_BASE"
+mv -f -- "$TMP_BASE" "$BASE_BIN"
+# Only seed fresh installations here. The supervisor compares saved versions
+# and migrates a newer legacy overlay when the service starts.
+if [[ ! -f "$ACTIVE_BIN" ]]; then
+  TMP_ACTIVE="$(mktemp "$ACTIVE_DIR/.spamgate-install.XXXXXXXX")"
+  install -m 0700 -o spamgate -g spamgate "$SOURCE" "$TMP_ACTIVE"
+  mv -f -- "$TMP_ACTIVE" "$ACTIVE_BIN"
+fi
 install -m 0755 "$HELPER" /usr/local/libexec/spamgate/configure-postfix
 cat > /etc/systemd/system/spamgate.service <<'UNIT'
 [Unit]
@@ -94,6 +107,7 @@ Type=simple
 User=spamgate
 Group=spamgate
 EnvironmentFile=-/etc/spamgate/spamgate.env
+Environment=SPAMGATE_INPLACE_UPDATES=1
 ExecStart=/usr/local/bin/spamgate -internal-supervise -data /var/lib/spamgate
 WorkingDirectory=/var/lib/spamgate
 Restart=on-failure
@@ -128,6 +142,8 @@ printf '  Setup key: sudo journalctl -u spamgate --no-pager -n 40\n'
 printf '  Console: http://%s\n' "$(sed -n 's/^SPAMGATE_WEB_LISTEN=//p' "$CFG" | tail -n 1)"
 printf '  Settings: /etc/spamgate/spamgate.env\n'
 printf '  Persistent data: /var/lib/spamgate (kept on upgrades)\n'
+printf '  Installed worker binary: /var/lib/spamgate/bin/spamgate\n'
+printf '  Protected root-owned supervisor: /usr/local/bin/spamgate\n'
 printf '  No MTA configuration has been modified. Filtering starts only once you attach your MTA.\n'
 printf '  Read-only inventory: sudo /usr/local/bin/spamgate -mailserver-report\n'
 printf '  For standalone Postfix, review: sudo /usr/local/libexec/spamgate/configure-postfix --preview\n'

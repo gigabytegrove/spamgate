@@ -43,11 +43,13 @@ root,base_version=sys.argv[1:]
 def port():
     sock=socket.socket();sock.bind(('127.0.0.1',0));v=sock.getsockname()[1];sock.close();return v
 
-def scenario(kind,increment):
-    dirname=os.path.join(root,'test-'+kind);os.mkdir(dirname)
+def scenario(kind,increment,inplace=False):
+    label=kind+('-inplace' if inplace else '')
+    dirname=os.path.join(root,'test-'+label);os.mkdir(dirname)
     data=os.path.join(dirname,'data');address=port();log=os.path.join(dirname,'worker.log')
     handle=open(log,'w+')
-    parent=subprocess.Popen([os.path.join(root,'spamgate-base'),'-internal-supervise','-data',data,'-listen',f'127.0.0.1:{address}'],stdout=handle,stderr=handle)
+    env=os.environ.copy(); env['SPAMGATE_INPLACE_UPDATES']='1' if inplace else '0'
+    parent=subprocess.Popen([os.path.join(root,'spamgate-base'),'-internal-supervise','-data',data,'-listen',f'127.0.0.1:{address}'],stdout=handle,stderr=handle,env=env)
     base=f'http://127.0.0.1:{address}'
     opener=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
     def api(path,method='GET',payload=None,headers=None):
@@ -88,6 +90,11 @@ def scenario(kind,increment):
         wanted=version if kind=='healthy' else base_version
         until(lambda:api('/healthz')[1]['version']==wanted,12)
         assert parent.poll() is None,(kind,'supervisor process died')
+        if inplace:
+            installed=os.path.join(data,'bin','spamgate')
+            assert os.path.isfile(installed),(kind,'missing in-place installed executable')
+            actual=subprocess.check_output([installed,'-version'],timeout=3,text=True).strip()
+            assert actual==wanted,(kind,'installed executable on disk is not the running version',actual,wanted)
         _,me=api('/api/v1/me');assert me['name']=='admin',(kind,'admin session did not survive')
         print(f'PASS {kind}: parent PID {parent.pid} alive; version {wanted}; audit={expected}; authenticated session retained')
     finally:
@@ -97,4 +104,6 @@ def scenario(kind,increment):
         handle.close()
 scenario('healthy',1)
 scenario('broken',2)
+scenario('healthy',1,True)
+scenario('broken',2,True)
 PY

@@ -97,3 +97,12 @@ test('update UI only offers restart when a supervisor is confirmed',()=>{
  html=vm.runInContext('updatesPage()',ctx);
  assert.doesNotMatch(html,/id="install-update"/);
 });
+
+test('update screen identifies the installed worker path and protected base',()=>{
+ const ctx=context();
+ vm.runInContext("S.updateInfo={current:'0.6.0-alpha.12',latest:'v0.6.0-alpha.12',available:false,staged:false,install_mode:'supervised',install_path:'/var/lib/spamgate/bin/spamgate'}",ctx);
+ const html=vm.runInContext('updatesPage()',ctx);
+ assert.match(html,/\/var\/lib\/spamgate\/bin\/spamgate/);
+ assert.match(html,/root-owned and intentionally unchanged/);
+ assert.doesNotMatch(html,/id="install-update"/);
+});
