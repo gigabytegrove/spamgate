@@ -13,5 +13,5 @@ USER spamgate:spamgate
 WORKDIR /var/lib/spamgate
 VOLUME ["/var/lib/spamgate"]
 EXPOSE 38470 38471 38472 38473 38474
-ENTRYPOINT ["/usr/local/bin/spamgate"]
+ENTRYPOINT ["/usr/local/bin/spamgate","-internal-supervise"]
 CMD ["-data","/var/lib/spamgate","-listen","0.0.0.0:38470"]

@@ -56,3 +56,16 @@ test('Prometheus telemetry parser ignores comments and extracts measurements',()
  assert.equal(result.spamgate_runtime_scan_errors_total,2);
  assert.equal(result.byConnector.milter,23);
 });
+
+test('investigation exposes a real timeline and gated Postfix release control',()=>{
+ assert.match(js,/function investigationPanel\(\)/);
+ assert.match(js,/load-investigation/);
+ assert.match(js,/postfix-release-message/);
+ assert.match(js,/postfix_hold_present===true/);
+ assert.match(js,/mta_action_state/);
+});
+test('update UI permits supervisor-controlled installs only',()=>{
+ assert.match(js,/install_mode==='supervised'/);
+ assert.match(js,/Install and restart with rollback/);
+ assert.match(js,/Unsupervised installs never terminate/);
+});

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"encoding/json"
@@ -53,13 +55,39 @@ func defaultListen() string {
 
 func main() {
 	if err := execute(os.Args[1:]); err != nil {
+		if errors.Is(err, errUpdateRestart) {
+			os.Exit(updater.UpdateRestartExitCode)
+		}
 		slog.Error("SpamGate stopped", "error", err)
 		showFatalError(err)
 		os.Exit(1)
 	}
 }
 
+var errUpdateRestart = errors.New("verified update requires supervisor restart")
+
+func supervisorDataDir(args []string) string {
+	dir := defaultDataDir()
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-data" && i+1 < len(args) {
+			dir = args[i+1]
+			i++
+		} else if strings.HasPrefix(args[i], "-data=") {
+			dir = strings.TrimPrefix(args[i], "-data=")
+		}
+	}
+	return dir
+}
 func execute(args []string) error {
+	if len(args) > 0 && args[0] == "-internal-supervise" {
+		childArgs := args[1:]
+		if os.Getenv(updater.SupervisedEnv) == "1" {
+			return errors.New("nested SpamGate supervisor not allowed")
+		}
+		return runPlatform(func(ctx context.Context) error {
+			return updater.Supervise(ctx, childArgs, supervisorDataDir(childArgs))
+		})
+	}
 	if len(args) == 2 && args[0] == "-internal-update-apply" {
 		return updater.ApplyFromHelper(args[1])
 	}
@@ -213,7 +241,16 @@ func runApp(ctx context.Context, opts options) error {
 		srv.Deliver = relay.Send
 	}
 	srv.Queue = queue
-	srv.UpdateExit = func() { go func() { time.Sleep(800 * time.Millisecond); os.Exit(0) }() }
+	restartRequested := make(chan struct{}, 1)
+	srv.UpdateExit = func() {
+		go func() {
+			time.Sleep(350 * time.Millisecond)
+			select {
+			case restartRequested <- struct{}{}:
+			default:
+			}
+		}()
+	}
 	srv.Runtime = server.RuntimeStatus{
 		RelayConfigured: relay != nil,
 		Services: map[string]server.RuntimeService{
@@ -272,6 +309,9 @@ func runApp(ctx context.Context, opts options) error {
 		case err := <-errorsCh:
 			cancel()
 			return err
+		case <-restartRequested:
+			cancel()
+			return errUpdateRestart
 		case <-ticker.C:
 			if err := store.Compact(); err != nil {
 				slog.Error("history compaction failed", "error", err)

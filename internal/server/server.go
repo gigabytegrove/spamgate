@@ -69,6 +69,8 @@ type Server struct {
 	setupToken  string
 	log         *slog.Logger
 	// Host inspector is read-only. Override only in tests; it never applies settings.
+	PostfixHeldInventory func(context.Context) ([]PostfixHeld, error)
+	PostfixReleaseHeld func(context.Context, string) (string, error)
 	InspectHost func(context.Context) hostinspect.Report
 	hostMu      sync.Mutex
 	hostChecked time.Time
@@ -228,6 +230,8 @@ func (s *Server) Router() http.Handler {
 	m.HandleFunc("GET /api/v1/messages/{id}", s.message)
 	m.HandleFunc("GET /api/v1/messages/{id}/headers", s.messageHeaders)
 	m.HandleFunc("GET /api/v1/messages/{id}/delivery-evidence", s.postfixDeliveryEvidence)
+	m.HandleFunc("GET /api/v1/messages/{id}/investigation", s.messageInvestigation)
+	m.HandleFunc("POST /api/v1/messages/{id}/postfix-release", s.postfixReleaseMessage)
 	m.HandleFunc("POST /api/v1/messages/{id}/override", s.override)
 	m.HandleFunc("POST /api/v1/messages/{id}/review", s.reviewMessage)
 	m.HandleFunc("POST /api/v1/messages/{id}/release", s.release)

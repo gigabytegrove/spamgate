@@ -37,12 +37,14 @@ type Release struct {
 	HTML       string  `json:"html_url"`
 }
 type Status struct {
-	Current    string `json:"current"`
-	Latest     string `json:"latest,omitempty"`
-	Available  bool   `json:"available"`
-	ReleaseURL string `json:"release_url,omitempty"`
-	Staged     bool   `json:"staged"`
-	Message    string `json:"message,omitempty"`
+	Current     string        `json:"current"`
+	Latest      string        `json:"latest,omitempty"`
+	Available   bool          `json:"available"`
+	ReleaseURL  string        `json:"release_url,omitempty"`
+	Staged      bool          `json:"staged"`
+	Message     string        `json:"message,omitempty"`
+	InstallMode string        `json:"install_mode,omitempty"`
+	LastUpdate  *UpdateRecord `json:"last_update,omitempty"`
 }
 type Client struct {
 	HTTP     *http.Client

@@ -4,6 +4,7 @@ import (
 	"github.com/gigabytegrove/spamgate/internal/core"
 	"github.com/gigabytegrove/spamgate/internal/updater"
 	"net/http"
+	"os"
 )
 
 func (s *Server) checkUpdate(w http.ResponseWriter, r *http.Request) {
@@ -17,6 +18,13 @@ func (s *Server) checkUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, _, e := updater.Pending(s.Store.DataDir()); e == nil {
 		result.Staged = true
+	}
+	result.InstallMode = "requires_supervisor"
+	if os.Getenv(updater.SupervisedEnv) == "1" {
+		result.InstallMode = "supervised"
+	}
+	if record, e := updater.LastRecord(s.Store.DataDir()); e == nil {
+		result.LastUpdate = record
 	}
 	jsonReply(w, 200, result)
 }
@@ -44,7 +52,7 @@ func (s *Server) installUpdate(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "Explicit update confirmation required")
 		return
 	}
-	if err := updater.Launch(s.Store.DataDir()); err != nil {
+	if _, err := updater.ReadyForSupervisorUpdate(s.Store.DataDir()); err != nil {
 		fail(w, 409, err.Error())
 		return
 	}

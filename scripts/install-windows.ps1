@@ -49,7 +49,7 @@ if ($null -ne $Existing -and $Existing.Status -ne 'Stopped') {
 $TempExe = Join-Path $InstallDirectory 'spamgate.exe.new'
 Copy-Item -LiteralPath $SourceExe -Destination $TempExe -Force
 Move-Item -LiteralPath $TempExe -Destination $TargetExe -Force
-$BinaryPath = '"{0}" -data "{1}" -listen "{2}" -log-file "{3}"' -f $TargetExe, $DataDirectory, $Listen, $LogPath
+$BinaryPath = '"{0}" -internal-supervise -data "{1}" -listen "{2}" -log-file "{3}"' -f $TargetExe, $DataDirectory, $Listen, $LogPath
 if ($null -eq $Existing) {
     New-Service -Name $ServiceName -BinaryPathName $BinaryPath -DisplayName 'SpamGate Mail Filtering' -StartupType Automatic | Out-Null
 } else {
