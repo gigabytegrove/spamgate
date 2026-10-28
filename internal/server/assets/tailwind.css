@@ -1,10 +1,8 @@
 /*! tailwindcss v4.1.10 | MIT License | https://tailwindcss.com */
 @layer properties;
 :root, :host {
-  --color-forest: #254736;
-  --color-forest-dark: #1b4231;
-  --color-cream: #fffefa;
-  --color-canvas: #f6f5ef;
+  --color-ink: #12151d;
+  --color-cobalt: #2457f5;
 }
 .sr-only {
   position: absolute;
@@ -23,22 +21,19 @@
 .items-center {
   align-items: center;
 }
-.bg-canvas {
-  background-color: var(--color-canvas);
+.bg-cobalt {
+  background-color: var(--color-cobalt);
 }
-.bg-forest {
-  background-color: var(--color-forest);
-}
-.text-cream {
-  color: var(--color-cream);
+.text-ink {
+  color: var(--color-ink);
 }
 .overline {
   text-decoration-line: overline;
 }
-.hover\:bg-forest-dark {
+.hover\:bg-cobalt {
   &:hover {
     @media (hover: hover) {
-      background-color: var(--color-forest-dark);
+      background-color: var(--color-cobalt);
     }
   }
 }

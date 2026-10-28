@@ -1029,7 +1029,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	// Only known console paths serve the UI; unknown paths remain real 404s.
 	switch r.URL.Path {
 	case "/", "/overview", "/messages", "/delivery-queue", "/rules", "/signals", "/learning",
-		"/blocklists", "/mailboxes", "/api-keys", "/policy", "/settings", "/settings/updates", "/connections", "/help",
+		"/blocklists", "/mailboxes", "/api-keys", "/policy", "/settings", "/settings/updates", "/connections", "/help", "/diagnostics",
 		"/quarantine", "/investigations", "/threat-intelligence", "/scan-workbench", "/welcome":
 	default:
 		http.NotFound(w, r)

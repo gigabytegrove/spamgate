@@ -15,7 +15,7 @@ func TestUIRoutesServeEmbeddedInterface(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv := New(store, nil)
-	pages := []string{"/", "/overview", "/messages", "/rules", "/signals", "/learning", "/blocklists", "/mailboxes", "/api-keys", "/policy", "/settings", "/settings/updates", "/connections", "/help", "/quarantine", "/investigations", "/threat-intelligence", "/scan-workbench", "/welcome"}
+	pages := []string{"/", "/overview", "/messages", "/rules", "/signals", "/learning", "/blocklists", "/mailboxes", "/api-keys", "/policy", "/settings", "/settings/updates", "/connections", "/help", "/diagnostics", "/quarantine", "/investigations", "/threat-intelligence", "/scan-workbench", "/welcome"}
 	for _, path := range pages {
 		t.Run(path, func(t *testing.T) {
 			resp := httptest.NewRecorder()
@@ -32,7 +32,7 @@ func TestUIRoutesServeEmbeddedInterface(t *testing.T) {
 			t.Fatalf("unknown path %s got %d", path, resp.Code)
 		}
 	}
-	for _, path := range []string{"/assets/app.css", "/assets/app.js"} {
+	for _, path := range []string{"/assets/app.css", "/assets/redesign.css", "/assets/app.js"} {
 		resp := httptest.NewRecorder()
 		srv.Router().ServeHTTP(resp, httptest.NewRequest(http.MethodGet, path, nil))
 		if got := resp.Header().Get("Cache-Control"); got != "no-store" {

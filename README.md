@@ -1,3 +1,5 @@
+> **0.6.0-alpha.10 development:** Direct task navigation replaces the vertically scrolling Workspaces sidebar; adds an administrator-only Diagnostics page with live runtime, queue, authentication-path readiness and scan metrics, plus read-only troubleshooting instructions. Details: [Diagnostics and navigation](docs/DIAGNOSTICS_ALPHA10.md). Not production-qualified.
+
 > **0.6.0-alpha.1:** Pre-v1 engineering push: ARC cryptographic validation (no sealer trust), bounded MIME/ZIP checks, optional HTTPS fingerprint reputation, expiring threat snapshots, mailbox thresholds. Still not production-qualified. See [external intelligence](docs/EXTERNAL_INTELLIGENCE.md) and [release gate](docs/V1_RELEASE_GATE.md).
 
 > **0.5.0-alpha.1**: authentication correctness, offline backup verification, and live scanner metrics. Not production-cleared. See [v1 release gate](docs/V1_RELEASE_GATE.md).
