@@ -106,3 +106,24 @@ test('update screen identifies the installed worker path and protected base',()=
  assert.match(html,/root-owned and intentionally unchanged/);
  assert.doesNotMatch(html,/id="install-update"/);
 });
+
+test('durable operations panel escapes alerts and provides actual actions',()=>{
+ const ctx=context();
+ vm.runInContext("S.monitorData={samples:[{at:'2026-10-28T18:00:00Z',scan_total:12,scan_errors:1,queue_enabled:false}],alerts:[{id:'alert-id',code:'queue_dead',severity:'critical',summary:'<img src=x onerror=alert(1)>',state:'open',first_seen:'2026-10-28T18:00:00Z'}]}",ctx);
+ const html=vm.runInContext('monitorPanel()',ctx);
+ assert.match(html,/id="monitor-refresh"/);
+ assert.match(html,/data-monitor-ack="alert-id"/);
+ assert.match(html,/&lt;img src=x/);
+ assert.doesNotMatch(html,/<img src=x/);
+ assert.match(html,/SMTP outbox not enabled/);
+});
+test('policy preview panel shows hypothetical results without save controls',()=>{
+ const ctx=context();
+ vm.runInContext("S.policyPreview={totals:{changed:1,examined:2,forced_preserved:0,multi_recipient_fallback:1},items:[{id:'scan-123',score:9,historical_action:'reject',hypothetical_action:'tag',changed:true}],limitations:['Not Postfix delivery']}",ctx);
+ const html=vm.runInContext('policyPreviewPanel()',ctx);
+ assert.match(html,/id="preview-policy"/);
+ assert.match(html,/scan-123/);
+ assert.match(html,/hypothetical|Hypothetical/);
+ assert.match(html,/Not Postfix delivery/);
+ assert.doesNotMatch(html,/id="settings-form"/);
+});

@@ -68,6 +68,7 @@ type Server struct {
 	secure      bool
 	setupToken  string
 	log         *slog.Logger
+	monitor     *operationsMonitor
 	// Host inspector is read-only. Override only in tests; it never applies settings.
 	PostfixHeldInventory func(context.Context) ([]PostfixHeld, error)
 	PostfixReleaseHeld func(context.Context, string) (string, error)
@@ -80,6 +81,7 @@ type Server struct {
 func New(store *core.Store, deliver func(context.Context, core.Message, []byte) error) *Server {
 	s := &Server{Store: store, Scanner: &core.Scanner{Store: store}, Deliver: deliver, sessions: map[string]session{}, throttles: map[string]throttle{}, secure: os.Getenv("SPAMGATE_SECURE_COOKIES") == "true", log: slog.Default()}
 	s.sessionPath = filepath.Join(store.DataDir(), "sessions.json")
+	s.monitor = newOperationsMonitor(store.DataDir())
 	if err := s.loadSessions(); err != nil {
 		s.log.Error("session restore failed; existing sessions unavailable", "error", err)
 	}
@@ -243,6 +245,9 @@ func (s *Server) Router() http.Handler {
 	m.HandleFunc("GET /api/v1/delivery-queue", s.deliveryQueue)
 	m.HandleFunc("GET /api/v1/postfix/hold-queue", s.postfixHoldQueue)
 	m.HandleFunc("GET /api/v1/metrics", s.metrics)
+	m.HandleFunc("GET /api/v1/operations/monitor", s.monitorStatus)
+	m.HandleFunc("POST /api/v1/operations/monitor/sample", s.monitorSampleNow)
+	m.HandleFunc("POST /api/v1/operations/monitor/alerts/{id}/ack", s.monitorAcknowledge)
 	m.HandleFunc("POST /api/v1/delivery-queue/{id}/retry", s.retryDelivery)
 	m.HandleFunc("DELETE /api/v1/delivery-queue/{id}", s.discardDelivery)
 	m.HandleFunc("GET /api/v1/export", s.export)
@@ -259,6 +264,7 @@ func (s *Server) Router() http.Handler {
 	m.HandleFunc("PUT /api/v1/signals/{symbol}", s.updateSignal)
 	m.HandleFunc("PUT /api/v1/settings", s.settings)
 	m.HandleFunc("PUT /api/v1/recipient-policies", s.updateRecipientPolicies)
+	m.HandleFunc("POST /api/v1/policy/preview", s.previewPolicy)
 	m.HandleFunc("POST /api/v1/rules", s.addRule)
 	m.HandleFunc("PUT /api/v1/rules/{id}", s.updateRule)
 	m.HandleFunc("DELETE /api/v1/rules/{id}", s.deleteRule)
@@ -1044,6 +1050,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, indexHTML)
 }
 func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
+	go s.monitorLoop(ctx)
 	httpServer := &http.Server{Addr: addr, Handler: s.Router(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 25 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
 	go func() {
 		<-ctx.Done()
