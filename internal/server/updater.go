@@ -19,14 +19,15 @@ func (s *Server) checkUpdate(w http.ResponseWriter, r *http.Request) {
 	if _, _, e := updater.Pending(s.Store.DataDir()); e == nil {
 		result.Staged = true
 	}
-	result.InstallMode = "requires_supervisor"
-	if os.Getenv(updater.SupervisedEnv) == "1" {
-		result.InstallMode = "supervised"
-	}
-	if record, e := updater.LastRecord(s.Store.DataDir()); e == nil {
-		result.LastUpdate = record
-	}
+	result = s.annotateUpdateStatus(result)
 	jsonReply(w, 200, result)
+}
+// annotateUpdateStatus preserves supervisor capability in check and stage responses.
+func (s *Server) annotateUpdateStatus(result updater.Status) updater.Status {
+	result.InstallMode = "requires_supervisor"
+	if os.Getenv(updater.SupervisedEnv) == "1" { result.InstallMode = "supervised" }
+	if record,e:=updater.LastRecord(s.Store.DataDir());e==nil { result.LastUpdate=record }
+	return result
 }
 func (s *Server) stageUpdate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.authorized(w, r, true, true); !ok {
@@ -37,7 +38,7 @@ func (s *Server) stageUpdate(w http.ResponseWriter, r *http.Request) {
 		fail(w, 502, err.Error())
 		return
 	}
-	jsonReply(w, 200, result)
+	jsonReply(w, 200, s.annotateUpdateStatus(result))
 }
 
 func (s *Server) installUpdate(w http.ResponseWriter, r *http.Request) {
