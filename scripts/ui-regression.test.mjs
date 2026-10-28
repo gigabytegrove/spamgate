@@ -57,15 +57,43 @@ test('Prometheus telemetry parser ignores comments and extracts measurements',()
  assert.equal(result.byConnector.milter,23);
 });
 
-test('investigation exposes a real timeline and gated Postfix release control',()=>{
- assert.match(js,/function investigationPanel\(\)/);
- assert.match(js,/load-investigation/);
- assert.match(js,/postfix-release-message/);
- assert.match(js,/postfix_hold_present===true/);
- assert.match(js,/mta_action_state/);
+test('investigation renders source evidence, escapes untrusted logs, and gates Postfix release',()=>{
+ const ctx=context();
+ vm.runInContext(`S.inspect={id:'scan1',mta_action:'postfix_hold_requested',mta_action_state:'requested'};
+ S.investigation={scan_id:'scan1',connector:'milter',postfix_queue_id:'ABC123',
+ postfix_release_enabled:true,postfix_hold_present:true,steps:[{name:'Postfix',state:'held',detail:'Queue entry verified'}],
+ postfix_log_events:[{line:'<img src=x onerror=alert(1)>'}],
+ actions:['Confirm mailbox before release'],limitations:['Next-hop sent is not inbox delivery']};`,ctx);
+ let html=vm.runInContext('investigationPanel()',ctx);
+ assert.match(html,/Mail-flow evidence/);
+ assert.match(html,/Queue entry verified/);
+ assert.match(html,/id="postfix-release-message"/);
+ assert.match(html,/&lt;img src=x/);
+ assert.doesNotMatch(html,/<img src=x/);
+ vm.runInContext("S.inspect.mta_action_state='release_submitted'",ctx);
+ html=vm.runInContext('investigationPanel()',ctx);
+ assert.doesNotMatch(html,/id="postfix-release-message"/);
+ vm.runInContext("S.inspect.mta_action_state='requested';S.investigation.postfix_hold_present=false",ctx);
+ html=vm.runInContext('investigationPanel()',ctx);
+ assert.doesNotMatch(html,/id="postfix-release-message"/);
+ vm.runInContext("S.investigation.postfix_hold_present=true;S.investigation.postfix_release_enabled=false",ctx);
+ html=vm.runInContext('investigationPanel()',ctx);
+ assert.doesNotMatch(html,/id="postfix-release-message"/);
 });
-test('update UI permits supervisor-controlled installs only',()=>{
- assert.match(js,/install_mode==='supervised'/);
- assert.match(js,/Install and restart with rollback/);
- assert.match(js,/Unsupervised installs never terminate/);
+
+test('update UI only offers restart when a supervisor is confirmed',()=>{
+ const ctx=context();
+ vm.runInContext(`S.updateInfo={current:'0.6.0-alpha.11',latest:'v0.6.0-alpha.12',
+ available:true,staged:true,install_mode:'requires_supervisor'}`,ctx);
+ let html=vm.runInContext('updatesPage()',ctx);
+ assert.match(html,/Base service\/container upgrade required/);
+ assert.doesNotMatch(html,/id="install-update"/);
+ vm.runInContext("S.updateInfo.install_mode='supervised'",ctx);
+ html=vm.runInContext('updatesPage()',ctx);
+ assert.match(html,/Integrated supervisor ready/);
+ assert.match(html,/id="install-update"/);
+ assert.match(html,/Install and restart with rollback/);
+ vm.runInContext("S.updateInfo.staged=false",ctx);
+ html=vm.runInContext('updatesPage()',ctx);
+ assert.doesNotMatch(html,/id="install-update"/);
 });
