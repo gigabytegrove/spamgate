@@ -1,21 +1,29 @@
-# Downloading and testing SpamGate
+# SpamGate native builds and GitHub Releases
 
-**Current distribution is pre-release, not production-certified.**
+The GitHub repository is the source of truth. Release publication is performed **locally on dockeradm** with `gh`; no GitHub Actions workflow is required or enabled for release automation.
 
-Permanent native artifacts are intended to be published at the [private GitHub releases page](https://github.com/gigabytegrove/spamgate/releases). You must sign in to an account that has access to this private repository. Release assets are only downloadable after the GitHub Actions `Native development releases` workflow has succeeded; an unverified workflow commit does not establish that those assets exist.
+## v0.6.0-alpha.13 native Linux pair
 
-Use the standalone `SpamGate-0.4.0-alpha.2-linux-amd64` executable for an unpackaged Linux x64 smoke test, or `SpamGate-0.4.0-alpha.2-windows-amd64.exe` for a Windows x64 development smoke test. Alternatively, the `*_UNSIGNED-DEVELOPMENT.tar.gz` archive contains the systemd installer and Postfix configuration helper; other platform bundles are packaged in the same workflow.
+A foreground-native deployment consists of **two separate AMD64 Linux binaries**:
 
-On Linux, after authenticating to GitHub and downloading the standalone binary, rename it to `spamgate`, check its SHA-256 against `SHA256SUMS.txt`, and run:
+- `spamgate-run-linux-amd64`, installed as `/opt/spamgate/spamgate-run`, is the stable launcher and update supervisor.
+- `spamgate-linux-amd64`, installed as `/opt/spamgate/spamgate`, is the actual mail worker updated in place.
+- `spamgate-windows-amd64.exe` is a separate Windows worker developer build; the independent runner is not yet validated on Windows.
+- `SHA256SUMS.txt` protects the exact released artifact bytes; neither SHA-256 nor unsigned Windows binaries are a substitute for publisher signing.
+
+On dockeradm, build and qualify the complete source from the exact approved commit with `bash scripts/build-github-assets.sh`. **Do not publish** if the command fails. It runs Go tests, race detection, static analysis, JavaScript rendering regressions, the existing supervisor restart/rollback integration, the new independent runner integration, and cross-compilation. The release includes all **four** files above. It is marked as a prerelease.
+
+For the **one-time transition** of a stopped alpha.9 foreground server, use the reviewed `scripts/bootstrap-foreground.sh /opt/spamgate` from the exact tagged source. It verifies both GitHub assets and preserves the old worker separately; it does not touch Postfix, the Milter environment, `/opt/spamgate/data`, or the legacy `.spamgate-backup`. It also does not start a service.
+
+Start the installed pair by replacing `./spamgate` with `./spamgate-run` while keeping the rest of the existing invocation unchanged:
 
 ```sh
-chmod 0755 spamgate
-./spamgate -version
-./spamgate -data "$HOME/.local/share/spamgate" -listen 127.0.0.1:38470
+cd /opt/spamgate
+SPAMGATE_MILTER_LISTEN=127.0.0.1:38472 \
+SPAMGATE_MILTER_TRUSTED_CIDRS=127.0.0.1/32 \
+./spamgate-run -data /opt/spamgate/data -listen 0.0.0.0:38470
 ```
 
-Visit http://127.0.0.1:38470 on that host and complete first-run setup. This does **not** attach to or alter your installed MTA. For persistent installation use the tested service installer from the platform-specific archive **only after validating the build for your environment**. Review [native MTA setup](NATIVE_MAIL_SERVERS.md) first.
+The launcher keeps the terminal attached so runtime logs, update failures and rollback events remain visible. It never downloads software by itself: the authenticated SpamGate update UI stages a published, verified worker, and a private worker exit code requests the runner to replace it. See [native runner design](RUNNER_ALPHA13.md).
 
-Windows native development smoke test: download the EXE, inspect any Defender warning rather than bypassing it, and double-click the GUI executable. Its Web UI opens locally. This is an unsigned development binary and may be blocked by organizational policy. No publisher certificate or Defender clearance is claimed.
-
-If GitHub Releases has no assets, inspect the workflow run in the private repository's Actions tab. Do **not** fall back to an outdated, unsigned chat attachment for production traffic. Chat-generated sandbox links are temporary and can fail independently of a valid archive.
+The managed systemd/Docker integrated-supervisor deployment remains a separate mode and must not be mixed with the foreground launcher on the same data directory. Do not start multiple SpamGate instances against the same listening ports and journal.
