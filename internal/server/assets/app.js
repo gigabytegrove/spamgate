@@ -341,7 +341,7 @@ async function loadDiagnostics(){
  const results=await Promise.allSettled(jobs.map(([,fn])=>fn()));
  const failures=[];for(let i=0;i<jobs.length;i++){
   const [key]=jobs[i];if(results[i].status==='fulfilled')S[key]=results[i].value;
-  else{if(key==='telemetry')S.telemetry=null;failures.push(key+': '+results[i].reason.message)}
+  else{S[key]=null;failures.push(key+': '+results[i].reason.message)}
  }
  S.telemetryError=failures.length?failures.join(' · '):null;
  S.diagnosticsCheckedAt=new Date().toISOString();S.diagnosticsBusy=false;
