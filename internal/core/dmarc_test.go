@@ -24,7 +24,7 @@ func TestDMARCAlignment(t *testing.T) {
 		t.Fatal(unaligned)
 	}
 	none := DMARCCheck(context.Background(), dns, "sender@sub.example.org", SPFResult{Result: "fail"}, nil)
-	if none.Result != "none" {
-		t.Fatal("organization discovery must not be claimed: ", none)
+	if none.Result != "fail" || none.Policy != "reject" {
+		t.Fatal("organizational-domain policy should now be inherited: ", none)
 	}
 }

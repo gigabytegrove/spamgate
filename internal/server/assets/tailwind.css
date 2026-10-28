@@ -1,0 +1,62 @@
+/*! tailwindcss v4.1.10 | MIT License | https://tailwindcss.com */
+@layer properties;
+:root, :host {
+  --color-forest: #254736;
+  --color-forest-dark: #1b4231;
+  --color-cream: #fffefa;
+  --color-canvas: #f6f5ef;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+.flex {
+  display: flex;
+}
+.items-center {
+  align-items: center;
+}
+.bg-canvas {
+  background-color: var(--color-canvas);
+}
+.bg-forest {
+  background-color: var(--color-forest);
+}
+.text-cream {
+  color: var(--color-cream);
+}
+.overline {
+  text-decoration-line: overline;
+}
+.hover\:bg-forest-dark {
+  &:hover {
+    @media (hover: hover) {
+      background-color: var(--color-forest-dark);
+    }
+  }
+}
+.focus-visible\:outline-2 {
+  &:focus-visible {
+    outline-style: var(--tw-outline-style);
+    outline-width: 2px;
+  }
+}
+@property --tw-outline-style {
+  syntax: "*";
+  inherits: false;
+  initial-value: solid;
+}
+@layer properties {
+  @supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))) {
+    *, ::before, ::after, ::backdrop {
+      --tw-outline-style: solid;
+    }
+  }
+}

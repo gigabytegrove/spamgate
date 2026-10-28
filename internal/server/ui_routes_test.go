@@ -15,7 +15,7 @@ func TestUIRoutesServeEmbeddedInterface(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv := New(store, nil)
-	pages := []string{"/", "/overview", "/messages", "/rules", "/signals", "/learning", "/blocklists", "/mailboxes", "/api-keys", "/policy", "/connections", "/help", "/quarantine", "/investigations", "/threat-intelligence", "/scan-workbench", "/welcome"}
+	pages := []string{"/", "/overview", "/messages", "/rules", "/signals", "/learning", "/blocklists", "/mailboxes", "/api-keys", "/policy", "/settings", "/settings/updates", "/connections", "/help", "/quarantine", "/investigations", "/threat-intelligence", "/scan-workbench", "/welcome"}
 	for _, path := range pages {
 		t.Run(path, func(t *testing.T) {
 			resp := httptest.NewRecorder()

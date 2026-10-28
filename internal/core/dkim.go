@@ -292,7 +292,14 @@ func dkimVerifyOne(ctx context.Context, resolver SPFResolver, headers []dkimHead
 	if err != nil {
 		return fail(err.Error())
 	}
-	headerData = append(headerData, dkimCanonHeader(blank, headerStyle)...)
+	// RFC 6376 §3.7 hash step 2: DKIM-Signature is canonicalized WITHOUT
+	// a terminating CRLF. Including it invalidates genuine RSA/Ed25519
+	// signatures and causes false positives on properly signed mail.
+	canonicalSignatureHeader := dkimCanonHeader(blank, headerStyle)
+	if len(canonicalSignatureHeader) < 2 {
+		return fail("Invalid canonicalized DKIM signature header")
+	}
+	headerData = append(headerData, canonicalSignatureHeader[:len(canonicalSignatureHeader)-2]...)
 	signature, err := base64.StdEncoding.DecodeString(dkimCompact(tags["b"]))
 	if err != nil {
 		return fail("Invalid DKIM signature encoding")

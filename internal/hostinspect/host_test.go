@@ -40,10 +40,21 @@ func TestDetectPanelAndExistingMilter(t *testing.T) {
 			return "", errors.New("missing")
 		},
 		Run: func(_ context.Context, _ string, args ...string) (string, error) {
-			if strings.Join(args, " ") != "-h smtpd_milters" {
+			switch strings.Join(args, " ") {
+			case "-h smtpd_milters":
+				return "inet:127.0.0.1:11332", nil
+			case "-h non_smtpd_milters":
+				return "", nil
+			case "-h milter_protocol":
+				return "6", nil
+			case "-h milter_default_action":
+				return "tempfail", nil
+			case "-h smtpd_milter_maps":
+				return "", nil
+			default:
 				t.Fatal(args)
+				return "", nil
 			}
-			return "inet:127.0.0.1:11332", nil
 		},
 		Reach: func(string) bool { return true },
 	}
@@ -102,5 +113,55 @@ func TestCpanelPrefersManagedEximOverStrayPostfix(t *testing.T) {
 	r := p.Detect(context.Background())
 	if r.Panel != "cpanel" || r.MailServer != "exim" {
 		t.Fatalf("cPanel MTA overridden by stray Postfix: %+v", r)
+	}
+}
+
+func TestMilterPortMismatchIsVisible(t *testing.T) {
+	root := t.TempDir()
+	for _, rel := range []string{"etc/postfix/main.cf"} {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(""), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p := Probe{Root: root, Lookup: func(x string) (string, error) {
+		if x == "postconf" {
+			return "postconf", nil
+		}
+		return "", errors.New("missing")
+	},
+		Run: func(_ context.Context, _ string, args ...string) (string, error) {
+			switch strings.Join(args, " ") {
+			case "-h smtpd_milters", "-h non_smtpd_milters":
+				return "inet:localhost:38471", nil
+			case "-h milter_default_action":
+				return "accept", nil
+			case "-h milter_protocol":
+				return "6", nil
+			case "-h smtpd_milter_maps":
+				return "", nil
+			}
+			return "", errors.New("invalid")
+		}, Reach: func(string) bool { return true }}
+	r := p.Detect(context.Background())
+	if r.PostfixConfigured {
+		t.Fatal("Wrong HTTP port must not be counted as Milter configuration")
+	}
+	notes := strings.Join(r.Notes, " | ")
+	if !strings.Contains(notes, "WRONG PORT") || !strings.Contains(notes, "bypassed silently") {
+		t.Fatal(notes)
+	}
+}
+func TestCorrectMilterDetected(t *testing.T) {
+	for _, tc := range []struct {
+		input string
+		want  bool
+	}{{"inet:127.0.0.1:38472", true}, {"inet:localhost:38472", true}, {"inet:localhost:38471", false}, {"inet:127.0.0.1:9999, inet:127.0.0.1:38472", true}, {"", false}} {
+		if got := ContainsLocalMilter(tc.input); got != tc.want {
+			t.Fatalf("%q => %v, want %v", tc.input, got, tc.want)
+		}
 	}
 }

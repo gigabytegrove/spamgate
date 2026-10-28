@@ -29,7 +29,8 @@ API root: `/api/v1`. All responses except export and static assets are JSON. Aut
 | POST | `/api/v1/neural/train/{id}?label=spam` or `label=ham` | Admin | Train on existing history record's scoring symbols, once per ID |
 | GET | `/api/v1/signals` | Authenticated | List every built-in detector with default and effective weights |
 | PUT | `/api/v1/signals/{symbol}` | Admin | JSON `score` (-100 to 100), `enabled` (boolean); future scans only |
-| PUT | `/api/v1/settings` | Admin | Update policy thresholds and retention |
+| PUT | `/api/v1/settings` | Admin | Update policy thresholds, retention and opt-in detection features |
+| PUT | `/api/v1/recipient-policies` | Admin | Atomically replace per-mailbox threshold policies; see `EXTERNAL_INTELLIGENCE.md` |
 | POST | `/api/v1/rules` | Admin or mailbox | Create scoring rule (mailbox users only sender policies) |
 | DELETE | `/api/v1/rules/{id}` | Admin or rule owner | Remove rule |
 | POST | `/api/v1/dns-lists` | Admin | Create DNSBL definition |

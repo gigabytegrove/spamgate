@@ -1,0 +1,41 @@
+name: SpamGate release
+on:
+  push:
+    tags:
+      - 'v*'
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Test and static checks
+        run: |
+          go test ./...
+          go vet ./...
+      - name: Build binaries
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          mkdir -p dist
+          GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o dist/spamgate-linux-amd64 ./cmd/spamgate
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o dist/spamgate-windows-amd64.exe ./cmd/spamgate
+          cd dist
+          sha256sum spamgate-linux-amd64 spamgate-windows-amd64.exe > SHA256SUMS.txt
+      - name: Verify tag matches executable version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          test "v$(./dist/spamgate-linux-amd64 -version)" = "$RELEASE_TAG"
+      - name: Publish immutable release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          FLAGS=''
+          if [[ "$RELEASE_TAG" == *-* ]]; then FLAGS='--prerelease'; fi
+          gh release create "$RELEASE_TAG" dist/spamgate-linux-amd64 dist/spamgate-windows-amd64.exe dist/SHA256SUMS.txt --title "SpamGate $RELEASE_TAG" --generate-notes $FLAGS

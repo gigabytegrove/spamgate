@@ -17,14 +17,19 @@ import (
 const LocalMilter = "inet:127.0.0.1:38472"
 
 type Report struct {
-	Platform        string   `json:"platform"`
-	Panel           string   `json:"panel"`
-	MailServer      string   `json:"mail_server"`
-	Integration     string   `json:"integration"`
-	ExistingMilters string   `json:"existing_milters,omitempty"`
-	ProposedMilters string   `json:"proposed_milters,omitempty"`
-	MilterReady     bool     `json:"milter_ready"`
-	Notes           []string `json:"notes"`
+	Platform               string   `json:"platform"`
+	Panel                  string   `json:"panel"`
+	MailServer             string   `json:"mail_server"`
+	Integration            string   `json:"integration"`
+	ExistingMilters        string   `json:"existing_milters,omitempty"`
+	NonSMTPDMilters        string   `json:"non_smtpd_milters,omitempty"`
+	MilterDefaultAction    string   `json:"milter_default_action,omitempty"`
+	MilterProtocol         string   `json:"milter_protocol,omitempty"`
+	PostfixSmtpdMilterMaps string   `json:"postfix_smtpd_milter_maps,omitempty"`
+	PostfixConfigured      bool     `json:"postfix_configured"`
+	ProposedMilters        string   `json:"proposed_milters,omitempty"`
+	MilterReady            bool     `json:"milter_ready"`
+	Notes                  []string `json:"notes"`
 }
 
 type Probe struct {
@@ -109,6 +114,35 @@ func (p Probe) Detect(ctx context.Context) Report {
 			result.ExistingMilters = current
 			result.ProposedMilters = AppendMilter(current)
 		}
+		// Inspect both Postfix paths. A correct global smtpd_milters value
+		// is not proof of non-SMTP coverage; local submission uses another key.
+		readPostconf := func(key string) string {
+			c, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+			value, e := run(c, postfixPath, "-h", key)
+			if e != nil {
+				result.Notes = append(result.Notes, "Could not inspect Postfix "+key+"; verify it manually.")
+				return ""
+			}
+			return strings.TrimSpace(value)
+		}
+		result.NonSMTPDMilters = readPostconf("non_smtpd_milters")
+		result.MilterProtocol = readPostconf("milter_protocol")
+		result.MilterDefaultAction = readPostconf("milter_default_action")
+		result.PostfixSmtpdMilterMaps = readPostconf("smtpd_milter_maps")
+		result.PostfixConfigured = ContainsLocalMilter(result.ExistingMilters) && ContainsLocalMilter(result.NonSMTPDMilters)
+		if hasWrongSpamGatePort(result.ExistingMilters) || hasWrongSpamGatePort(result.NonSMTPDMilters) {
+			result.Notes = append(result.Notes, "WRONG PORT: 38471 is SpamGate HTTP scanning, not Milter. Postfix needs inet:127.0.0.1:38472.")
+		}
+		if !result.PostfixConfigured {
+			result.Notes = append(result.Notes, "Postfix is not configured to use SpamGate Milter on both smtpd_milters and non_smtpd_milters. Mail can bypass SpamGate.")
+		}
+		if result.MilterDefaultAction == "accept" {
+			result.Notes = append(result.Notes, "Postfix is set to accept mail when the Milter fails; scanning can be bypassed silently. Use tempfail after verifying connectivity, understanding it defers mail during outages.")
+		}
+		if result.PostfixSmtpdMilterMaps != "" {
+			result.Notes = append(result.Notes, "Postfix smtpd_milter_maps may override/disable the Milter for some SMTP clients; inspect those rules.")
+		}
 		result.Integration = "postfix-milter"
 		if result.Panel != "none" {
 			result.Notes = append(result.Notes, "Hosting panel detected: use its supported persistence/integration method; automatic Postfix changes are disabled.")
@@ -131,6 +165,25 @@ func (p Probe) Detect(ctx context.Context) Report {
 		result.Notes = append(result.Notes, "Multiple mail binaries found; verify which MTA handles live traffic.")
 	}
 	return result
+}
+
+// ContainsLocalMilter checks for the exact loopback listener SpamGate advertises.
+// Do not treat the HTTP scanner's 38471 port as a Milter endpoint.
+func ContainsLocalMilter(existing string) bool {
+	for _, part := range strings.FieldsFunc(existing, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' || r == '\n' }) {
+		if part == LocalMilter || part == "inet:localhost:38472" {
+			return true
+		}
+	}
+	return false
+}
+func hasWrongSpamGatePort(existing string) bool {
+	for _, part := range strings.FieldsFunc(existing, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' || r == '\n' }) {
+		if part == "inet:localhost:38471" || part == "inet:127.0.0.1:38471" {
+			return true
+		}
+	}
+	return false
 }
 
 func AppendMilter(existing string) string {

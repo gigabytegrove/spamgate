@@ -10,9 +10,9 @@ import (
 	"net"
 	"net/mail"
 	"net/url"
+	"os"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -149,16 +149,38 @@ func decodeQP(b []byte) []byte {
 }
 
 // Decoding functions are in codec.go to isolate MIME transfer handling.
-func (s *Scanner) Scan(ctx context.Context, in Input) (Message, error) {
+func (s *Scanner) Scan(ctx context.Context, in Input) (out Message, scanErr error) {
+	started := time.Now()
+	defer func() { observeScan(in.Connector, out.Action, time.Since(started), scanErr != nil) }()
 	if len(in.Raw) == 0 || len(in.Raw) > 10<<20 {
 		return Message{}, fmt.Errorf("message size must be 1–10485760 bytes")
 	}
 	cfg := s.Store.Config()
+	policyDetail := "Global policy"
+	if len(in.Recipients) == 1 {
+		for _, rp := range cfg.RecipientPolicies {
+			if equalEmail(in.Recipients[0], rp.Mailbox) {
+				cfg.Settings.TagThreshold = rp.TagThreshold
+				cfg.Settings.QuarantineThreshold = rp.QuarantineThreshold
+				cfg.Settings.RejectThreshold = rp.RejectThreshold
+				policyDetail = "Mailbox-specific thresholds for " + rp.Mailbox
+				break
+			}
+		}
+	} else if len(in.Recipients) > 1 && len(cfg.RecipientPolicies) != 0 {
+		policyDetail = "Global thresholds used for multi-recipient transaction; split message by MTA for distinct mailbox actions"
+	}
+	trace := &ScoringTrace{TagThreshold: cfg.Settings.TagThreshold, QuarantineThreshold: cfg.Settings.QuarantineThreshold, RejectThreshold: cfg.Settings.RejectThreshold}
+	note := func(name, status, detail string) {
+		trace.Checks = append(trace.Checks, ScanCheck{Name: name, Status: status, Detail: detail})
+	}
+	note("Policy selection", "info", policyDetail)
 	m := Message{ID: ID(), Timestamp: time.Now().UTC(), Sender: strings.TrimSpace(in.Sender), Recipients: append([]string(nil), in.Recipients...), ClientIP: in.ClientIP, Connector: in.Connector, Size: len(in.Raw), Action: "accept"}
 	parsed, e := mail.ReadMessage(bytes.NewReader(in.Raw))
 	if e != nil {
 		return Message{}, fmt.Errorf("invalid RFC 5322 message: %w", e)
 	}
+	m.HeaderSnapshot, m.HeaderTruncated = CaptureHeaders(in.Raw)
 	m.MessageID = parsed.Header.Get("Message-Id")
 	m.Subject = decodedHeader(parsed.Header.Get("Subject"))
 	if m.Sender == "" {
@@ -170,8 +192,14 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (Message, error) {
 	}
 	text, attachments, urls, hasHTML := bodyParts(parsed.Header, body, 0)
 	var findings []Finding
+	matchedSince := func(n int) string {
+		if len(findings) > n {
+			return "match"
+		}
+		return "clear"
+	}
 	add := func(symbol, source, detail string, weight float64) {
-		if strings.HasPrefix(source, "builtin/") || strings.HasPrefix(source, "auth/") || strings.HasPrefix(source, "antivirus/") || strings.HasPrefix(source, "learning/") {
+		if strings.HasPrefix(source, "builtin/") || strings.HasPrefix(source, "auth/") || strings.HasPrefix(source, "antivirus/") || strings.HasPrefix(source, "learning/") || strings.HasPrefix(source, "external/") {
 			if p, ok := cfg.SignalPolicies[symbol]; ok {
 				if !p.Enabled {
 					return
@@ -181,6 +209,7 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (Message, error) {
 		}
 		findings = append(findings, Finding{symbol, source, detail, weight})
 	}
+	builtinStart := len(findings)
 	if parsed.Header.Get("From") == "" {
 		add("MISSING_FROM", "builtin/header", "From header absent", 2)
 	}
@@ -196,12 +225,39 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (Message, error) {
 	if hasHTML && strings.TrimSpace(text) == "" {
 		add("EMPTY_HTML", "builtin/mime", "HTML without usable text", 0.5)
 	}
+	note("Message headers", matchedSince(builtinStart), "Checked From, Date, Message-ID and recipient metadata")
+	contentStart := len(findings)
 	lower := strings.ToLower(m.Subject + " " + text)
 	for _, rule := range suspiciousWords {
 		if strings.Contains(lower, rule.word) {
 			add("CONTENT_"+strings.ToUpper(strings.ReplaceAll(rule.word, " ", "_")), "builtin/content", rule.word, rule.weight)
 		}
 	}
+	note("Suspicious wording", matchedSince(contentStart), "Compared subject and decoded text with the built-in phrase rules")
+	if cfg.Settings.AttachmentInspection {
+		initial := len(findings)
+		detected, inspectionErr := InspectMIMEAttachments(in.Raw)
+		if inspectionErr != nil {
+			note("Attachment contents", "error", inspectionErr.Error())
+		} else {
+			totalWeight := 0.0
+			for _, f := range detected {
+				weight := f.Score
+				if totalWeight+weight > 10 {
+					weight = 10 - totalWeight
+				}
+				if weight < 0 {
+					weight = 0
+				}
+				totalWeight += weight
+				add(f.Symbol, "builtin/mime-content", f.Detail, weight)
+			}
+			note("Attachment contents", matchedSince(initial), fmt.Sprintf("Examined MIME parts, executable signatures and ZIP metadata; %d finding(s); penalty capped at +10. Does not replace ClamAV", len(detected)))
+		}
+	} else {
+		note("Attachment contents", "skipped", "Optional bounded content and ZIP inspection disabled")
+	}
+	attachmentStart := len(findings)
 	for _, a := range attachments {
 		ext := strings.ToLower(a)
 		for _, risky := range []string{".exe", ".scr", ".js", ".vbs", ".ps1", ".bat", ".cmd", ".hta", ".jar", ".docm", ".xlsm", ".lnk", ".iso"} {
@@ -214,6 +270,8 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (Message, error) {
 			add("DOUBLE_EXTENSION", "builtin/attachment", a, 4)
 		}
 	}
+	note("Attachment filenames", matchedSince(attachmentStart), fmt.Sprintf("Checked %d attachment filename(s) for risky extensions; this is not a full attachment-content scan", len(attachments)))
+	urlStart := len(findings)
 	domains := map[string]bool{}
 	for _, rawURL := range urls {
 		u, e := url.Parse(strings.TrimRight(rawURL, ".,;"))
@@ -238,18 +296,32 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (Message, error) {
 	if len(domains) > 8 {
 		add("MANY_LINK_DOMAINS", "builtin/url", fmt.Sprintf("%d unique domains", len(domains)), 2)
 	}
+	note("Links", matchedSince(urlStart), fmt.Sprintf("Inspected %d extracted link(s) for suspicious URL patterns", len(urls)))
+	if cfg.Settings.PhishingLinks {
+		phishStart := len(findings)
+		phish := detectPhishingLinks(in.Raw)
+		for _, item := range phish {
+			add("PHISHING_VISIBLE_LINK", "builtin/phishing", item, 3)
+		}
+		note("Visible-link impersonation", matchedSince(phishStart), fmt.Sprintf("Compared link display text to actual destinations; %d mismatches", len(phish)))
+	} else {
+		note("Visible-link impersonation", "skipped", "Opt-in phishing link inspection is disabled")
+	}
 	// Rules are evaluated after built-ins and retain provenance and their configured weight.
 	forced := ""
 	senderDomain := strings.ToLower(strings.TrimSpace(m.Sender))
 	if p := strings.LastIndex(senderDomain, "@"); p >= 0 {
 		senderDomain = senderDomain[p+1:]
 	}
+	rulesStart := len(findings)
+	eligibleRules := 0
 	rules := append([]Rule(nil), cfg.Rules...)
 	sort.SliceStable(rules, func(i, j int) bool { return rules[i].Priority > rules[j].Priority })
 	for _, rule := range rules {
 		if !rule.Enabled || (!rule.ExpiresAt.IsZero() && !time.Now().Before(rule.ExpiresAt)) || strings.TrimSpace(rule.Value) == "" {
 			continue
 		}
+		eligibleRules++
 		if rule.Owner != "" {
 			if len(m.Recipients) == 0 {
 				continue
@@ -308,24 +380,118 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (Message, error) {
 			}
 		}
 	}
-	if cfg.Settings.DNSBLEnabled && m.ClientIP != "" {
-		ip := net.ParseIP(m.ClientIP)
-		if ip != nil && ip.To4() != nil && ip.IsGlobalUnicast() && !ip.IsPrivate() {
-			v4 := ip.To4()
-			rev := strconv.Itoa(int(v4[3])) + "." + strconv.Itoa(int(v4[2])) + "." + strconv.Itoa(int(v4[1])) + "." + strconv.Itoa(int(v4[0]))
-			for _, zone := range cfg.DNSLists {
-				if !zone.Enabled {
-					continue
+	note("Custom filtering rules", matchedSince(rulesStart), fmt.Sprintf("Checked %d enabled, non-expired rule(s) for matching conditions", eligibleRules))
+	dnsStart := len(findings)
+	dnsEnabled := 0
+	for _, z := range cfg.DNSLists {
+		if z.Enabled {
+			dnsEnabled++
+		}
+	}
+	dnsErrors := 0
+	dnsChecked := 0
+	if cfg.Settings.DNSBLEnabled {
+		// Bound total external DNSBL work to 3 seconds even when many zones
+		// are configured; normal authentication DNS has its own budget.
+		reputationCtx, cancelReputation := context.WithTimeout(ctx, 3*time.Second)
+		defer cancelReputation()
+		zonesUsed := 0
+		for _, zone := range cfg.DNSLists {
+			if zonesUsed >= 8 || reputationCtx.Err() != nil {
+				break
+			}
+			if zone.Enabled {
+				zonesUsed++
+			}
+			if !zone.Enabled {
+				continue
+			}
+			kind := zone.Kind
+			if kind == "" {
+				kind = "ip"
+			}
+			var names []string
+			switch kind {
+			case "ip":
+				if m.ClientIP != "" {
+					names = append(names, m.ClientIP)
 				}
-				name := rev + "." + zone.Zone
-				dnsCtx, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
-				ips, err := net.DefaultResolver.LookupHost(dnsCtx, name)
-				cancel()
-				if err == nil && len(ips) > 0 {
-					add("DNSBL_"+strings.ReplaceAll(zone.Zone, ".", "_"), "dnsbl/"+zone.Zone, "listed: "+name, zone.Score)
+			case "domain":
+				if senderDomain != "" {
+					names = append(names, senderDomain)
+				}
+			case "url":
+				for d := range domains {
+					names = append(names, d)
+				}
+				sort.Strings(names)
+				if len(names) > 4 {
+					names = names[:4]
+				}
+			}
+			if len(names) == 0 {
+				note("DNS blocklist: "+zone.Zone, "skipped", "No eligible "+kind+" address or domain")
+			}
+			for _, candidate := range names {
+				var detail string
+				var listed bool
+				var err error
+				if kind == "ip" {
+					detail, listed, err = dnsblLookup(reputationCtx, s.Resolver, candidate, zone.Zone)
+				} else {
+					detail, listed, err = domainDNSBLLookup(reputationCtx, s.Resolver, candidate, zone.Zone)
+				}
+				if detail != "" {
+					dnsChecked++
+				}
+				if err != nil {
+					dnsErrors++
+					note("DNS blocklist: "+zone.Zone, "error", "DNS lookup unavailable: "+err.Error())
+				} else if listed {
+					add("DNSBL_"+strings.ToUpper(kind)+"_"+strings.ReplaceAll(zone.Zone, ".", "_"), "dnsbl/"+kind+"/"+zone.Zone, detail, zone.Score)
 				}
 			}
 		}
+	}
+	if !cfg.Settings.DNSBLEnabled || dnsEnabled == 0 {
+		note("DNS blocklists", "skipped", "Disabled or no blocklist zones enabled")
+	} else {
+		status := matchedSince(dnsStart)
+		if dnsChecked == 0 && dnsErrors == 0 {
+			status = "skipped"
+		}
+		note("DNS blocklists", status, fmt.Sprintf("Queried %d IP/domain/URL zone entries; %d DNS error(s). Lists are individually opt-in and require supported DNSBL A reply codes.", dnsChecked, dnsErrors))
+	}
+	if cfg.Settings.ThreatFeedEnabled {
+		candidates := make([]string, 0, len(domains)+1)
+		if senderDomain != "" {
+			candidates = append(candidates, senderDomain)
+		}
+		for d := range domains {
+			candidates = append(candidates, d)
+		}
+		sort.Strings(candidates)
+		matched, err := FindThreatFeedMatches(m.ClientIP, candidates)
+		if err != nil {
+			note("External threat feed", "error", err.Error())
+		} else {
+			total := 0.0
+			for _, item := range matched {
+				weight := 3.0
+				if total >= 9 {
+					break
+				}
+				total += weight
+				add(item.Symbol, "external/feed", item.Detail, weight)
+			}
+			if len(matched) > 0 {
+				note("External threat feed", "match", fmt.Sprintf("%d matched indicator(s); snapshot is opt-in and expires automatically", len(matched)))
+			} else {
+				note("External threat feed", "clear", "No matches in current trusted snapshot")
+			}
+		}
+	} else {
+		note("External threat feed", "skipped", "Disabled; no local intelligence snapshot consulted")
 	}
 	spf := SPFResult{Result: "none"}
 	if in.ClientIP != "" {
@@ -341,24 +507,53 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (Message, error) {
 			add("R_SPF_PERMERROR", "auth/spf/"+spf.Domain, spf.Explanation, 1)
 		}
 	}
+	if in.ClientIP == "" {
+		note("SPF sender authorization", "skipped", "No original sending IP supplied")
+	} else {
+		note("SPF sender authorization", spf.Result, fmt.Sprintf("Source IP %s; envelope domain %s. %s", in.ClientIP, spf.Domain, spf.Explanation))
+	}
 	dkimResults := DKIMVerify(ctx, s.Resolver, in.Raw)
+	// One message may carry multiple DKIM signatures. Count verified
+	// authentication once; never let an attacker force quarantine simply by
+	// prepending ten invalid DKIM-Signature headers to otherwise valid mail.
+	signaturePass, signatureFail := 0, 0
+	var passSig, failSig DKIMResult
 	for _, dkim := range dkimResults {
-		switch dkim.Result {
-		case "pass":
-			add("R_DKIM_ALLOW", "auth/dkim/"+dkim.Domain, dkim.Detail, -1)
-		case "fail":
-			add("R_DKIM_REJECT", "auth/dkim/"+dkim.Domain, dkim.Detail, 2)
+		if dkim.Result == "pass" {
+			signaturePass++
+			passSig = dkim
+		}
+		if dkim.Result == "fail" {
+			signatureFail++
+			if failSig.Domain == "" {
+				failSig = dkim
+			}
 		}
 	}
-	// Structural ARC evidence is informational only. Never promote an ARC
-	// "cv=pass" claim to authentication without cryptographic verification.
-	arc := CheckARCStructure(in.Raw)
+	if signaturePass > 0 {
+		add("R_DKIM_ALLOW", "auth/dkim/"+passSig.Domain, fmt.Sprintf("%d verified signature(s); %d other signature(s) failed", signaturePass, signatureFail), -1)
+	} else if signatureFail > 0 {
+		add("R_DKIM_REJECT", "auth/dkim/"+failSig.Domain, fmt.Sprintf("%d failed signature(s), no verified signature. First: %s", signatureFail, failSig.Detail), 2)
+	}
+	if len(dkimResults) == 0 {
+		note("DKIM digital signatures", "skipped", "No DKIM signatures found")
+	} else {
+		for _, d := range dkimResults {
+			note("DKIM digital signatures", d.Result, fmt.Sprintf("DNS public key: %s._domainkey.%s; %s", d.Selector, d.Domain, d.Detail))
+		}
+	}
+	// Cryptographic ARC validation is evidence only: never treat signed forwarding
+	// chain as a trusted sender without an explicit trusted-sealer policy.
+	arc := ValidateARC(ctx, s.Resolver, in.Raw)
 	switch arc.Status {
 	case "malformed":
 		add("ARC_MALFORMED", "auth/arc", arc.Detail, 0)
-	case "unverified":
-		add("ARC_UNVERIFIED", "auth/arc", arc.Detail, 0)
+	case "pass":
+		add("ARC_CRYPTO_PASS", "auth/arc", arc.Detail, 0)
+	case "fail", "temperror":
+		add("ARC_CRYPTO_"+strings.ToUpper(arc.Status), "auth/arc", arc.Detail, 0)
 	}
+	note("ARC forwarding chain", arc.Status, arc.Detail+". ARC does not override DMARC or establish intermediary trust")
 	dmarc := DMARCCheck(ctx, s.Resolver, parsed.Header.Get("From"), spf, dkimResults)
 	switch dmarc.Result {
 	case "pass":
@@ -375,6 +570,21 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (Message, error) {
 	case "permerror":
 		add("DMARC_PERMERROR", "auth/dmarc/"+dmarc.Domain, dmarc.Detail, 1)
 	}
+	note("DMARC identity alignment", dmarc.Result, fmt.Sprintf("Policy: %s. %s. DMARC depends on SPF/DKIM results; its weight is not independent evidence of a third failure.", dmarc.Policy, dmarc.Detail))
+	if cfg.Settings.ReviewedReputation && dmarc.Result == "pass" {
+		review := s.Store.ReviewedDomainReputation(dmarc.Domain)
+		if review.Ready {
+			if review.Weight != 0 {
+				add("REVIEWED_DOMAIN_REPUTATION", "learning/reviewed/"+dmarc.Domain, fmt.Sprintf("Authenticated domain with %d confirmed spam and %d false-positive reviews; score adjusted only, no forced action", review.ConfirmedSpam, review.ConfirmedHam), review.Weight)
+			}
+			note("Reviewed sender reputation", "info", fmt.Sprintf("Authenticated %s has %d confirmed spam and %d legitimate corrections", dmarc.Domain, review.ConfirmedSpam, review.ConfirmedHam))
+		} else {
+			note("Reviewed sender reputation", "skipped", "Fewer than four reviewed, DMARC-authenticated samples for this domain")
+		}
+	} else {
+		note("Reviewed sender reputation", "skipped", "Opt-in disabled or sender has not passed DMARC")
+	}
+
 	bayes, bayesErr := s.Store.ScoreBayes(in.Raw)
 	if bayesErr == nil && bayes.Ready {
 		if bayes.Probability >= 0.95 {
@@ -384,7 +594,15 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (Message, error) {
 			add("BAYES_HAM", "learning/bayes", fmt.Sprintf("%.1f%% spam probability (%d spam / %d ham samples)", bayes.Probability*100, bayes.Spam, bayes.Ham), -2)
 		}
 	}
-	if fuzzy, err := s.Store.ScoreFuzzy(in.Raw); err == nil && fuzzy.Matched {
+	if bayesErr != nil {
+		note("Bayesian learning", "error", bayesErr.Error())
+	} else if !bayes.Ready {
+		note("Bayesian learning", "skipped", "Not yet trained with enough confirmed spam and legitimate messages")
+	} else {
+		note("Bayesian learning", "info", fmt.Sprintf("Estimated spam probability: %.1f%%", bayes.Probability*100))
+	}
+	fuzzy, fuzzyErr := s.Store.ScoreFuzzy(in.Raw)
+	if fuzzyErr == nil && fuzzy.Matched {
 		detail := fmt.Sprintf("near-duplicate of trained %s sample %s (similarity %.1f%%, distance %d/64)", fuzzy.Label, fuzzy.ID, fuzzy.Similarity*100, fuzzy.Distance)
 		if fuzzy.Label == "spam" {
 			add("FUZZY_SPAM", "learning/fuzzy/"+fuzzy.ID, detail, 6)
@@ -392,7 +610,28 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (Message, error) {
 			add("FUZZY_HAM", "learning/fuzzy/"+fuzzy.ID, detail, -3)
 		}
 	}
-	if neural := s.Store.ScoreNeural(findings); neural.Ready {
+	if fuzzyErr != nil {
+		note("Near-duplicate learning", "error", fuzzyErr.Error())
+	} else if fuzzy.Matched {
+		note("Near-duplicate learning", "match", fmt.Sprintf("Similarity %.1f%% to trained %s", fuzzy.Similarity*100, fuzzy.Label))
+	} else {
+		note("Near-duplicate learning", "clear", "No matching trained fingerprint")
+	}
+	if cfg.Settings.ExternalFuzzyEnabled {
+		external, err := CheckRemoteFuzzy(ctx, in.Raw)
+		if err != nil {
+			note("External fuzzy intelligence", "error", "Remote provider unavailable or fingerprint ineligible: "+err.Error())
+		} else if external.Label == "spam" && external.Confidence >= 0.95 && external.Samples >= 5 {
+			add("REMOTE_FUZZY_SPAM", "learning/remote-fuzzy", fmt.Sprintf("Provider %s; confidence %.2f; %d samples; only SimHash fingerprint shared", external.Provider, external.Confidence, external.Samples), 2)
+			note("External fuzzy intelligence", "match", "High-confidence fingerprint match (max +2, never a forced action)")
+		} else {
+			note("External fuzzy intelligence", "clear", "No qualifying high-confidence spam fingerprint match")
+		}
+	} else {
+		note("External fuzzy intelligence", "skipped", "Disabled; no data transferred to external providers")
+	}
+	neural := s.Store.ScoreNeural(findings)
+	if neural.Ready {
 		if neural.Probability >= 0.9 {
 			add("NEURAL_SPAM", "learning/neural", fmt.Sprintf("%.1f%% spam probability, manually trained on %d messages", neural.Probability*100, neural.Ham+neural.Spam), 3)
 		}
@@ -400,9 +639,21 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (Message, error) {
 			add("NEURAL_HAM", "learning/neural", fmt.Sprintf("%.1f%% spam probability, manually trained on %d messages", neural.Probability*100, neural.Ham+neural.Spam), -2)
 		}
 	}
+	if neural.Ready {
+		note("Neural learning", "info", fmt.Sprintf("Estimated spam probability: %.1f%%", neural.Probability*100))
+	} else {
+		note("Neural learning", "skipped", "Not yet trained with enough confirmed labels")
+	}
 	malware, avErr := ClamAVScan(ctx, in.Raw)
 	if avErr != nil {
 		return Message{}, fmt.Errorf("antivirus service unavailable or scan failed: %w", avErr)
+	}
+	if os.Getenv("SPAMGATE_CLAMAV_ADDRESS") == "" {
+		note("Antivirus", "skipped", "No ClamAV service configured")
+	} else if malware == "" {
+		note("Antivirus", "clear", "ClamAV did not report a signature")
+	} else {
+		note("Antivirus", "match", "ClamAV reported: "+malware)
 	}
 	if malware != "" {
 		add("CLAMAV_MALWARE", "antivirus/clamav", malware, 100)
@@ -415,6 +666,8 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (Message, error) {
 	}
 	score = float64(int(score*100+sign(score)*0.5)) / 100
 	m.Score = score
+	trace.ForcedAction = forced
+	m.Scoring = trace
 	m.Findings = findings
 	switch {
 	case score >= cfg.Settings.RejectThreshold:
@@ -429,6 +682,7 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (Message, error) {
 		add("FORCED_ACTION", "policy/override", "Rule forces "+forced, 0)
 		m.Findings = findings
 	}
+	m.ScanDurationMS = time.Since(started).Milliseconds()
 	return m, nil
 }
 func sign(v float64) float64 {

@@ -19,9 +19,9 @@ Installing a daemon does not automatically protect mail. A mail server must be e
 
 1. Obtain a verified native Linux archive from a proper release. A source ZIP is not a binary package. For development, compile with a supported patched Go toolchain: `CGO_ENABLED=0 go build -trimpath -o spamgate ./cmd/spamgate`.
 2. Copy `spamgate`, `install-linux.sh` and `configure-postfix.sh` into the same directory, then run `sudo ./install-linux.sh`. The installer also installs the helper permanently at `/usr/local/libexec/spamgate/configure-postfix`.
-3. The installer runs the daemon as dedicated `spamgate` user, with `/var/lib/spamgate` for data, `/etc/spamgate/spamgate.env` for service settings and `/usr/local/bin/spamgate` for the binary. The Web UI binds only `127.0.0.1:38470`. On a **fresh** native install, local Milter binds `127.0.0.1:38472`, trusting only `127.0.0.1/32`. No MTA settings or firewall rules are changed. Use `--no-local-milter` to opt out; on an existing installation, use `--enable-local-milter` to append Milter settings without replacing existing environment settings.
+3. The installer runs the daemon as dedicated `spamgate` user, with `/var/lib/spamgate` for data, `/etc/spamgate/spamgate.env` for service settings and `/usr/local/bin/spamgate` for the binary. The Web UI binds `0.0.0.0:38470` (all IPv4 interfaces). Restrict administration access to the trusted LAN or an HTTPS proxy. On a **fresh** native install, local Milter binds `127.0.0.1:38472`, trusting only `127.0.0.1/32`. No MTA settings or firewall rules are changed. Use `--no-local-milter` to opt out; on an existing installation, use `--enable-local-milter` to append Milter settings without replacing existing environment settings.
 4. Check `sudo systemctl status spamgate`, `sudo journalctl -u spamgate -n 60 --no-pager` and `sudo /usr/local/bin/spamgate -mailserver-report` for a read-only JSON host inventory.
-5. Create the first admin using the one-time setup key and check the Web UI via a local browser, or SSH tunnel to loopback. Never expose the plaintext management login to the public Internet.
+5. Create the first admin using the one-time setup key and check the Web UI over a trusted LAN or authenticated HTTPS proxy. Never expose the plaintext management login to the public Internet.
 
 `/api/v1/host` is an **admin-only, read-only** version of the local host report; the Web UI shows it under Mail integrations. Containerized deployments inspect the container filesystem, **not the host's**.
 
@@ -55,7 +55,7 @@ A dedicated remote or Docker SpamGate instance is appropriate only when a site's
 
 - Do not uninstall or disable an existing spam filter until end-to-end tests, backups and a tested rollback exist.
 - Milter and scan protocols are currently subsets, **not production-certified universal Rspamd replacements**.
-- Keep the management listener on loopback behind an authenticated HTTPS proxy or SSH tunnel. Do not expose raw Milter or training listeners to the Internet.
+- Keep the management listener accessible only from trusted administrators through firewall rules or an authenticated HTTPS proxy. Do not expose raw Milter or training listeners to the Internet.
 - Source packages are developer artifacts, not signed native releases. Rebuild native binaries with a patched, currently supported Go version; do not use old unsigned Windows packages for production.
 
 Upstream references: [Postfix Milter README](https://www.postfix.org/MILTER_README.html) and [cPanel Exim Configuration Manager](https://docs.cpanel.net/whm/service-configuration/exim-configuration-manager/).

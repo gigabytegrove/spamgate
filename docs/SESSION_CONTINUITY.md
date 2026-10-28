@@ -1,0 +1,5 @@
+# Session continuity (0.6.0-alpha.5)
+
+Successful logins now persist their random session identifier, CSRF token, and absolute expiry to `sessions.json` in the configured SpamGate data directory. This file is atomically replaced with mode 0600. Existing logins survive binary replacement and service restart **when the same persistent data directory, browser origin, and cookie settings are retained**. Logout revokes the saved session. Sessions still expire 12 hours after login; restart does not reset this interval. Corrupt/unreadable state is rejected, not trusted. New session issuance fails closed if storage is unwritable.
+
+Existing sessions issued by alpha.4 cannot be recovered after that binary has stopped because alpha.4 never wrote them to disk; one login is needed on the first alpha.5 upgrade. Future replacements preserve sessions. Do not copy `sessions.json` to another machine or publish it. Back up and restrict access to the whole data directory. Changing host/port/protocol, browser cookies, container volume, or running in a different data directory can also require a new sign-in.

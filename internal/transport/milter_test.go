@@ -94,9 +94,19 @@ func TestMilterTransactionAndReuse(t *testing.T) {
 	milterSend(t, client, 'N', 'c', nil)
 	milterSend(t, client, 'B', 'c', []byte("confirm your password\r\n"))
 	milterSend(t, client, 'E', 'h', nil)
+	for _, name := range []string{"X-Spam-Status", "X-SpamGate-Score", "X-SpamGate-Action", "X-SpamGate-ID"} {
+		data := milterRead(t, client, 'h')
+		if !bytes.HasPrefix(data, []byte(name+"\x00")) {
+			t.Fatalf("expected %s header, got %q", name, data)
+		}
+	}
 	milterRead(t, client, 'c')
 	if msgs := store.List(10, ""); len(msgs) != 2 {
 		t.Fatalf("expected two events, got %d", len(msgs))
+	} else if msgs[0].MTAAction != "spam_header_requested" || msgs[0].Delivery != "" {
+		t.Fatalf("expected unconfirmed tag request, got %+v", msgs[0])
+	} else if msgs[1].MTAAction != "continue_requested" || msgs[1].Delivery != "" {
+		t.Fatalf("expected unconfirmed MTA continue request, got %+v", msgs[1])
 	}
 	milterSend(t, client, 'Q', 0, nil)
 	select {

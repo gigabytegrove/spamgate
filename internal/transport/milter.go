@@ -21,10 +21,11 @@ import (
 )
 
 const (
-	milterMaxFrame   = 64 << 10
-	milterMaxMessage = 10 << 20
-	milterAddHeader  = uint32(0x1)
-	milterQuarantine = uint32(0x20)
+	milterMaxFrame     = 64 << 10
+	milterMaxMessage   = 10 << 20
+	milterAddHeader    = uint32(0x1)
+	milterQuarantine   = uint32(0x20)
+	milterChangeHeader = uint32(0x10)
 )
 
 type Milter struct {
@@ -148,6 +149,32 @@ func milterAddress(b []byte) string {
 	}
 	return address
 }
+
+// Parse a trusted MTA-supplied queue ID from the Sendmail Milter macro packet.
+// Macro keys are NUL-delimited, preceded by one callback-stage byte.
+func milterQueueID(data []byte) string {
+	if len(data) < 3 {
+		return ""
+	}
+	parts := bytes.Split(data[1:], []byte{0})
+	for i := 0; i+1 < len(parts); i += 2 {
+		name := strings.Trim(string(parts[i]), "{}")
+		if name != "i" {
+			continue
+		}
+		value := string(parts[i+1])
+		if len(value) < 1 || len(value) > 32 {
+			return ""
+		}
+		for _, c := range value {
+			if !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+				return ""
+			}
+		}
+		return value
+	}
+	return ""
+}
 func milterHeader(data []byte) ([]byte, error) {
 	fields := bytes.SplitN(data, []byte{0}, 3)
 	if len(fields) != 3 || len(fields[0]) == 0 || bytes.ContainsAny(fields[0], "\r\n:") {
@@ -159,9 +186,10 @@ func milterHeader(data []byte) ([]byte, error) {
 		}
 	}
 	v := bytes.TrimRight(fields[1], "\r\n")
-	// RFC 5322 permits folded field values (CRLF followed by SP/HTAB).
-	// Some Postfix Milter callbacks use bare LF for an existing fold.
-	// Normalize safe folds while rejecting new-field injection.
+	// RFC 5322 allows folding at CRLF followed by SP/HTAB. Postfix may
+	// forward this as either CRLF or bare LF in a Milter header callback.
+	// Normalize line endings, but never permit an unindented new field to
+	// be injected into the message header block.
 	clean := make([]byte, 0, len(v)+8)
 	for i := 0; i < len(v); i++ {
 		switch v[i] {
@@ -187,13 +215,33 @@ func milterHeader(data []byte) ([]byte, error) {
 	line = append(line, '\r', '\n')
 	return line, nil
 }
+
+// Tagging adds traceable headers; final folder placement remains the MTA's
+// responsibility. Identifiers and scores are generated internally (no mail
+// content is reflected into header values).
+func milterTagHeaders(msg core.Message) [][2]string {
+	threshold := 5.0
+	if msg.Scoring != nil {
+		threshold = msg.Scoring.TagThreshold
+	}
+	return [][2]string{
+		{"X-Spam", "Yes"},
+		{"X-Spam-Status", fmt.Sprintf("Yes, score=%.2f required=%.2f", msg.Score, threshold)},
+		{"X-SpamGate-Score", fmt.Sprintf("%.2f", msg.Score)},
+		{"X-SpamGate-Action", msg.Action},
+		{"X-SpamGate-ID", msg.ID},
+	}
+}
+
 func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 	type transaction struct {
-		sender     string
-		recipients []string
-		headers    bytes.Buffer
-		body       bytes.Buffer
-		hasEOH     bool
+		sender       string
+		recipients   []string
+		headers      bytes.Buffer
+		body         bytes.Buffer
+		hasEOH       bool
+		queueID      string
+		spoofHeaders []string
 	}
 	var msg transaction
 	var clientIP string
@@ -221,7 +269,7 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 				return errors.New("unsupported milter version")
 			}
 			offered := binary.BigEndian.Uint32(data[4:8])
-			actions = offered & (milterAddHeader | milterQuarantine)
+			actions = offered & (milterAddHeader | milterQuarantine | milterChangeHeader)
 			selected := version
 			if selected > 6 {
 				selected = 6
@@ -231,12 +279,20 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 			binary.BigEndian.PutUint32(response[4:8], actions)
 			// Request all callbacks; announce no unsupported protocol shortcuts.
 			binary.BigEndian.PutUint32(response[8:12], 0)
+			slog.Debug("milter protocol negotiated", "version", selected,
+				"can_add_header", actions&milterAddHeader != 0,
+				"can_quarantine", actions&milterQuarantine != 0)
 			negotiated = true
 			if err := writeMilterFrame(conn, 'O', response); err != nil {
 				return err
 			}
 			continue
 		case 'D': // Macro definition does not expect a response.
+			// Only a new queue ID after MAIL FROM is associated with the
+			// current transaction, preventing reuse from a previous email.
+			if id := milterQueueID(data); id != "" && msg.sender != "" {
+				msg.queueID = id
+			}
 			continue
 		case 'C':
 			clientIP = milterAddress(data)
@@ -260,6 +316,15 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 				slog.Warn("milter rejected header callback", "reason", "headers_exceed_message_size_limit")
 				reply = 't'
 				break
+			}
+			name := string(line[:bytes.IndexByte(line, ':')])
+			if strings.HasPrefix(strings.ToLower(name), "x-spamgate-") || strings.EqualFold(name, "X-Spam") || strings.EqualFold(name, "X-Spam-Status") {
+				msg.spoofHeaders = append(msg.spoofHeaders, name)
+				if len(msg.spoofHeaders) > 100 {
+					slog.Warn("Milter received excessive untrusted SpamGate headers")
+					reply = 't'
+					break
+				}
 			}
 			_, _ = msg.headers.Write(line)
 		case 'N':
@@ -311,17 +376,104 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 				reset()
 				break
 			}
+			scanned.MTAQueueID = msg.queueID
+			settings := m.Store.Config().Settings
+			if len(msg.spoofHeaders) > 0 && actions&milterChangeHeader == 0 {
+				scanned.Action = "soft_reject"
+				scanned.Findings = append(scanned.Findings, core.Finding{Symbol: "UNTRUSTED_SPAMGATE_HEADER", Source: "policy/milter", Detail: "Incoming message claimed SpamGate headers but Postfix did not permit stripping them", Score: 0})
+				slog.Warn("milter cannot strip untrusted incoming SpamGate headers", "scan_id", scanned.ID)
+			}
+			if policyAction, reason, policyErr := m.Store.EvaluateDeliveryPolicy(scanned, time.Now()); policyErr != nil {
+				slog.Error("milter delivery policy persistence failure", "error", policyErr)
+				reply = 't'
+				reset()
+				break
+			} else if policyAction == "soft_reject" {
+				scanned.Action = "soft_reject"
+				scanned.Findings = append(scanned.Findings, core.Finding{Symbol: "TEMPORARY_POLICY_DEFERRAL", Source: "policy/delivery", Detail: reason, Score: 0})
+				if scanned.Scoring != nil {
+					scanned.Scoring.Checks = append(scanned.Scoring.Checks, core.ScanCheck{Name: "SMTP abuse controls", Status: "match", Detail: reason})
+				}
+			}
+			// Milter commands are requests to Postfix. An accepted Milter
+			// callback is not proof of mailbox delivery, and queue holds are
+			// NOT Dovecot Junk-folder placement. Record the intended command
+			// before replying, without claiming downstream success.
+			switch scanned.Action {
+			case "quarantine":
+				if settings.QuarantineMode == "junk" {
+					if actions&milterAddHeader != 0 {
+						scanned.MTAAction = "junk_header_requested"
+						scanned.MTAActionNote = "Requested spam headers for Dovecot Sieve Junk routing. Postfix delivery and mailbox placement are not confirmed."
+					} else {
+						scanned.MTAAction = "temporary_failure_requested"
+						scanned.MTAActionNote = "Missing header addition capability required for Junk routing."
+					}
+				} else if actions&milterQuarantine != 0 {
+					scanned.MTAAction = "postfix_hold_requested"
+					scanned.MTAActionNote = "Requested Postfix Milter quarantine/hold. Check Postfix hold queue; not proof of hold or Junk delivery."
+				} else {
+					scanned.MTAAction = "temporary_failure_requested"
+					scanned.MTAActionNote = "Postfix did not negotiate Milter quarantine capability; requested SMTP temporary failure."
+				}
+			case "tag":
+				if actions&milterAddHeader != 0 {
+					scanned.MTAAction = "spam_header_requested"
+					scanned.MTAActionNote = "Requested X-Spam: Yes, X-Spam-Status, score, action and scan-ID headers. Junk-folder routing requires a separate MTA/Sieve rule."
+				} else {
+					scanned.MTAAction = "temporary_failure_requested"
+					scanned.MTAActionNote = "Postfix did not negotiate header addition; requested SMTP temporary failure."
+				}
+			case "soft_reject":
+				scanned.MTAAction = "smtp_temporary_failure_requested"
+				scanned.MTAActionNote = "Requested temporary SMTP rejection per configured greylisting or rate limit; sending MTA may retry later."
+			case "reject":
+				scanned.MTAAction = "smtp_reject_requested"
+				scanned.MTAActionNote = "Requested Postfix to reject the message in SMTP. Confirm using Postfix logs."
+			default:
+				scanned.MTAAction = "continue_requested"
+				scanned.MTAActionNote = "Requested Postfix to continue delivery; SpamGate has no downstream delivery receipt."
+			}
+			scanned.MTAActionState = "requested"
 			if err = m.Store.Save(scanned); err != nil {
 				slog.Error("milter could not finish message", "reason", "history_write_failed", "error", err)
 				reply = 't'
 				reset()
 				break
 			}
+			// Remove incoming spam verdict headers before adding SpamGate-trusted ones.
+			// Otherwise a sender can forge X-SpamGate-Action, X-Spam or X-Spam-Status and misroute Junk.
+			if actions&milterChangeHeader != 0 {
+				for _, name := range msg.spoofHeaders {
+					packet := make([]byte, 4)
+					binary.BigEndian.PutUint32(packet, 1)
+					packet = append(packet, []byte(name+"\x00\x00")...)
+					if err := writeMilterFrame(conn, 'm', packet); err != nil {
+						return err
+					}
+				}
+			}
+			slog.Info("milter verdict recorded", "scan_id", scanned.ID, "message_id", scanned.MessageID,
+				"client_ip", scanned.ClientIP, "score", scanned.Score, "action", scanned.Action,
+				"mta_action", scanned.MTAAction)
 			switch scanned.Action {
 			case "reject":
 				reply = 'r'
+			case "soft_reject":
+				reply = 't'
 			case "quarantine":
-				if actions&milterQuarantine != 0 {
+				if settings.QuarantineMode == "junk" {
+					if actions&milterAddHeader != 0 {
+						for _, header := range milterTagHeaders(scanned) {
+							if err := writeMilterFrame(conn, 'h', []byte(header[0]+"\x00"+header[1]+"\x00")); err != nil {
+								return err
+							}
+						}
+						reply = 'c'
+					} else {
+						reply = 't'
+					}
+				} else if actions&milterQuarantine != 0 {
 					if err := writeMilterFrame(conn, 'q', []byte("SpamGate quarantine\x00")); err != nil {
 						return err
 					}
@@ -332,8 +484,26 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 				} // fail closed, do not silently deliver a hold verdict
 			case "tag":
 				if actions&milterAddHeader != 0 {
-					if err := writeMilterFrame(conn, 'h', []byte("X-Spam\x00Yes\x00")); err != nil {
-						return err
+					for _, header := range milterTagHeaders(scanned) {
+						data := []byte(header[0] + "\x00" + header[1] + "\x00")
+						if err := writeMilterFrame(conn, 'h', data); err != nil {
+							return err
+						}
+					}
+					if settings.SubjectRewrite {
+						if actions&milterChangeHeader != 0 {
+							subject := scanned.Subject
+							if subject != "" && !strings.ContainsAny(subject, "\r\n\x00") && len(subject) <= 400 && !strings.HasPrefix(strings.ToUpper(subject), "[SPAM]") {
+								packet := make([]byte, 4)
+								binary.BigEndian.PutUint32(packet, 1)
+								packet = append(packet, []byte("Subject\x00[SPAM] "+subject+"\x00")...)
+								if err := writeMilterFrame(conn, 'm', packet); err != nil {
+									return err
+								}
+							}
+						} else {
+							slog.Warn("MTA did not negotiate subject modification; spam headers still added", "scan_id", scanned.ID)
+						}
 					}
 					reply = 'c'
 				} else {

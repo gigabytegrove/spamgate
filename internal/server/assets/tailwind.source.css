@@ -1,0 +1,8 @@
+@theme {
+  --color-ink:#12151d;
+  --color-cobalt:#2457f5;
+  --color-paper:#ffffff;
+  --color-canvas:#f5f7fc;
+  --color-coral:#f06a43;
+}
+@tailwind utilities;

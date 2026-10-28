@@ -12,7 +12,7 @@
 
 - Linux x64/ARM64: systemd-based distribution with glibc or musl and network access for DNS authentication checks. Installer must be run as root; daemon runs under a dedicated unprivileged `spamgate` account.
 - Windows x64/ARM64: Windows 10/11 or supported Windows Server, PowerShell 5.1+, administrator permission for service installation. Native Windows Service Control Manager registration uses `LocalService` (no third-party service wrapper).
-- Default admin Web UI listener: `127.0.0.1:38470` (loopback only). **Native Linux fresh installations enable only the loopback TCP Milter on port 38472; Docker and Windows still require explicit configuration.** No mail-server configuration is changed automatically. Use an HTTPS reverse proxy for remote console administration. Never send administrator credentials over unencrypted HTTP on public networks.
+- Default admin Web UI listener: `0.0.0.0:38470` (all IPv4 interfaces). Restrict TCP 38470 to trusted administrators with a firewall and/or authenticated HTTPS proxy. **Native Linux fresh installations enable only the loopback TCP Milter on port 38472; Docker and Windows still require explicit configuration.** No mail-server configuration is changed automatically. Use an HTTPS reverse proxy for remote console administration. Never send administrator credentials over unencrypted HTTP on public networks.
 - Port 38471: Rspamd-style HTTP; 38472: Milter; 38473: SMTP filter; 38474: controller. Each requires explicit enablement and the documented trusted-CIDR/credential controls.
 - Do not direct live production mail to SpamGate alpha until mail-flow and conformance testing is completed.
 
@@ -70,13 +70,13 @@ On Linux:
 
 ```bash
 mkdir -p "$HOME/spamgate-data" && chmod 0700 "$HOME/spamgate-data"
-./spamgate -data "$HOME/spamgate-data" -listen 127.0.0.1:38470
+./spamgate -data "$HOME/spamgate-data" -listen 0.0.0.0:38470
 ```
 
 On Windows (PowerShell, interactive foreground session):
 
 ```powershell
-.\spamgate.exe -data "$env:LOCALAPPDATA\SpamGate" -listen '127.0.0.1:38470'
+.\spamgate.exe -data "$env:LOCALAPPDATA\SpamGate" -listen '0.0.0.0:38470'
 ```
 
 The process runs in the foreground and stops on Ctrl+C. Service installation is recommended for unattended use.

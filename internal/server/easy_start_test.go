@@ -90,12 +90,47 @@ func TestGuidedSetupAndOneClickReview(t *testing.T) {
 		t.Fatalf("review failed %d %+v", r.Status, r.Value)
 	}
 	revised, exists := st.Get(msg.ID)
-	if !exists || revised.ReviewStatus != "not_spam" || revised.Action != "accept" || revised.OriginalAction != "quarantine" || revised.Delivery != "quarantined" {
+	if !exists || revised.ReviewStatus != "not_spam" || revised.Action != "quarantine" || revised.OriginalAction != "quarantine" || revised.Delivery != "quarantined" {
 		t.Fatalf("review rewrote delivery or lost audit: %+v", revised)
 	}
 	c = st.Config()
-	if len(c.Rules) != 1 || c.Rules[0].Kind != "sender_email" || c.Rules[0].Value != "trusted@example.net" || c.Rules[0].Action != "accept" {
+	if len(c.Rules) != 1 || c.Rules[0].Kind != "sender_email" || c.Rules[0].Value != "trusted@example.net" || c.Rules[0].Action != "" || c.Rules[0].Score != -5 {
 		t.Fatalf("exact sender exception missing: %+v", c.Rules)
+	}
+	missed := core.Message{ID: core.ID(), Timestamp: time.Now().UTC(), Sender: "promotion@example.net", Recipients: []string{"alice@example.org"}, Subject: "Missed promotion", Action: "accept", Delivery: "relayed", Score: 1}
+	if err := st.Save(missed); err != nil {
+		t.Fatal(err)
+	}
+	if r := call("POST", "/api/v1/messages/"+missed.ID+"/review", map[string]any{"decision": "spam", "adjust_sender": true}); r.Status != 200 {
+		t.Fatalf("missed spam feedback failed: %+v", r)
+	}
+	updated, _ := st.Get(missed.ID)
+	if updated.Action != "accept" || updated.Delivery != "relayed" || updated.ReviewStatus != "spam" {
+		t.Fatalf("feedback rewrote historical delivery: %+v", updated)
+	}
+	if len(st.Config().Rules) != 2 || st.Config().Rules[1].Score != 8 || st.Config().Rules[1].Action != "" {
+		t.Fatalf("missed spam adjustment must be scoring-only: %+v", st.Config().Rules)
+	}
+	if r := call("POST", "/api/v1/messages/"+missed.ID+"/review", map[string]any{"decision": "not_spam"}); r.Status != 409 {
+		t.Fatalf("conflicting review not blocked: %+v", r)
+	}
+	// A manually created / scanned message must not be claimed as live mail.
+	fake := core.Message{ID: core.ID(), Timestamp: time.Now().UTC(), Sender: "test@example.net", Connector: "http", Action: "tag"}
+	if err := st.Save(fake); err != nil {
+		t.Fatal(err)
+	}
+	if r := call("GET", "/api/v1/setup/readiness", nil); r.Status != 200 || r.Value["mail_submissions_observed"].(float64) != 0 {
+		t.Fatalf("HTTP test wrongly counted as mail flow: %+v", r)
+	}
+	mta := core.Message{ID: core.ID(), Timestamp: time.Now().UTC(), Sender: "test@example.net", Connector: "milter", Action: "tag"}
+	if err := st.Save(mta); err != nil {
+		t.Fatal(err)
+	}
+	if r := call("GET", "/api/v1/setup/readiness", nil); r.Status != 200 || r.Value["mail_submissions_observed"].(float64) != 1 || r.Value["mail_flow_verified"] != false {
+		t.Fatalf("MTA readiness evidence incorrect: %+v", r)
+	}
+	if r := call("GET", "/api/v1/setup/readiness", nil); r.Status != 200 || r.Value["mail_flow_verified"] != false {
+		t.Fatalf("unsafe readiness response: %+v", r)
 	}
 	if r := call("POST", "/api/v1/messages/"+msg.ID+"/review", map[string]any{"decision": "wrong", "trust_sender": false}); r.Status != 400 {
 		t.Fatalf("invalid review accepted: %d", r.Status)

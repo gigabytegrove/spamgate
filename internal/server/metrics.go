@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"github.com/gigabytegrove/spamgate/internal/core"
 	"net/http"
 )
 
@@ -20,9 +21,33 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "spamgate_history_messages %d\n", stats["total"])
 	fmt.Fprintln(w, "# HELP spamgate_history_verdicts Retained decisions by action.")
 	fmt.Fprintln(w, "# TYPE spamgate_history_verdicts gauge")
-	for _, action := range []string{"accept", "tag", "quarantine", "reject"} {
+	for _, action := range []string{"accept", "tag", "quarantine", "reject", "soft_reject"} {
 		fmt.Fprintf(w, "spamgate_history_verdicts{action=%q} %d\n", action, counts[action])
 	}
+	telemetry := core.RuntimeScanTelemetry()
+	fmt.Fprintln(w, "# HELP spamgate_runtime_scans_total Scan operations attempted since this SpamGate process started.")
+	fmt.Fprintln(w, "# TYPE spamgate_runtime_scans_total counter")
+	fmt.Fprintf(w, "spamgate_runtime_scans_total %d\n", telemetry.Total)
+	fmt.Fprintln(w, "# HELP spamgate_runtime_scan_errors_total Scanner operations that returned an error.")
+	fmt.Fprintln(w, "# TYPE spamgate_runtime_scan_errors_total counter")
+	fmt.Fprintf(w, "spamgate_runtime_scan_errors_total %d\n", telemetry.Errors)
+	fmt.Fprintln(w, "# HELP spamgate_runtime_scan_actions_total Completed scan operations by decision.")
+	fmt.Fprintln(w, "# TYPE spamgate_runtime_scan_actions_total counter")
+	for _, action := range []string{"accept", "tag", "quarantine", "reject", "soft_reject", "error", "other"} {
+		fmt.Fprintf(w, "spamgate_runtime_scan_actions_total{action=%q} %d\n", action, telemetry.ByAction[action])
+	}
+	fmt.Fprintln(w, "# HELP spamgate_runtime_scan_connector_total Scan operations by connector.")
+	fmt.Fprintln(w, "# TYPE spamgate_runtime_scan_connector_total counter")
+	for _, connector := range []string{"milter", "smtp", "rspamd", "rspamd-http", "controller", "simulation", "other"} {
+		fmt.Fprintf(w, "spamgate_runtime_scan_connector_total{connector=%q} %d\n", connector, telemetry.ByConnector[connector])
+	}
+	fmt.Fprintln(w, "# HELP spamgate_runtime_scan_duration_seconds Actual scanner wall-clock time.")
+	fmt.Fprintln(w, "# TYPE spamgate_runtime_scan_duration_seconds histogram")
+	for i, label := range []string{"0.005", "0.02", "0.1", "0.25", "1", "5", "+Inf"} {
+		fmt.Fprintf(w, "spamgate_runtime_scan_duration_seconds_bucket{le=%q} %d\n", label, telemetry.DurationBuckets[i])
+	}
+	fmt.Fprintf(w, "spamgate_runtime_scan_duration_seconds_sum %.6f\n", telemetry.DurationSecondsSum)
+	fmt.Fprintf(w, "spamgate_runtime_scan_duration_seconds_count %d\n", telemetry.Total)
 	if s.Queue != nil {
 		q, e := s.Queue.Snapshot()
 		if e == nil {

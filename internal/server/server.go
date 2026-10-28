@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -54,21 +55,32 @@ type RuntimeStatus struct {
 }
 
 type Server struct {
-	Queue      *transport.DeliveryQueue
-	Store      *core.Store
-	Runtime    RuntimeStatus
-	Scanner    *core.Scanner
-	Deliver    func(context.Context, core.Message, []byte) error
-	sessions   map[string]session
-	throttles  map[string]throttle
-	mu         sync.Mutex
-	secure     bool
-	setupToken string
-	log        *slog.Logger
+	Queue       *transport.DeliveryQueue
+	UpdateExit  func()
+	Store       *core.Store
+	Runtime     RuntimeStatus
+	Scanner     *core.Scanner
+	Deliver     func(context.Context, core.Message, []byte) error
+	sessions    map[string]session
+	sessionPath string
+	throttles   map[string]throttle
+	mu          sync.Mutex
+	secure      bool
+	setupToken  string
+	log         *slog.Logger
+	// Host inspector is read-only. Override only in tests; it never applies settings.
+	InspectHost func(context.Context) hostinspect.Report
+	hostMu      sync.Mutex
+	hostChecked time.Time
+	hostCached  hostinspect.Report
 }
 
 func New(store *core.Store, deliver func(context.Context, core.Message, []byte) error) *Server {
 	s := &Server{Store: store, Scanner: &core.Scanner{Store: store}, Deliver: deliver, sessions: map[string]session{}, throttles: map[string]throttle{}, secure: os.Getenv("SPAMGATE_SECURE_COOKIES") == "true", log: slog.Default()}
+	s.sessionPath = filepath.Join(store.DataDir(), "sessions.json")
+	if err := s.loadSessions(); err != nil {
+		s.log.Error("session restore failed; existing sessions unavailable", "error", err)
+	}
 	if !store.Config().SetupComplete {
 		s.setupToken = randomString()
 		s.log.Warn("First-run setup requires this one-time claim key. Protect your logs.", "setup_key", s.setupToken)
@@ -133,6 +145,9 @@ func (s *Server) current(r *http.Request) (Identity, bool) {
 		ss, ok := s.sessions[cookie.Value]
 		if ok && time.Now().After(ss.Expires) {
 			delete(s.sessions, cookie.Value)
+			if err := s.persistSessionsLocked(); err != nil {
+				s.log.Error("expired session cleanup failed", "error", err)
+			}
 			ok = false
 		}
 		s.mu.Unlock()
@@ -188,14 +203,22 @@ func (s *Server) Router() http.Handler {
 	})
 	m.HandleFunc("GET /", s.index)
 	m.HandleFunc("GET /assets/app.css", assetCSS)
+	m.HandleFunc("GET /assets/tailwind.css", assetCSS)
+	m.HandleFunc("GET /assets/redesign.css", assetCSS)
 	m.HandleFunc("GET /assets/app.js", assetJS)
 	m.HandleFunc("GET /assets/{name}", assetImage)
 	m.HandleFunc("GET /api/v1/status", s.status)
+	m.HandleFunc("GET /api/v1/update", s.checkUpdate)
+	m.HandleFunc("POST /api/v1/update/stage", s.stageUpdate)
+	m.HandleFunc("POST /api/v1/update/install", s.installUpdate)
 	m.HandleFunc("POST /api/v1/setup", s.setup)
 	m.HandleFunc("POST /api/v1/login", s.login)
 	m.HandleFunc("POST /api/v1/logout", s.logout)
 	m.HandleFunc("GET /api/v1/me", s.me)
 	m.HandleFunc("PUT /api/v1/onboarding", s.saveOnboarding)
+	m.HandleFunc("GET /api/v1/setup/readiness", s.setupReadiness)
+	m.HandleFunc("POST /api/v1/setup/monitor", s.startSetupMonitor)
+	m.HandleFunc("POST /api/v1/setup/activate", s.activateSetup)
 	m.HandleFunc("POST /api/v1/scan", s.scan)
 	m.HandleFunc("POST /api/v1/scan/simulate", s.simulateScan)
 	m.HandleFunc("GET /api/v1/messages", s.messages)
@@ -203,6 +226,8 @@ func (s *Server) Router() http.Handler {
 	m.HandleFunc("GET /api/v1/messages/{id}/preview", s.quarantinePreview)
 
 	m.HandleFunc("GET /api/v1/messages/{id}", s.message)
+	m.HandleFunc("GET /api/v1/messages/{id}/headers", s.messageHeaders)
+	m.HandleFunc("GET /api/v1/messages/{id}/delivery-evidence", s.postfixDeliveryEvidence)
 	m.HandleFunc("POST /api/v1/messages/{id}/override", s.override)
 	m.HandleFunc("POST /api/v1/messages/{id}/review", s.reviewMessage)
 	m.HandleFunc("POST /api/v1/messages/{id}/release", s.release)
@@ -212,6 +237,7 @@ func (s *Server) Router() http.Handler {
 	m.HandleFunc("GET /api/v1/host", s.hostReport)
 	m.HandleFunc("GET /api/v1/integrations/diagnostics", s.integrationDiagnostics)
 	m.HandleFunc("GET /api/v1/delivery-queue", s.deliveryQueue)
+	m.HandleFunc("GET /api/v1/postfix/hold-queue", s.postfixHoldQueue)
 	m.HandleFunc("GET /api/v1/metrics", s.metrics)
 	m.HandleFunc("POST /api/v1/delivery-queue/{id}/retry", s.retryDelivery)
 	m.HandleFunc("DELETE /api/v1/delivery-queue/{id}", s.discardDelivery)
@@ -228,6 +254,7 @@ func (s *Server) Router() http.Handler {
 	m.HandleFunc("POST /api/v1/neural/train/{id}", s.neuralTrain)
 	m.HandleFunc("PUT /api/v1/signals/{symbol}", s.updateSignal)
 	m.HandleFunc("PUT /api/v1/settings", s.settings)
+	m.HandleFunc("PUT /api/v1/recipient-policies", s.updateRecipientPolicies)
 	m.HandleFunc("POST /api/v1/rules", s.addRule)
 	m.HandleFunc("PUT /api/v1/rules/{id}", s.updateRule)
 	m.HandleFunc("DELETE /api/v1/rules/{id}", s.deleteRule)
@@ -278,8 +305,8 @@ func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, "Username must be 3–48 characters without spaces")
 		return
 	}
-	if len(in.SiteName) < 2 || len(in.SiteName) > 80 {
-		fail(w, 400, "Site name must be 2–80 characters")
+	if in.SiteName != "" && in.SiteName != "SpamGate" {
+		fail(w, 400, "The product name is SpamGate and cannot be changed")
 		return
 	}
 	salt, hash, e := core.MakePassword(in.Password)
@@ -291,7 +318,7 @@ func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
 		if c.SetupComplete {
 			return errors.New("setup already completed")
 		}
-		c.Settings.SiteName = in.SiteName
+		c.Settings.SiteName = "SpamGate"
 		c.Users = []core.User{{Name: in.Username, Role: "admin", Salt: salt, PasswordHash: hash}}
 		c.SetupComplete = true
 		return nil
@@ -301,17 +328,28 @@ func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setupToken = ""
-	s.newSession(w, Identity{Name: in.Username, Role: "admin"})
+	if err := s.newSession(w, Identity{Name: in.Username, Role: "admin"}); err != nil {
+		fail(w, 503, "Session storage unavailable")
+		return
+	}
 	jsonReply(w, 201, map[string]string{"status": "configured"})
 }
-func (s *Server) newSession(w http.ResponseWriter, id Identity) {
+func (s *Server) newSession(w http.ResponseWriter, id Identity) error {
 	v := randomString()
 	id.Session = true
 	id.CSRF = randomString()
 	s.mu.Lock()
 	s.sessions[v] = session{Identity: id, Expires: time.Now().Add(12 * time.Hour)}
+	err := s.persistSessionsLocked()
+	if err != nil {
+		delete(s.sessions, v)
+	}
 	s.mu.Unlock()
+	if err != nil {
+		return err
+	}
 	http.SetCookie(w, &http.Cookie{Name: "spamgate_session", Value: v, Path: "/", MaxAge: 43200, Secure: s.secure, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	return nil
 }
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	var in struct {
@@ -356,7 +394,10 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	delete(s.throttles, ip)
 	s.mu.Unlock()
-	s.newSession(w, Identity{Name: user.Name, Email: user.Email, Role: user.Role})
+	if err := s.newSession(w, Identity{Name: user.Name, Email: user.Email, Role: user.Role}); err != nil {
+		fail(w, 503, "Session storage unavailable")
+		return
+	}
 	jsonReply(w, 200, map[string]string{"status": "authenticated"})
 }
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
@@ -368,6 +409,11 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	if c, e := r.Cookie("spamgate_session"); e == nil {
 		s.mu.Lock()
 		delete(s.sessions, c.Value)
+		if err := s.persistSessionsLocked(); err != nil {
+			s.mu.Unlock()
+			fail(w, 503, "Unable to revoke session")
+			return
+		}
 		s.mu.Unlock()
 	}
 	http.SetCookie(w, &http.Cookie{Name: "spamgate_session", Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: s.secure, SameSite: http.SameSiteStrictMode})
@@ -471,11 +517,29 @@ func hasEmail(xs []string, value string) bool {
 	}
 	return false
 }
+
+// inspectHostCached avoids repeatedly spawning postconf on every wizard poll.
+// A short refresh interval ensures changes made by the user appear promptly.
+func (s *Server) inspectHostCached(ctx context.Context) hostinspect.Report {
+	s.hostMu.Lock()
+	defer s.hostMu.Unlock()
+	if time.Since(s.hostChecked) < 3*time.Second {
+		return s.hostCached
+	}
+	inspect := s.InspectHost
+	if inspect == nil {
+		inspect = hostinspect.Detect
+	}
+	s.hostCached = inspect(ctx)
+	s.hostChecked = time.Now()
+	return s.hostCached
+}
+
 func (s *Server) hostReport(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.authorized(w, r, true, false); !ok {
 		return
 	}
-	jsonReply(w, http.StatusOK, hostinspect.Detect(r.Context()))
+	jsonReply(w, http.StatusOK, s.inspectHostCached(r.Context()))
 }
 
 func (s *Server) runtime(w http.ResponseWriter, r *http.Request) {
@@ -536,6 +600,8 @@ func (s *Server) config(w http.ResponseWriter, r *http.Request) {
 		c.Users = nil
 		c.Tokens = nil
 		c.DNSLists = nil
+		c.RecipientPolicies = nil
+		c.Onboarding = core.Onboarding{}
 	}
 	jsonReply(w, 200, c)
 }
@@ -545,7 +611,12 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in core.Settings
-	if e := decode(r, &in); e != nil || !in.Valid() {
+	if e := decode(r, &in); e != nil || (in.SiteName != "" && in.SiteName != "SpamGate") {
+		fail(w, 400, "The product name is SpamGate and cannot be changed")
+		return
+	}
+	in.SiteName = "SpamGate"
+	if !in.Valid() {
 		fail(w, 400, "Invalid settings; thresholds must increase: tag < quarantine < reject")
 		return
 	}
@@ -906,7 +977,14 @@ func (s *Server) addDNSList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.Zone = strings.ToLower(strings.TrimSpace(in.Zone))
-	if len(in.Zone) < 4 || len(in.Zone) > 253 || strings.ContainsAny(in.Zone, "/ :\n\r") || in.Score < -100 || in.Score > 100 {
+	if in.Kind == "" {
+		in.Kind = "ip"
+	}
+	if in.Kind != "ip" && in.Kind != "domain" && in.Kind != "url" {
+		fail(w, 400, "Select an IP, domain, or URL DNS blocklist")
+		return
+	}
+	if len(in.Zone) < 4 || len(in.Zone) > 253 || strings.ContainsAny(in.Zone, "/ :\n\r") || !core.ValidReputationDomain(in.Zone) || in.Score < -100 || in.Score > 100 {
 		fail(w, 400, "Invalid DNS zone or weight")
 		return
 	}
@@ -951,7 +1029,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	// Only known console paths serve the UI; unknown paths remain real 404s.
 	switch r.URL.Path {
 	case "/", "/overview", "/messages", "/delivery-queue", "/rules", "/signals", "/learning",
-		"/blocklists", "/mailboxes", "/api-keys", "/policy", "/connections", "/help",
+		"/blocklists", "/mailboxes", "/api-keys", "/policy", "/settings", "/settings/updates", "/connections", "/help",
 		"/quarantine", "/investigations", "/threat-intelligence", "/scan-workbench", "/welcome":
 	default:
 		http.NotFound(w, r)
@@ -1152,40 +1230,280 @@ func (s *Server) neuralTrain(w http.ResponseWriter, r *http.Request) {
 	jsonReply(w, 200, stats)
 }
 
-// saveOnboarding records choices and safe filtering thresholds. It deliberately
-// does not modify an MTA, start a listener, or claim that mail is protected.
+// saveOnboarding stores preferences without activating mail filtering. Changing
+// the selected connector/mode or protection policy invalidates earlier proofs.
 func (s *Server) saveOnboarding(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.authorized(w, r, true, true); !ok {
 		return
 	}
 	var in core.Onboarding
-	if e := decode(r, &in); e != nil {
+	if err := decode(r, &in); err != nil {
 		fail(w, 400, "Invalid setup choices")
 		return
 	}
 	validServer := map[string]bool{"testing": true, "postfix": true, "ispconfig": true, "cpanel": true, "exim": true, "custom": true}
 	validMode := map[string]bool{"test": true, "local": true, "remote": true}
 	thresholds := map[string][3]float64{"balanced": {5, 10, 20}, "careful": {7, 13, 25}, "strict": {4, 8, 14}}
-	policy, validPolicy := thresholds[in.Policy]
-	if !in.Completed || !validServer[in.Server] || !validMode[in.Mode] || !validPolicy {
+	policy, ok := thresholds[in.Policy]
+	if !in.Completed || !validServer[in.Server] || !validMode[in.Mode] || !ok {
 		fail(w, 400, "Choose a valid mail server, installation type and protection level")
+		return
+	}
+	if in.Server == "testing" && in.Mode != "test" {
+		fail(w, 400, "Standalone testing must use test mode")
 		return
 	}
 	err := s.Store.UpdateConfig(func(c *core.Config) error {
 		if !c.SetupComplete {
 			return errors.New("Create an administrator first")
 		}
+		prev := c.Onboarding
+		// These are server-owned fields. Never trust activation/probe state
+		// supplied by a browser when saving configuration preferences.
+		in.Probe = ""
+		in.ProbeStarted, in.ProbeExpires = time.Time{}, time.Time{}
+		in.VerifiedID, in.Activated, in.ActivatedAt = "", false, time.Time{}
+		if prev.Server == in.Server && prev.Mode == in.Mode && prev.Policy == in.Policy && prev.Completed {
+			// Preserve an existing challenge/activation on identical preferences.
+			in.Probe, in.ProbeStarted, in.ProbeExpires = prev.Probe, prev.ProbeStarted, prev.ProbeExpires
+			in.VerifiedID, in.Activated, in.ActivatedAt = prev.VerifiedID, prev.Activated, prev.ActivatedAt
+		}
 		c.Onboarding = in
-		c.Settings.TagThreshold = policy[0]
-		c.Settings.QuarantineThreshold = policy[1]
-		c.Settings.RejectThreshold = policy[2]
+		c.Settings.TagThreshold, c.Settings.QuarantineThreshold, c.Settings.RejectThreshold = policy[0], policy[1], policy[2]
 		return nil
 	})
 	if err != nil {
 		fail(w, 503, "Could not save setup preferences")
 		return
 	}
-	jsonReply(w, 200, map[string]any{"onboarding": in, "mail_flow_verified": false})
+	jsonReply(w, 200, map[string]any{"onboarding": s.Store.Config().Onboarding, "mail_flow_verified": false})
+}
+
+// expectedSetupConnector binds the probe to the real, chosen MTA protocol.
+// Neither browser uploads nor unrelated traffic on another connector count.
+func expectedSetupConnector(serverName, mode string) string {
+	if mode == "test" {
+		return ""
+	}
+	switch serverName {
+	case "postfix", "ispconfig":
+		return "milter"
+	case "custom":
+		return "rspamd-http"
+	default:
+		return "" // cPanel and Exim lack a certified adapter.
+	}
+}
+func runtimeConnectorKey(connector string) string {
+	switch connector {
+	case "rspamd-http":
+		return "rspamd_http"
+	case "milter", "smtp":
+		return connector
+	default:
+		return ""
+	}
+}
+func (s *Server) connectorEnabled(connector string) bool {
+	service, ok := s.Runtime.Services[runtimeConnectorKey(connector)]
+	return ok && service.Enabled
+}
+
+// monitorProof requires a newly scanned, matching, *non-rejected* message
+// written by the selected MTA-facing transport after the test was armed.
+func (s *Server) monitorProof(plan core.Onboarding, now time.Time) (core.Message, bool) {
+	connector := expectedSetupConnector(plan.Server, plan.Mode)
+	if connector == "" || plan.Probe == "" || !now.Before(plan.ProbeExpires) || !s.connectorEnabled(connector) {
+		return core.Message{}, false
+	}
+	for _, msg := range s.Store.List(1000, "") {
+		if msg.Connector != connector || msg.Timestamp.Before(plan.ProbeStarted) || msg.Timestamp.After(now) ||
+			!strings.Contains(msg.Subject, plan.Probe) || (msg.Action != "accept" && msg.Action != "tag") {
+			continue
+		}
+		return msg, true
+	}
+	return core.Message{}, false
+}
+func (s *Server) startSetupMonitor(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.authorized(w, r, true, true); !ok {
+		return
+	}
+	cfg := s.Store.Config()
+	plan := cfg.Onboarding
+	connector := expectedSetupConnector(plan.Server, plan.Mode)
+	if !plan.Completed || connector == "" {
+		fail(w, 409, "Choose a supported mail server and save setup first. Standalone testing cannot activate mail protection.")
+		return
+	}
+	if !s.connectorEnabled(connector) {
+		fail(w, 409, "The selected mail connector is not enabled. Follow the connection instructions, restart SpamGate and try again.")
+		return
+	}
+	challenge := "SG-" + randomString()[:18]
+	err := s.Store.UpdateConfig(func(c *core.Config) error {
+		p := &c.Onboarding
+		if !p.Completed || p.Server != plan.Server || p.Mode != plan.Mode {
+			return errors.New("Setup choices changed")
+		}
+		p.Probe, p.ProbeStarted, p.ProbeExpires = challenge, time.Now().UTC(), time.Now().UTC().Add(20*time.Minute)
+		p.VerifiedID, p.Activated, p.ActivatedAt = "", false, time.Time{}
+		return nil
+	})
+	if err != nil {
+		fail(w, 503, "Unable to start monitoring")
+		return
+	}
+	s.setupReadiness(w, r)
+}
+
+// setupReadiness reports *evidence*, not the assertion of a listening socket.
+// Connection scanning and final delivery are separate verification steps.
+func (s *Server) setupReadiness(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.authorized(w, r, true, false); !ok {
+		return
+	}
+	cfg := s.Store.Config()
+	plan := cfg.Onboarding
+	now := time.Now().UTC()
+	connector := expectedSetupConnector(plan.Server, plan.Mode)
+	listeners := []string{}
+	for _, kind := range []string{"milter", "rspamd_http", "smtp"} {
+		if x, ok := s.Runtime.Services[kind]; ok && x.Enabled {
+			listeners = append(listeners, kind)
+		}
+	}
+	seen := 0
+	probeConnectorCount := 0
+	var latest time.Time
+	var latestConnector string
+	var blockedTest *core.Message
+	for _, msg := range s.Store.List(1000, "") {
+		if msg.Connector == "milter" || msg.Connector == "smtp" || msg.Connector == "rspamd-http" {
+			seen++
+			if msg.Connector == connector && plan.Probe != "" && !msg.Timestamp.Before(plan.ProbeStarted) && msg.Timestamp.Before(plan.ProbeExpires) {
+				probeConnectorCount++
+				if strings.Contains(msg.Subject, plan.Probe) && (msg.Action == "reject" || msg.Action == "quarantine") {
+					copy := msg
+					blockedTest = &copy
+				}
+			}
+			if msg.Timestamp.After(latest) {
+				latest = msg.Timestamp
+				latestConnector = msg.Connector
+			}
+		}
+	}
+	proof, verified := s.monitorProof(plan, now)
+	// A running Milter listener is NOT proof that Postfix is attached. On a
+	// local Postfix host, check both postconf settings before claiming protection.
+	postfixState := "not_applicable"
+	if plan.Mode == "local" && (plan.Server == "postfix" || plan.Server == "ispconfig") {
+		host := s.inspectHostCached(r.Context())
+		postfixState = "unknown"
+		if host.MailServer == "postfix" {
+			switch {
+			case host.PostfixConfigured:
+				postfixState = "connected"
+			case strings.Contains(host.ExistingMilters, ":38471") || strings.Contains(host.NonSMTPDMilters, ":38471"):
+				postfixState = "wrong_port"
+			default:
+				postfixState = "disconnected"
+			}
+		}
+	}
+	postfixAttached := postfixState != "disconnected" && postfixState != "wrong_port"
+	// A message previously scanned while Postfix was attached does not
+	// justify a live green status after the configuration is disconnected.
+	connectionVerified := verified && postfixAttached
+	active := plan.Activated && plan.VerifiedID != "" && s.connectorEnabled(connector) && postfixAttached
+	// If configuration has changed or the referenced message was deleted,
+	// do not continue reporting this instance as verified.
+	if active {
+		msg, exists := s.Store.Get(plan.VerifiedID)
+		active = exists && msg.Connector == connector && strings.Contains(msg.Subject, plan.Probe)
+	}
+	state := "not_configured"
+	switch {
+	case plan.Mode == "test" && plan.Completed:
+		state = "standalone_test"
+	case connector == "" && plan.Completed:
+		state = "unsupported_connector"
+	case active:
+		state = "running"
+	case !plan.Completed:
+		state = "not_configured"
+	case !s.connectorEnabled(connector):
+		state = "listener_missing"
+	case postfixState == "wrong_port" || postfixState == "disconnected":
+		state = "postfix_not_connected"
+	case verified:
+		state = "test_detected"
+	case blockedTest != nil:
+		state = "test_not_delivered"
+	case plan.Probe != "" && now.Before(plan.ProbeExpires):
+		state = "watching"
+	default:
+		state = "ready_to_test"
+	}
+	response := map[string]any{
+		"server": plan.Server, "mode": plan.Mode, "wizard_completed": plan.Completed,
+		"expected_connector": connector, "listeners_configured": listeners,
+		"mail_submissions_observed": seen, "latest_mail_submission": latest,
+		"latest_connector": latestConnector, "probe_subject": plan.Probe,
+		"postfix_connection": postfixState, "connector_messages_since_test": probeConnectorCount,
+		"probe_started": plan.ProbeStarted, "probe_expires": plan.ProbeExpires,
+		"connection_verified": connectionVerified || active, "mail_flow_verified": connectionVerified || active,
+		"instance_running": active, "state": state,
+		"explanation": "A real connector test demonstrates SpamGate scanning, not final inbox delivery. Check the test email in its destination mailbox before activation.",
+	}
+	if verified {
+		response["observed_message"] = map[string]any{"id": proof.ID, "sender": proof.Sender, "subject": proof.Subject, "action": proof.Action, "timestamp": proof.Timestamp, "connector": proof.Connector}
+	}
+	if blockedTest != nil {
+		response["blocked_test"] = map[string]any{"action": blockedTest.Action, "timestamp": blockedTest.Timestamp}
+	}
+	jsonReply(w, 200, response)
+}
+
+func (s *Server) activateSetup(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.authorized(w, r, true, true); !ok {
+		return
+	}
+	var in struct {
+		DeliveryConfirmed bool `json:"delivery_confirmed"`
+	}
+	if err := decode(r, &in); err != nil || !in.DeliveryConfirmed {
+		fail(w, 400, "Confirm the test message arrived at its destination mailbox before marking running")
+		return
+	}
+	plan := s.Store.Config().Onboarding
+	if plan.Mode == "local" && (plan.Server == "postfix" || plan.Server == "ispconfig") {
+		host := s.inspectHostCached(r.Context())
+		if host.MailServer == "postfix" && !host.PostfixConfigured {
+			fail(w, 409, "Postfix is not connected to SpamGate on port 38472; configure both Milter settings and reload Postfix first")
+			return
+		}
+	}
+	msg, verified := s.monitorProof(plan, time.Now().UTC())
+	if !verified {
+		fail(w, 409, "No matching live test email was observed through the selected connector; cannot activate")
+		return
+	}
+	err := s.Store.UpdateConfig(func(c *core.Config) error {
+		if c.Onboarding.Probe != plan.Probe || c.Onboarding.Server != plan.Server || c.Onboarding.Mode != plan.Mode || c.Onboarding.Activated {
+			return errors.New("Monitoring challenge changed or was already activated")
+		}
+		c.Onboarding.VerifiedID = msg.ID
+		c.Onboarding.Activated = true
+		c.Onboarding.ActivatedAt = time.Now().UTC()
+		return nil
+	})
+	if err != nil {
+		fail(w, 409, err.Error())
+		return
+	}
+	jsonReply(w, 200, map[string]any{"state": "running", "verified_message_id": msg.ID, "delivery_confirmed_by_admin": true})
 }
 
 // reviewMessage gives a plain-language, auditable feedback action. History
@@ -1193,24 +1511,29 @@ func (s *Server) saveOnboarding(w http.ResponseWriter, r *http.Request) {
 // never released by this endpoint. An explicit sender trust choice creates a
 // narrow rule, which is visible and reversible in the rules workspace.
 func (s *Server) reviewMessage(w http.ResponseWriter, r *http.Request) {
-	id, ok := s.authorized(w, r, true, true)
+	actor, ok := s.authorized(w, r, true, true)
 	if !ok {
 		return
 	}
 	var in struct {
-		Decision    string `json:"decision"`
-		TrustSender bool   `json:"trust_sender"`
+		Decision string `json:"decision"`
+		// AdjustSender changes future scoring by a small, reversible amount.
+		// No unconditional allow/reject overrides are created from review.
+		AdjustSender bool `json:"adjust_sender"`
+		// Compatibility with older clients; identical safe scoring behavior.
+		TrustSender bool `json:"trust_sender"`
 	}
 	if e := decode(r, &in); e != nil {
 		fail(w, 400, "Invalid review request")
 		return
 	}
-	if in.Decision != "correct" && in.Decision != "not_spam" {
-		fail(w, 400, "Select correct or not_spam")
+	if in.Decision != "correct" && in.Decision != "not_spam" && in.Decision != "spam" {
+		fail(w, 400, "Choose correct, not_spam or spam")
 		return
 	}
-	if in.Decision != "not_spam" && in.TrustSender {
-		fail(w, 400, "Sender trust requires a not-spam correction")
+	adjust := in.AdjustSender || in.TrustSender
+	if in.Decision == "correct" && adjust {
+		fail(w, 400, "A confirmed decision cannot also adjust sender scoring")
 		return
 	}
 	msg, found := s.Store.Get(r.PathValue("id"))
@@ -1218,52 +1541,74 @@ func (s *Server) reviewMessage(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, "Message not found")
 		return
 	}
+	if msg.ReviewStatus != "" && msg.ReviewStatus != in.Decision {
+		fail(w, 409, "This email was already reviewed differently. Open the complete audit before changing your decision.")
+		return
+	}
+	if (in.Decision == "spam" && msg.Action != "accept") || (in.Decision == "not_spam" && msg.Action == "accept") {
+		fail(w, 400, "Choose a correction that matches the recorded original classification")
+		return
+	}
 	var ruleID string
-	if in.TrustSender {
+	createdRule := false
+	if adjust {
 		sender := strings.ToLower(strings.TrimSpace(msg.Sender))
 		if len(sender) > 254 || strings.ContainsAny(sender, " \r\n<>") || strings.Count(sender, "@") != 1 || strings.HasPrefix(sender, "@") || strings.HasSuffix(sender, "@") {
-			fail(w, 400, "Sender address is unavailable or invalid; correct this message without creating a rule")
+			fail(w, 400, "Sender address is unavailable or invalid; submit the review without changing future scoring")
 			return
 		}
+		score := -5.0
+		verb := "Reduce spam score"
+		if in.Decision == "spam" {
+			score = 8
+			verb = "Increase spam score"
+		}
+		// Avoid accumulating duplicate adjustment rules on repeat submissions.
 		ruleID = core.ID()
-		e := s.Store.UpdateConfig(func(c *core.Config) error {
+		err := s.Store.UpdateConfig(func(c *core.Config) error {
+			for _, existing := range c.Rules {
+				if existing.Enabled && existing.Kind == "sender_email" && existing.Value == sender && existing.Name == verb+": "+sender {
+					ruleID = existing.ID
+					return nil
+				}
+			}
 			if len(c.Rules) >= 20000 {
 				return errors.New("Rule limit reached")
 			}
-			// Only the exact envelope address is matched. This does NOT provide
-			// authentication and may be spoofed; administrators opt in explicitly.
-			c.Rules = append(c.Rules, core.Rule{ID: ruleID, Name: "Trusted sender: " + sender, Kind: "sender_email", Value: sender, Score: 0, Action: "accept", Enabled: true, Priority: 100})
+			c.Rules = append(c.Rules, core.Rule{ID: ruleID, Name: verb + ": " + sender, Kind: "sender_email", Value: sender, Score: score, Enabled: true})
 			return nil
 		})
-		if e != nil {
-			fail(w, 409, "Could not save sender exception")
+		if err != nil {
+			fail(w, 409, "Could not save sender score adjustment")
 			return
 		}
 	}
-	if in.Decision == "not_spam" {
-		if msg.OriginalAction == "" {
-			msg.OriginalAction = msg.Action
-		}
-		msg.Action = "accept"
-		msg.ReviewStatus = "not_spam"
-	} else {
-		msg.ReviewStatus = "correct"
+	// Classification feedback is not a rewrite of what actually happened.
+	// Delivery and historical action remain untouched, including held mail.
+	if msg.OriginalAction == "" {
+		msg.OriginalAction = msg.Action
 	}
-	msg.ReviewedBy = id.Name
+	msg.ReviewStatus = in.Decision
+	msg.ReviewedBy = actor.Name
 	msg.ReviewedAt = time.Now().UTC()
-	detail := "Administrator confirmed the original decision"
+	detail := "Administrator confirmed SpamGate's original verdict"
 	if in.Decision == "not_spam" {
-		detail = "Administrator marked this message not spam; original delivery state is unchanged"
+		detail = "Administrator identified a false positive; historical action and delivery were not changed"
 	}
-	if ruleID != "" {
-		detail += "; created exact-sender exception " + ruleID
+	if in.Decision == "spam" {
+		detail = "Administrator identified missed spam; already-delivered email is not recalled"
 	}
-	msg.Findings = append(msg.Findings, core.Finding{Symbol: "HUMAN_REVIEW", Source: "review/" + id.Name, Detail: detail, Score: 0})
+	if adjust {
+		detail += "; reversible exact-sender scoring adjustment " + ruleID
+	}
+	msg.Findings = append(msg.Findings, core.Finding{Symbol: "HUMAN_REVIEW", Source: "review/" + actor.Name, Detail: detail, Score: 0})
 	if e := s.Store.Save(msg); e != nil {
-		if ruleID != "" {
+		// Roll back only the rule created by this attempt, never a pre-existing
+		// sender exception that the administrator already approved.
+		if createdRule {
 			_ = s.Store.UpdateConfig(func(c *core.Config) error {
-				for i, r := range c.Rules {
-					if r.ID == ruleID {
+				for i, item := range c.Rules {
+					if item.ID == ruleID {
 						c.Rules = append(c.Rules[:i], c.Rules[i+1:]...)
 						break
 					}
@@ -1271,7 +1616,7 @@ func (s *Server) reviewMessage(w http.ResponseWriter, r *http.Request) {
 				return nil
 			})
 		}
-		fail(w, 503, "Could not save reviewed decision")
+		fail(w, 503, "Review could not be saved")
 		return
 	}
 	jsonReply(w, 200, map[string]any{"message": msg, "sender_rule_id": ruleID, "delivery_changed": false})

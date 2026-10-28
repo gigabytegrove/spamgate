@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -86,6 +87,50 @@ func SPFCheck(ctx context.Context, resolver SPFResolver, clientIP, sender, helo 
 	result, detail := eval.evaluate(dnsCtx, ip, domain, map[string]bool{})
 	return SPFResult{Result: result, Domain: domain, Explanation: detail}
 }
+
+// SPF a/mx mechanisms support different IPv4 and IPv6 prefix lengths.
+// Exact-address matching silently breaks legitimate SPF a/24 or mx/24 records.
+func spfAddressMatches(client net.IP, addresses []net.IPAddr, cidr string) (bool, error) {
+	bits4, bits6 := 32, 128
+	if cidr != "" {
+		parts := strings.Split(cidr, "/")
+		if len(parts) > 2 {
+			return false, errors.New("invalid SPF dual-CIDR")
+		}
+		if parts[0] != "" {
+			v, e := strconv.Atoi(parts[0])
+			if e != nil || v < 0 || v > 32 {
+				return false, errors.New("invalid SPF IPv4 prefix length")
+			}
+			bits4 = v
+		}
+		if len(parts) == 2 {
+			v, e := strconv.Atoi(parts[1])
+			if e != nil || v < 0 || v > 128 {
+				return false, errors.New("invalid SPF IPv6 prefix length")
+			}
+			bits6 = v
+		}
+	}
+	for _, entry := range addresses {
+		a := entry.IP
+		if ip4 := client.To4(); ip4 != nil {
+			if candidate := a.To4(); candidate != nil {
+				network := &net.IPNet{IP: candidate.Mask(net.CIDRMask(bits4, 32)), Mask: net.CIDRMask(bits4, 32)}
+				if network.Contains(ip4) {
+					return true, nil
+				}
+			}
+		} else if candidate := a.To16(); candidate != nil && a.To4() == nil {
+			network := &net.IPNet{IP: candidate.Mask(net.CIDRMask(bits6, 128)), Mask: net.CIDRMask(bits6, 128)}
+			if network.Contains(client) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
 func (e *spfEval) evaluate(ctx context.Context, ip net.IP, domain string, seen map[string]bool) (string, string) {
 	if seen[domain] {
 		return "permerror", "SPF include/redirect cycle"
@@ -205,6 +250,9 @@ func (e *spfEval) evaluate(ctx context.Context, ip net.IP, domain string, seen m
 					return "permerror", "SPF MX address lookup limit exceeded"
 				}
 				for _, mx := range records {
+					if err := e.countDNS(ctx); err != nil {
+						return "permerror", err.Error()
+					}
 					ips, err := e.resolver.LookupIPAddr(ctx, mx.Host)
 					if err != nil {
 						if spfDNSFailure(err) == "temperror" {
@@ -215,10 +263,12 @@ func (e *spfEval) evaluate(ctx context.Context, ip net.IP, domain string, seen m
 					if err := e.countVoid(nil, len(ips)); err != nil {
 						return "permerror", err.Error()
 					}
-					for _, addr := range ips {
-						if addr.IP.Equal(ip) {
-							match = true
-						}
+					hit, e := spfAddressMatches(ip, ips, mask)
+					if e != nil {
+						return "permerror", e.Error()
+					}
+					if hit {
+						match = true
 					}
 				}
 			} else {
@@ -235,10 +285,14 @@ func (e *spfEval) evaluate(ctx context.Context, ip net.IP, domain string, seen m
 				if err := e.countVoid(nil, len(ips)); err != nil {
 					return "permerror", err.Error()
 				}
-				for _, addr := range ips {
-					if mechanism == "exists" || addr.IP.Equal(ip) {
-						match = true
+				if mechanism == "exists" {
+					match = len(ips) > 0
+				} else {
+					hit, e := spfAddressMatches(ip, ips, mask)
+					if e != nil {
+						return "permerror", e.Error()
 					}
+					match = hit
 				}
 			}
 		case "ptr":

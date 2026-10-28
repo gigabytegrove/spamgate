@@ -12,10 +12,12 @@ import (
 	"time"
 
 	"encoding/json"
+	"github.com/gigabytegrove/spamgate/internal/backup"
 	"github.com/gigabytegrove/spamgate/internal/core"
 	"github.com/gigabytegrove/spamgate/internal/hostinspect"
 	"github.com/gigabytegrove/spamgate/internal/server"
 	"github.com/gigabytegrove/spamgate/internal/transport"
+	"github.com/gigabytegrove/spamgate/internal/updater"
 )
 
 type options struct {
@@ -43,9 +45,10 @@ func defaultListen() string {
 	if value := os.Getenv("SPAMGATE_WEB_LISTEN"); value != "" {
 		return value
 	}
-	// Host installs are local-only until the administrator configures an HTTPS proxy
-	// or explicitly enables access from a trusted LAN.
-	return "127.0.0.1:38470"
+	// The web dashboard is reachable via the host's interfaces by default.
+	// Mail-facing listeners are separate and remain disabled unless configured,
+	// with loopback-only addresses in the local Postfix setup instructions.
+	return "0.0.0.0:38470"
 }
 
 func main() {
@@ -57,11 +60,18 @@ func main() {
 }
 
 func execute(args []string) error {
+	if len(args) == 2 && args[0] == "-internal-update-apply" {
+		return updater.ApplyFromHelper(args[1])
+	}
 	flags := flag.NewFlagSet("spamgate", flag.ContinueOnError)
 	data := flags.String("data", defaultDataDir(), "Persistent data directory")
 	web := flags.String("listen", defaultListen(), "Management HTTP listener (use an HTTPS reverse proxy for remote access)")
 	logPath := flags.String("log-file", "", "Optional append-only application log (useful for Windows services)")
+	logLevel := flags.String("log-level", os.Getenv("SPAMGATE_LOG_LEVEL"), "Logging verbosity: debug, info (default), warn, error")
 	version := flags.Bool("version", false, "Print version")
+	backupFile := flags.String("backup-file", "", "Offline backup: write a ZIP of the stopped SpamGate data directory to a new file")
+	verifyBackup := flags.String("verify-backup", "", "Verify SHA-256 hashes and structure of an offline backup ZIP")
+	restoreBackup := flags.String("restore-backup", "", "Restore a verified backup ZIP to a new, nonexistent -data directory (server must be stopped)")
 	mailReport := flags.Bool("mailserver-report", false, "Read-only report of local MTA and hosting-panel integration")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -76,6 +86,31 @@ func execute(args []string) error {
 	if *mailReport {
 		return json.NewEncoder(os.Stdout).Encode(hostinspect.Detect(context.Background()))
 	}
+	if (*backupFile != "" && *verifyBackup != "") || (*backupFile != "" && *restoreBackup != "") || (*verifyBackup != "" && *restoreBackup != "") {
+		return fmt.Errorf("choose only one offline backup operation")
+	}
+	if *backupFile != "" {
+		if err := backup.Create(*data, *backupFile); err != nil {
+			return err
+		}
+		fmt.Println("SpamGate offline backup written:", *backupFile)
+		return nil
+	}
+	if *verifyBackup != "" {
+		manifest, err := backup.Verify(*verifyBackup)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("SpamGate backup verified: %d file(s), created %s\n", len(manifest.Entries), manifest.Created.Format(time.RFC3339))
+		return nil
+	}
+	if *restoreBackup != "" {
+		if err := backup.Restore(*restoreBackup, *data); err != nil {
+			return err
+		}
+		fmt.Println("SpamGate backup restored to:", *data)
+		return nil
+	}
 	if *data == "" || *web == "" {
 		return fmt.Errorf("data and listen must not be empty")
 	}
@@ -84,6 +119,19 @@ func execute(args []string) error {
 	if *logPath == "" && runtime.GOOS == "windows" {
 		*logPath = filepath.Join(*data, "logs", "spamgate.log")
 	}
+	level := slog.LevelInfo
+	switch *logLevel {
+	case "", "info":
+	case "debug":
+		level = slog.LevelDebug
+	case "warn", "warning":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		return fmt.Errorf("invalid log level %q: choose debug, info, warn or error", *logLevel)
+	}
+	output := io.Writer(os.Stderr)
 	if *logPath != "" {
 		if err := os.MkdirAll(filepath.Dir(*logPath), 0700); err != nil {
 			return fmt.Errorf("create log directory: %w", err)
@@ -93,8 +141,9 @@ func execute(args []string) error {
 			return fmt.Errorf("open application log: %w", err)
 		}
 		defer f.Close()
-		slog.SetDefault(slog.New(slog.NewTextHandler(io.MultiWriter(os.Stderr, f), nil)))
+		output = io.MultiWriter(os.Stderr, f)
 	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(output, &slog.HandlerOptions{Level: level})))
 	return runPlatform(func(ctx context.Context) error {
 		return runApp(ctx, options{dataDir: *data, listen: *web, logFile: *logPath})
 	})
@@ -164,6 +213,7 @@ func runApp(ctx context.Context, opts options) error {
 		srv.Deliver = relay.Send
 	}
 	srv.Queue = queue
+	srv.UpdateExit = func() { go func() { time.Sleep(800 * time.Millisecond); os.Exit(0) }() }
 	srv.Runtime = server.RuntimeStatus{
 		RelayConfigured: relay != nil,
 		Services: map[string]server.RuntimeService{

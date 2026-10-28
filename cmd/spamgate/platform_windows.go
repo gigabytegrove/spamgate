@@ -135,7 +135,7 @@ func openDashboardWhenReady(ctx context.Context, address, setupKey string) {
 		return
 	}
 	host, port, err := net.SplitHostPort(address)
-	if err != nil || port == "" || (host != "localhost" && host != "127.0.0.1" && host != "::1") {
+	if err != nil || port == "" || (host != "localhost" && host != "127.0.0.1" && host != "::1" && host != "0.0.0.0" && host != "::") {
 		return
 	}
 	url := "http://127.0.0.1:" + port + "/"

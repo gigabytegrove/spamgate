@@ -23,7 +23,7 @@ if ([string]::IsNullOrEmpty($Listen)) {
     if (Test-Path -LiteralPath $Metadata -PathType Leaf) {
         $Listen = (Get-Content -LiteralPath $Metadata -Raw | ConvertFrom-Json).listen
     } else {
-        $Listen = '127.0.0.1:38470'
+        $Listen = '0.0.0.0:38470'
     }
 }
 if ($Listen -notmatch '^[a-zA-Z0-9.:[\]_-]+$' -or $Listen -notmatch ':') {

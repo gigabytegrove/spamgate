@@ -23,7 +23,7 @@ func TestDKIMEd25519RealSignature(t *testing.T) {
 	line := "DKIM-Signature: v=1; a=ed25519-sha256; d=example.org; s=s1; c=relaxed/relaxed; h=from:subject; bh=" + base64.StdEncoding.EncodeToString(bodySum[:]) + "; b="
 	h1 := "From: Me <me@example.org>"
 	h2 := "Subject: DKIM probe"
-	signed := bytes.Join([][]byte{dkimCanonHeader([]byte(h1), "relaxed"), dkimCanonHeader([]byte(h2), "relaxed"), dkimCanonHeader([]byte(line), "relaxed")}, nil)
+	signed := bytes.Join([][]byte{dkimCanonHeader([]byte(h1), "relaxed"), dkimCanonHeader([]byte(h2), "relaxed"), bytes.TrimSuffix(dkimCanonHeader([]byte(line), "relaxed"), []byte("\r\n"))}, nil)
 	sum := sha256.Sum256(signed)
 	line += base64.StdEncoding.EncodeToString(ed25519.Sign(secret, sum[:]))
 	raw := []byte(h1 + "\r\n" + h2 + "\r\n" + line + "\r\n\r\n" + string(body))

@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-//go:embed assets/index.html assets/app.css assets/app.js assets/spamgate-logo.png assets/spamgate-icon.png assets/favicon.png
+//go:embed assets/index.html assets/app.css assets/tailwind.css assets/redesign.css assets/app.js assets/spamgate-logo.png assets/spamgate-icon.png assets/favicon.png
 var assetFS embed.FS
 var indexHTML string
 
@@ -27,7 +27,13 @@ func assetImage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 func assetCSS(w http.ResponseWriter, r *http.Request) {
-	serveAsset(w, r, "assets/app.css", "text/css; charset=utf-8")
+	name := strings.TrimPrefix(r.URL.Path, "/assets/")
+	switch name {
+	case "app.css", "tailwind.css", "redesign.css":
+		serveAsset(w, r, "assets/"+name, "text/css; charset=utf-8")
+	default:
+		http.NotFound(w, r)
+	}
 }
 func assetJS(w http.ResponseWriter, r *http.Request) {
 	serveAsset(w, r, "assets/app.js", "text/javascript; charset=utf-8")

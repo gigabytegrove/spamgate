@@ -28,7 +28,7 @@ func TestSMTPQuarantineAndXForward(t *testing.T) {
 	}
 	defer listener.Close()
 	_, trusted, _ := net.ParseCIDR("127.0.0.1/32")
-	smtp := &SMTP{Store: store, Scanner: &core.Scanner{Store: store}, CIDRs: []*net.IPNet{trusted}, Domains: []string{"example.org"}}
+	smtp := &SMTP{Store: store, Scanner: &core.Scanner{Store: store, Resolver: milterStubDNS{}}, CIDRs: []*net.IPNet{trusted}, Domains: []string{"example.org"}}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

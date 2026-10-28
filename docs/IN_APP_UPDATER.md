@@ -1,0 +1,13 @@
+# In-app updates (development)
+
+SpamGate > Protection policy > Software updates offers **Check**, **Download and verify**, and **Install and restart**. Administrator session and CSRF authorization are required. The public `gigabytegrove/spamgate` GitHub Releases collection is the only update source. The updater includes alpha/beta/RC releases; it selects the highest version (not the most recently uploaded older version). No release means a visible error instead of an invented update.
+
+A published GitHub release must include `spamgate-linux-amd64`, `spamgate-windows-amd64.exe`, and `SHA256SUMS.txt` generated from those exact bytes by `.github/workflows/release.yml`. A tag must agree with the executable's version; CI refuses mismatches.
+
+The runtime enforces exact asset names, expected GitHub release URLs, SHA-256 digest matches, a 80 MiB binary cap, file format checks, and no downgrades. It stores `updates/pending[.exe]` and `updates/pending.json` in the persistent data directory. Updating the binary never deletes `config.json`, `sessions.json`, history, or quarantine files.
+
+Install uses a temporary standalone helper copied from the running executable to avoid Windows file locks. The helper installs the verified staged binary, keeps a `.spamgate-backup` copy of the original executable, and starts the replacement using the same command-line arguments and working directory. If replacement or process start fails, it attempts to restore the original binary. The pre-update backup intentionally remains on disk for manual rollback. Remove a leftover backup **only after a successful upgrade has been verified**; a pre-existing backup blocks future installs to avoid silent overwrite. Restart is expected to interrupt mail-facing listeners briefly: plan maintenance accordingly.
+
+**Important limitations:** This is a development feature, not yet production-qualified on Windows Service and systemd. The installer refuses environments with systemd `INVOCATION_ID`/`NOTIFY_SOCKET` or `SPAMGATE_MANAGED_SERVICE=true`. Service-managed and Docker installations should use their own supervisor or image rollout, not the in-process restart helper. There is no reliable automatic rollback if the replacement executable starts but subsequently fails health checks. The upgrade helper must not be used for unattended production mail servers until process lifecycle, real-world mailbox delivery, and rollback testing pass.
+
+The repository must be made public and an actual GitHub Release must be published to enable the updater; changing visibility alone does not publish versioned binaries. Initial rollout should also publish the current version before trying a future version so upgrade checks can be exercised.

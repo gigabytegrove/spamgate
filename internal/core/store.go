@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -25,6 +26,7 @@ type Store struct {
 	fuzzy    []FuzzyEntry
 	neural   NeuralModel
 	order    []string
+	policy   deliveryPolicyState
 }
 
 func ID() string {
@@ -44,6 +46,8 @@ func Open(dir string) (*Store, error) {
 		if e := json.Unmarshal(data, &s.cfg); e != nil {
 			return nil, fmt.Errorf("config: %w", e)
 		}
+		// Legacy installs may have customized this field. The product name is fixed.
+		s.cfg.Settings.SiteName = "SpamGate"
 		if !s.cfg.Settings.Valid() {
 			return nil, errors.New("invalid persisted settings")
 		}
@@ -57,6 +61,9 @@ func Open(dir string) (*Store, error) {
 		return nil, err
 	}
 	if err := s.loadNeural(); err != nil {
+		return nil, err
+	}
+	if err := s.loadDeliveryPolicy(); err != nil {
 		return nil, err
 	}
 	f, err := os.Open(filepath.Join(dir, "events.jsonl"))
@@ -123,6 +130,7 @@ func (s *Store) Config() Config {
 	b, _ := json.Marshal(s.cfg)
 	var c Config
 	_ = json.Unmarshal(b, &c)
+	c.Settings.SiteName = "SpamGate"
 	return c
 }
 func (s *Store) UpdateConfig(mut func(*Config) error) error {
@@ -136,8 +144,21 @@ func (s *Store) UpdateConfig(mut func(*Config) error) error {
 	if e := mut(&next); e != nil {
 		return e
 	}
+	// Never persist a user-provided product name.
+	next.Settings.SiteName = "SpamGate"
 	if !next.Settings.Valid() {
 		return errors.New("invalid settings thresholds or retention")
+	}
+	if len(next.RecipientPolicies) > 200 {
+		return errors.New("too many recipient policies")
+	}
+	seenRecipients := map[string]bool{}
+	for _, policy := range next.RecipientPolicies {
+		key := strings.ToLower(policy.Mailbox)
+		if !policy.Valid() || seenRecipients[key] {
+			return errors.New("invalid or duplicate recipient threshold policy")
+		}
+		seenRecipients[key] = true
 	}
 	if e := atomicJSON(filepath.Join(s.dir, "config.json"), next); e != nil {
 		return e
@@ -149,8 +170,24 @@ func (s *Store) Save(m Message) error {
 	if m.ID == "" {
 		return errors.New("message ID required")
 	}
+	if len(m.HeaderSnapshot) > 0 && !validID(m.ID) {
+		return errors.New("invalid scan ID for header persistence")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Persist the headers separately, using strict filesystem permissions; do
+	// not put header contents in events.jsonl or normal message-list responses.
+	if len(m.HeaderSnapshot) > 0 {
+		dir := filepath.Join(s.dir, "headers")
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			return err
+		}
+		if err := atomicBytes(filepath.Join(dir, m.ID+".hdr"), m.HeaderSnapshot); err != nil {
+			return err
+		}
+	}
+	m.HeaderSnapshot = nil
+	m.HeaderTruncated = false
 	b, e := json.Marshal(m)
 	if e != nil {
 		return e
@@ -215,7 +252,7 @@ func containsAddress(xs []string, target string) bool {
 func (s *Store) Stats(email string) map[string]any {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	counts := map[string]int{"accept": 0, "tag": 0, "quarantine": 0, "reject": 0}
+	counts := map[string]int{"accept": 0, "tag": 0, "quarantine": 0, "reject": 0, "soft_reject": 0}
 	var sum float64
 	count := 0
 	for _, id := range s.order {
@@ -242,6 +279,9 @@ func (s *Store) pruneLocked() {
 			if e := os.Remove(filepath.Join(s.dir, "quarantine", id+".eml")); e != nil && !errors.Is(e, os.ErrNotExist) {
 				slog.Error("expired quarantine purge failed", "id", id, "error", e)
 			}
+			if e := os.Remove(filepath.Join(s.dir, "headers", id+".hdr")); e != nil && !errors.Is(e, os.ErrNotExist) {
+				slog.Error("expired headers purge failed", "id", id, "error", e)
+			}
 			delete(s.messages, id)
 			continue
 		}
@@ -252,6 +292,9 @@ func (s *Store) pruneLocked() {
 		for _, id := range keep[:n] {
 			if e := os.Remove(filepath.Join(s.dir, "quarantine", id+".eml")); e != nil && !errors.Is(e, os.ErrNotExist) {
 				slog.Error("evicted quarantine purge failed", "id", id, "error", e)
+			}
+			if e := os.Remove(filepath.Join(s.dir, "headers", id+".hdr")); e != nil && !errors.Is(e, os.ErrNotExist) {
+				slog.Error("evicted headers purge failed", "id", id, "error", e)
 			}
 			delete(s.messages, id)
 		}
@@ -361,3 +404,6 @@ func validID(id string) bool {
 	b, e := hex.DecodeString(id)
 	return e == nil && len(b) == 16
 }
+
+// DataDir is the configured persistent storage root for server state.
+func (s *Store) DataDir() string { return s.dir }

@@ -1,19 +1,77 @@
+> **0.6.0-alpha.1:** Pre-v1 engineering push: ARC cryptographic validation (no sealer trust), bounded MIME/ZIP checks, optional HTTPS fingerprint reputation, expiring threat snapshots, mailbox thresholds. Still not production-qualified. See [external intelligence](docs/EXTERNAL_INTELLIGENCE.md) and [release gate](docs/V1_RELEASE_GATE.md).
+
+> **0.5.0-alpha.1**: authentication correctness, offline backup verification, and live scanner metrics. Not production-cleared. See [v1 release gate](docs/V1_RELEASE_GATE.md).
+
+# SpamGate v0.4.0-alpha.12 — task-first interface redesign
+
+This revision keeps the existing header and navigation and remaps the entire application body. See [docs/UX_ALPHA12.md](docs/UX_ALPHA12.md) for page-by-page behavior, tests and limitations.
+
+## Earlier alpha.11 security and delivery modules
+
+This development build expands DNSBL/RHSBL/URIBL reputation sources, phishing-link evidence, opt-in greylisting and rate limiting, Junk/hold disposition options, subject marking, trusted SpamGate headers, reviewed-domain reputation, and a read-only local Postfix hold-queue view. **None of the new rejection/deferral modules are silently activated**. This is not yet feature-equivalent to Rspamd or qualified for production. See `docs/MAJOR_ALPHA11_RELEASE.md` for exact implementation limits, configuration and tests.
+
+## v0.4.0-alpha.8 — visible live mail and auditable scoring
+
+- New messages update Home/Review mail/All messages/Held messages every four seconds in the visible browser tab (without refresh); ongoing edits remain uninterrupted.
+- Home shows every recent message, plus top recorded scoring findings and per-message score reviews.
+- New scans persist original tag/quarantine/reject thresholds and a check-by-check coverage trace, with clear explanations of positive/negative points and skipped checks. Historical scans remain readable, without invented information.
+- The management UI remains an authenticated Web UI, not proof of successful Postfix delivery; see `docs/LIVE_ACTIVITY_AND_SCORING.md`.
+
+## Setup activation check (standalone and native mail-server testing)
+
+The product is **SpamGate**; the name cannot be changed during account creation
+or in policy settings. Existing installations with a legacy custom title are
+normalized back to SpamGate on configuration load/update.
+
+The first-login wizard now has a gated verification step:
+
+1. Choose server, location and filtering level. Read the installation-specific
+   instructions before connecting the mail server. Saving choices alone does
+   **not** mean the instance is running.
+2. Enable the selected, trusted connector on the SpamGate process (Milter for
+   Postfix/ISPConfig; Rspamd-compatible HTTP for custom integrations). A
+   cPanel/Exim adapter is **not** yet supported; it cannot be activated.
+3. Start monitoring in the wizard. SpamGate generates a fresh, unique test
+   subject (20-minute window). Send a controlled email **through the real MTA**
+   with that subject to a mailbox you can check. The wizard polls every four
+   seconds for a new matching accepted/tagged message on the chosen connector.
+4. After SpamGate shows its scan result, independently confirm arrival in the
+   destination inbox and explicitly click **Mark this connection as running**.
+   This confirmation is recorded as an administrative attestation, not a
+   machine-verified downstream delivery receipt.
+5. If a listener is absent, the test expires, or no valid message is received,
+   activation is blocked. Previously received mail, manual `.eml` tests, the
+   wrong connector, and rejected messages never qualify. Changing the setup
+   invalidates any prior evidence.
+
+Standalone testing remains fully supported: choose **Standalone testing** to
+open the `.eml` tester without falsely claiming a live mail connection.
+No installers, MTA configuration writes, or silent mail routing occur in the wizard.
+This is alpha software: a successful smoke test does not certify Rspamd parity,
+mail-server interoperability, or safe production deployment.
+
 # SpamGate
 
-## Install directly on a Linux mail server — no ZIP or Docker
+## Alpha.4: first-run clarity and honest mail review
 
-The native source-to-service installer downloads and verifies the official patched Go 1.27.3 toolchain (only if missing), tests and builds SpamGate, and installs its systemd service **without modifying your mail server configuration**:
+The first-login wizard saves real protection thresholds and selected mail-server
+mode without editing the MTA. The read-only `/api/v1/setup/readiness` endpoint
+reports configured listeners separately from observed Milter/SMTP/Rspamd scan
+submissions; neither establishes end-to-end mail delivery. Standalone `.eml`
+tests do not count as connected traffic.
 
-```bash
-git clone https://github.com/gigabytegrove/spamgate.git
-cd spamgate
-bash scripts/install-native-from-source.sh
-```
+Message review is deliberately **audit-safe**: administrators can confirm the
+original verdict, identify a false positive, or identify missed spam. Historical
+`action` and `delivery` are never rewritten by feedback, and release of held
+mail remains a separate, explicit action. Optional future-sender adjustments
+add reversible exact-address **score weights** (−5 / +8) rather than unsafe
+blanket allow/block exceptions. Raw original-message retraining is not implied.
 
-Run as a regular user; it prompts for `sudo` only when installing the service. This repository is private, so `git clone` requires GitHub access. For a non-installing build use `bash scripts/install-native-from-source.sh --build-only`. The local Web UI is at `http://127.0.0.1:38470` after first-run setup. **Alpha: do not attach live MTA mail routing until qualified.**
+This is a standalone-test development iteration. No installer is required for
+initial evaluation, and a validated signed Windows release is not yet available.
 
-Prebuilt native artifacts are planned for [GitHub Releases](https://github.com/gigabytegrove/spamgate/releases), but are unavailable until the [build workflow](https://github.com/gigabytegrove/spamgate/actions/workflows/native-prerelease.yml) passes. The previous chat ZIP links are not dependable distribution.
 
+> New **easy-start first login and human-readable message review**: see [Quick Start](docs/QUICK_START.md). Administrator creation now leads to a guided mail-server selection and safe standalone test workflow. Future sender exceptions are explicit and reversible.
 
 ## v0.4.0-alpha.2 native-first mail-server deployment
 
@@ -117,7 +175,7 @@ Go 1.27.3 (recommended for current security fixes) or another Go toolchain compa
 go test ./...
 go vet ./...
 go build -trimpath -o spamgate ./cmd/spamgate
-./spamgate -data ./data -listen 127.0.0.1:38470
+./spamgate -data ./data -listen 0.0.0.0:38470
 ```
 
 The web UI is embedded. The data directory holds `config.json`, `events.jsonl`, the training models and `quarantine/`. Protect that data as confidential email information and perform consistent backups with SpamGate stopped.
@@ -164,3 +222,14 @@ The Web UI has addressable operational screens: `/overview` (command center), `/
 Administrators see `/api/v1/runtime`, a configuration inventory that describes which listener processes were enabled at application startup. **Configured does not mean operational or connected to a real mail server.** Runtime details are never available to unauthenticated clients or mailbox-only accounts.
 
 The previous source-only and unsigned Windows development builds remain unsuitable for production use; see [release security](docs/RELEASE_SECURITY.md).
+
+### v0.4.0-alpha.10: protocol noise and traceable tagged mail
+
+Milter negotiation is logged at DEBUG instead of INFO; routine INFO output
+focuses on message verdicts and genuine errors. Set `-log-level debug` or
+`SPAMGATE_LOG_LEVEL=debug` to inspect handshakes while testing. The Milter
+now requests score/action/scan-ID headers on **tagged** messages in addition
+to `X-Spam: Yes`. DNSBL lookups are still opt-in; public/wildcard DNS answers
+are no longer treated as a positive listing unless they use the DNSBL 127/8
+response range. See [Junk routing](docs/MESSAGE_TAGGING_AND_JUNK.md) and
+[Rspamd parity plan](docs/RSPAMD_PARITY_GAPS.md).

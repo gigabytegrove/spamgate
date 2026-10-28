@@ -6,7 +6,7 @@ usage() {
   cat <<'USAGE'
 Usage: sudo ./install-linux.sh [--listen HOST:PORT] [--no-local-milter] [--enable-local-milter]
 Installs/upgrades the SpamGate binary as a systemd service.
-The default management listener is 127.0.0.1:38470 (local only).
+The default management listener is 0.0.0.0:38470 (host interfaces). Restrict with a firewall.
 Existing configuration and mail history are retained on upgrades.
 A new install enables a loopback-only Milter listener (port 38472); it NEVER
 changes Postfix, ISPConfig, Exim, cPanel or another mail server automatically.
@@ -50,7 +50,7 @@ install -d -m 0700 -o spamgate -g spamgate /var/lib/spamgate
 install -d -m 0750 -o root -g spamgate /etc/spamgate
 CFG=/etc/spamgate/spamgate.env
 if [[ ! -e "$CFG" ]]; then
-  printf 'SPAMGATE_WEB_LISTEN=%s\n' "${LISTEN:-127.0.0.1:38470}" > "$CFG"
+  printf 'SPAMGATE_WEB_LISTEN=%s\n' "${LISTEN:-0.0.0.0:38470}" > "$CFG"
   if [[ "$LOCAL_MILTER" != no ]]; then
     printf 'SPAMGATE_MILTER_LISTEN=127.0.0.1:38472\nSPAMGATE_MILTER_TRUSTED_CIDRS=127.0.0.1/32\n' >> "$CFG"
   fi

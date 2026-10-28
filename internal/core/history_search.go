@@ -67,7 +67,11 @@ func (s *Store) SearchHistory(query HistoryQuery, mailbox string) (HistoryResult
 			if mailbox != "" {
 				visibleRecipients = mailbox
 			}
-			haystack := strings.ToLower(strings.Join([]string{m.ID, m.MessageID, m.Sender, m.Subject, m.Action, visibleRecipients}, " "))
+			searchFields := []string{m.ID, m.MessageID, m.MTAQueueID, m.Sender, m.Subject, m.Action, m.Connector, m.ClientIP, visibleRecipients}
+			for _, finding := range m.Findings {
+				searchFields = append(searchFields, finding.Symbol, finding.Source, finding.Detail)
+			}
+			haystack := strings.ToLower(strings.Join(searchFields, " "))
 			if !strings.Contains(haystack, query.Text) {
 				continue
 			}
