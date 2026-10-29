@@ -1,37 +1,38 @@
-# Native launcher/worker layout for alpha.16
+# Download and install SpamGate (Linux AMD64)
 
-- `spamgate-launcher-linux-amd64` installs as **/opt/spamgate/spamgate**, the permanent supervisor.
-- `spamgate-worker-linux-amd64` installs as **/opt/spamgate/spamgate-worker**, the updatable application.
-- `spamgate-linux-amd64` remains an **identical-byte legacy worker** release asset for older native/systemd/Docker supervisors. It is not the new launcher.
+## Native foreground installation — alpha.16+
 
-The one-time migration requires stopping the current app before replacing any executable. See [alpha.16 migration](NATIVE_LAUNCHER_ALPHA16.md). The alpha.13 two-binary names are superseded for manual installations; don't run both launchers.
+| Release asset | Install on the mail server as | Role |
+|---|---|---|
+| `spamgate-launcher-linux-amd64` | `/opt/spamgate/spamgate` | Permanent supervisor; starts child, performs in-place worker updates and rollback |
+| `spamgate-worker-linux-amd64` | `/opt/spamgate/spamgate-worker` | Application, HTTP admin UI, scanner and Postfix Milter |
+| `SHA256SUMS.txt` | Verification only | Verify both exact released binaries |
 
-# SpamGate native builds and GitHub Releases
+The name of the downloaded file is not the name of the installed executable. Both binaries must be present, but you only manually **launch `./spamgate`**.
 
-The GitHub repository is the source of truth. Release publication is performed **locally on dockeradm** with `gh`; no GitHub Actions workflow is required or enabled for release automation.
+`spamgate-linux-amd64` is deliberately an identical-byte **legacy worker** asset for older (`./spamgate` worker or `./spamgate-run` supervisor) installations and managed systemd/Docker supervisors. **Never install this legacy asset as the new `./spamgate` launcher.** `spamgate-run-linux-amd64` was a temporary alpha.13–alpha.15 layout and is superseded for new native foreground installs.
 
-## v0.6.0-alpha.13 native Linux pair
+## Upgrading an existing directly launched `./spamgate`
 
-A foreground-native deployment consists of **two separate AMD64 Linux binaries**:
+1. Publish the exact alpha.16 GitHub prerelease only after all build/test gates pass.
+2. Stop the existing `./spamgate` in its terminal. Do not start or install over a running process.
+3. Use `scripts/migrate-native-launcher.sh /opt/spamgate [local-asset-directory]` from the verified alpha.16 source; the optional asset directory contains both downloaded binaries plus `SHA256SUMS.txt`. Without a directory, the helper uses authenticated `gh release download`.
+4. The helper checks the original process is stopped, verifies hashes and versions, preserves the old application under a `spamgate.pre-native-split-<old-version>` filename, and installs the corrected pair without replacing `/opt/spamgate/data`.
+5. Start with your existing environment and args:
 
-- `spamgate-run-linux-amd64`, installed as `/opt/spamgate/spamgate-run`, is the stable launcher and update supervisor.
-- `spamgate-linux-amd64`, installed as `/opt/spamgate/spamgate`, is the actual mail worker updated in place.
-- `spamgate-windows-amd64.exe` is a separate Windows worker developer build; the independent runner is not yet validated on Windows.
-- `SHA256SUMS.txt` protects the exact released artifact bytes; neither SHA-256 nor unsigned Windows binaries are a substitute for publisher signing.
-
-On dockeradm, build and qualify the complete source from the exact approved commit with `bash scripts/build-github-assets.sh`. **Do not publish** if the command fails. It runs Go tests, race detection, static analysis, JavaScript rendering regressions, the existing supervisor restart/rollback integration, the new independent runner integration, and cross-compilation. The release includes all **four** files above. It is marked as a prerelease.
-
-For the **one-time transition** of a stopped alpha.9 foreground server, use the reviewed `scripts/bootstrap-foreground.sh /opt/spamgate` from the exact tagged source. It verifies both GitHub assets and preserves the old worker separately; it does not touch Postfix, the Milter environment, `/opt/spamgate/data`, or the legacy `.spamgate-backup`. It also does not start a service.
-
-Start the installed pair by replacing `./spamgate` with `./spamgate-run` while keeping the rest of the existing invocation unchanged:
-
-```sh
+```bash
 cd /opt/spamgate
 SPAMGATE_MILTER_LISTEN=127.0.0.1:38472 \
 SPAMGATE_MILTER_TRUSTED_CIDRS=127.0.0.1/32 \
-./spamgate-run -data /opt/spamgate/data -listen 0.0.0.0:38470
+./spamgate -data /opt/spamgate/data -listen 0.0.0.0:38470
 ```
 
-The launcher keeps the terminal attached so runtime logs, update failures and rollback events remain visible. It never downloads software by itself: the authenticated SpamGate update UI stages a published, verified worker, and a private worker exit code requests the runner to replace it. See [native runner design](RUNNER_ALPHA13.md).
+Confirm the `spamgate` parent starts `spamgate-worker`, HTTP `/healthz` succeeds, and the admin Software Updates view reports a supervised installation. All subsequent native updates target `spamgate-worker`, not the launcher. Old staged update metadata must be replaced by staging a new worker update after migration.
 
-The managed systemd/Docker integrated-supervisor deployment remains a separate mode and must not be mixed with the foreground launcher on the same data directory. Do not start multiple SpamGate instances against the same listening ports and journal.
+See [step-by-step migration and recovery](NATIVE_LAUNCHER_ALPHA16.md) and [update internals](IN_APP_UPDATER.md).
+
+## Other deployment modes
+
+Systemd/Docker and Windows retain their existing supervised-worker mechanisms and compatibility assets until specifically migrated and qualified. Do not run both the native foreground launcher and another service manager over the same ports or data directory. Checksums verify integrity relative to the published manifest but do not constitute independent publisher signing.
+
+**Release gate:** The presence of alpha.16 *source* does not indicate a published or qualified alpha.16 binary. Do not overwrite the existing working installation until a verified prerelease with both new assets is available.
