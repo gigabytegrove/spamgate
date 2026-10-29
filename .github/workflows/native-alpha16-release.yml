@@ -57,11 +57,10 @@ jobs:
           set -Eeuo pipefail
           TAG='v0.6.0-alpha.16'
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "$TAG already exists; refusing overwrite" >&2
-            exit 1
-          fi
-          cd "$RUNNER_TEMP/spamgate-alpha16"
-          gh release create "$TAG" \
+            echo "$TAG already exists; verify published bytes below without overwriting"
+          else
+            cd "$RUNNER_TEMP/spamgate-alpha16"
+            gh release create "$TAG" \
             spamgate-launcher-linux-amd64 \
             spamgate-worker-linux-amd64 \
             spamgate-linux-amd64 \
@@ -72,6 +71,7 @@ jobs:
             --title 'SpamGate v0.6.0-alpha.16 — Native launcher/worker correction' \
             --prerelease \
             --notes 'Native Linux foreground layout: ./spamgate is the permanent launcher; ./spamgate-worker is the replaceable SpamGate app. Compatibility Linux asset remains a worker for prior supervisors. Requires a stopped-service one-time migration; see docs/NATIVE_LAUNCHER_ALPHA16.md. Development prerelease; not production certified.'
+          fi
 
       - name: Verify published release bytes
         shell: bash
@@ -85,5 +85,7 @@ jobs:
             --dir "$RUNNER_TEMP/release-verify"
           cd "$RUNNER_TEMP/release-verify"
           sha256sum -c SHA256SUMS.txt
+          chmod 0755 spamgate-launcher-linux-amd64 spamgate-worker-linux-amd64
+          cmp -s SHA256SUMS.txt "$RUNNER_TEMP/spamgate-alpha16/SHA256SUMS.txt"
           test "$(./spamgate-launcher-linux-amd64 -version)" = '0.6.0-alpha.16'
           test "$(./spamgate-worker-linux-amd64 -version)" = '0.6.0-alpha.16'
