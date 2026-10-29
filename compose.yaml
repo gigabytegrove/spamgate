@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: spamgate:0.6.0-alpha.14
+    image: spamgate:0.6.0-alpha.15
     restart: unless-stopped
     init: true
     ports:

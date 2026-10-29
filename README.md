@@ -1,3 +1,5 @@
+> **alpha.15 engineering:** Spam categories and SGTUBE category test lab added to scanner, persisted evidence, category lists, admin APIs and generated `.eml` messages. Test markers only affect admin simulations or an explicitly allowlisted single test mailbox. See [Spam categories and SGTUBE](docs/SPAM_CATEGORIES_AND_SGTUBE.md). Alpha.14 remains the last installed baseline; alpha.15 is source-only until qualified and published.
+
 > **alpha.14 in progress:** Added durable local operations monitoring (history + alert lifecycle) and a read-only historical threshold policy preview with admin APIs and integrated UI. The native `spamgate-run` two-binary upgrade architecture remains intact. This source is not a published/qualified release until its exact commit is built and tested. See [alpha.14 operations engineering](docs/OPERATIONS_ALPHA14.md).
 
 **Native foreground build qualification:** `bash scripts/build-github-assets.sh` produces the SpamGate worker, independent `spamgate-run` launcher, Windows worker and checksum manifest after test gates. See [Downloads and native migration](docs/DOWNLOADS.md).

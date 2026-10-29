@@ -127,3 +127,25 @@ test('policy preview panel shows hypothetical results without save controls',()=
  assert.match(html,/Not Postfix delivery/);
  assert.doesNotMatch(html,/id="settings-form"/);
 });
+
+test('SpamGate category test lab groups 16 categories and escapes untrusted category text',()=>{
+ const ctx=context();vm.runInContext('S.section="categories"; S.sgtubeCatalog={live_test_enabled:false,sample_limit:1000,recent_counts:{phishing:4},categories:[{id:"phishing",name:"<img src=x onerror=alert(1)>",group:"Fraud",description:"Deceptive links",test_marker:"SGTUBE-V1-PHISHING"}]};S.sgtubeMessages=null',ctx);
+ const html=vm.runInContext('spamCategoryLab()',ctx);
+ assert.match(html,/data-sgtube-simulate="phishing"/);
+ assert.match(html,/data-sgtube-view="phishing"/);
+ assert.match(html,/data-sgtube-copy="phishing"/);
+ assert.match(html,/data-sgtube-eml="phishing"/);
+ assert.match(html,/&lt;img src=x/);
+ assert.doesNotMatch(html,/<img src=x/);
+ assert.match(html,/Disabled by default/);
+ assert.match(html,/not proof/i);
+});
+test('category history escapes subject and does not present sample totals as all-time',()=>{
+ const ctx=context();
+ vm.runInContext('S.section="categories"; S.sgtubeCatalog={categories:[{id:"phishing",name:"Phishing",group:"Fraud",description:"Test",test_marker:"x"}],sample_limit:1000};S.sgtubeSelected="phishing";S.sgtubeMessages={matched_in_recent:1,sampled_history:3,messages:[{timestamp:"2026-10-29T00:00:00Z",subject:"<script>alert(1)</script>",score:8,action:"reject",test_case:""}]}',ctx);
+ const html=vm.runInContext('spamCategoryLab()',ctx);
+ assert.match(html,/retained messages/);
+ assert.match(html,/&lt;script&gt;alert/);
+ assert.doesNotMatch(html,/<script>alert/);
+ assert.match(html,/maximum 1,000/);
+});

@@ -234,6 +234,16 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (out Message, scanErr erro
 		}
 	}
 	note("Suspicious wording", matchedSince(contentStart), "Compared subject and decoded text with the built-in phrase rules")
+	// Synthetic SGTUBE patterns may affect only an explicitly configured, single
+	// envelope-recipient test mailbox or a privileged in-memory laboratory scan.
+	testID := ""
+	if in.Connector == "test-lab" || TestRecipientAllowed(in.Recipients) {
+		testID = DetectCategoryTest(text)
+		if testID != "" {
+			add("SGTUBE_"+strings.ToUpper(testID), "test/sgtube", "Synthetic category test: "+testID+"; does not prove detection of a real threat", cfg.Settings.RejectThreshold+1)
+			note("SGTUBE synthetic category test", "match", "Administrator lab or single allowlisted test mailbox")
+		}
+	}
 	if cfg.Settings.AttachmentInspection {
 		initial := len(findings)
 		detected, inspectionErr := InspectMIMEAttachments(in.Raw)
@@ -682,6 +692,8 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (out Message, scanErr erro
 		add("FORCED_ACTION", "policy/override", "Rule forces "+forced, 0)
 		m.Findings = findings
 	}
+	m.TestCase = testID
+	m.Category, m.Categories = ClassifyCategories(m.Findings, m.Action, testID)
 	m.ScanDurationMS = time.Since(started).Milliseconds()
 	return m, nil
 }

@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-const Version = "0.6.0-alpha.14"
+const Version = "0.6.0-alpha.15"
 
 type Finding struct {
 	Symbol string  `json:"symbol"`
@@ -44,6 +44,9 @@ type Message struct {
 	Score          float64       `json:"score"`
 	Action         string        `json:"action"`
 	Findings       []Finding     `json:"findings"`
+	Category       string        `json:"category,omitempty"`
+	Categories     []CategoryHit `json:"categories,omitempty"`
+	TestCase       string        `json:"test_case,omitempty"`
 	Scoring        *ScoringTrace `json:"scoring,omitempty"`
 	OverrideBy     string        `json:"override_by,omitempty"`
 	OverrideReason string        `json:"override_reason,omitempty"`
