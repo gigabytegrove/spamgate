@@ -1,0 +1,90 @@
+name: SpamGate alpha.16 split-native release qualification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/native-alpha16-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: spamgate-alpha16-native-release
+  cancel-in-progress: false
+
+jobs:
+  qualify-and-publish:
+    if: github.repository == 'gigabytegrove/spamgate'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install patched Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.3'
+          cache: false
+
+      - name: Install Node 22 for UI regressions
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Qualify and build exact native executables
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(go env GOVERSION)" = 'go1.27.3'
+          test "$(go run ./cmd/spamgate -version)" = '0.6.0-alpha.16'
+          bash scripts/build-github-assets.sh "$RUNNER_TEMP/spamgate-alpha16"
+          cd "$RUNNER_TEMP/spamgate-alpha16"
+          sha256sum -c SHA256SUMS.txt
+          test "$(./spamgate-launcher-linux-amd64 -version)" = '0.6.0-alpha.16'
+          test "$(./spamgate-worker-linux-amd64 -version)" = '0.6.0-alpha.16'
+          cmp -s spamgate-worker-linux-amd64 spamgate-linux-amd64
+
+      - name: Publish immutable development prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          TAG='v0.6.0-alpha.16'
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "$TAG already exists; refusing overwrite" >&2
+            exit 1
+          fi
+          cd "$RUNNER_TEMP/spamgate-alpha16"
+          gh release create "$TAG" \
+            spamgate-launcher-linux-amd64 \
+            spamgate-worker-linux-amd64 \
+            spamgate-linux-amd64 \
+            spamgate-windows-amd64.exe \
+            SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title 'SpamGate v0.6.0-alpha.16 — Native launcher/worker correction' \
+            --prerelease \
+            --notes 'Native Linux foreground layout: ./spamgate is the permanent launcher; ./spamgate-worker is the replaceable SpamGate app. Compatibility Linux asset remains a worker for prior supervisors. Requires a stopped-service one-time migration; see docs/NATIVE_LAUNCHER_ALPHA16.md. Development prerelease; not production certified.'
+
+      - name: Verify published release bytes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p "$RUNNER_TEMP/release-verify"
+          gh release download 'v0.6.0-alpha.16' \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir "$RUNNER_TEMP/release-verify"
+          cd "$RUNNER_TEMP/release-verify"
+          sha256sum -c SHA256SUMS.txt
+          test "$(./spamgate-launcher-linux-amd64 -version)" = '0.6.0-alpha.16'
+          test "$(./spamgate-worker-linux-amd64 -version)" = '0.6.0-alpha.16'
