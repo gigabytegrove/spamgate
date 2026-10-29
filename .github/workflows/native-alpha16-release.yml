@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/native-alpha16-release.yml'
+      - 'scripts/ui-regression.test.mjs'
   workflow_dispatch:
 
 permissions:

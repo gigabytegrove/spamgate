@@ -86,11 +86,11 @@ test('update UI only offers restart when a supervisor is confirmed',()=>{
  vm.runInContext(`S.updateInfo={current:'0.6.0-alpha.11',latest:'v0.6.0-alpha.12',
  available:true,staged:true,install_mode:'requires_supervisor'}`,ctx);
  let html=vm.runInContext('updatesPage()',ctx);
- assert.match(html,/Base service\/container upgrade required/);
+ assert.match(html,/No supervising parent detected/);
  assert.doesNotMatch(html,/id="install-update"/);
  vm.runInContext("S.updateInfo.install_mode='supervised'",ctx);
  html=vm.runInContext('updatesPage()',ctx);
- assert.match(html,/Integrated supervisor ready/);
+ assert.match(html,/Supervisor detected/);
  assert.match(html,/id="install-update"/);
  assert.match(html,/Install and restart with rollback/);
  vm.runInContext("S.updateInfo.staged=false",ctx);
@@ -103,7 +103,7 @@ test('update screen identifies the installed worker path and protected base',()=
  vm.runInContext("S.updateInfo={current:'0.6.0-alpha.12',latest:'v0.6.0-alpha.12',available:false,staged:false,install_mode:'supervised',install_path:'/var/lib/spamgate/bin/spamgate'}",ctx);
  const html=vm.runInContext('updatesPage()',ctx);
  assert.match(html,/\/var\/lib\/spamgate\/bin\/spamgate/);
- assert.match(html,/root-owned and intentionally unchanged/);
+ assert.match(html,/supervisor is unchanged; only the child application executable is replaced/);
  assert.doesNotMatch(html,/id="install-update"/);
 });
 
