@@ -76,3 +76,15 @@ func TestUntrustedAssetsRejected(t *testing.T) {
 		t.Fatal("untrusted asset accepted")
 	}
 }
+
+// Legacy native/systemd/Docker supervisors must continue downloading a worker.
+// Only the new split launcher can select the split worker release asset.
+func TestSplitWorkerAssetSelection(t *testing.T) {
+ if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" { t.Skip("Linux AMD64 selection") }
+ t.Setenv("SPAMGATE_SPLIT_WORKER", "")
+ legacy, err := platformAsset()
+ if err != nil || legacy != "spamgate-linux-amd64" { t.Fatalf("legacy: %q %v",legacy,err) }
+ t.Setenv("SPAMGATE_SPLIT_WORKER", "1")
+ split, err := platformAsset()
+ if err != nil || split != "spamgate-worker-linux-amd64" { t.Fatalf("new split layout: %q %v",split,err) }
+}

@@ -52,14 +52,20 @@ go vet ./...
 node --check internal/server/assets/app.js
 node --test scripts/ui-regression.test.mjs
 bash -n scripts/bootstrap-foreground.sh
+bash -n scripts/migrate-native-launcher.sh
+bash scripts/test-migrate-native-launcher.sh
 bash scripts/test-supervised-updates.sh
 
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o "$OUT/spamgate-linux-amd64" ./cmd/spamgate
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o "$OUT/spamgate-run-linux-amd64" ./cmd/spamgate-run
+# Split native Linux layout, retaining legacy-compatible worker asset.
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o "$OUT/spamgate-worker-linux-amd64" ./cmd/spamgate
+cp -p "$OUT/spamgate-worker-linux-amd64" "$OUT/spamgate-linux-amd64"
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o "$OUT/spamgate-launcher-linux-amd64" ./cmd/spamgate-run
 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w -H=windowsgui' -o "$OUT/spamgate-windows-amd64.exe" ./cmd/spamgate
-chmod 0755 "$OUT/spamgate-linux-amd64" "$OUT/spamgate-run-linux-amd64"
+chmod 0755 "$OUT/spamgate-worker-linux-amd64" "$OUT/spamgate-linux-amd64" "$OUT/spamgate-launcher-linux-amd64"
+test "$("$OUT/spamgate-worker-linux-amd64" -version)" = "$VERSION"
 test "$("$OUT/spamgate-linux-amd64" -version)" = "$VERSION"
-test "$("$OUT/spamgate-run-linux-amd64" -version)" = "$VERSION"
-(cd "$OUT" && sha256sum spamgate-linux-amd64 spamgate-run-linux-amd64 spamgate-windows-amd64.exe > SHA256SUMS.txt && sha256sum -c SHA256SUMS.txt)
-for asset in spamgate-linux-amd64 spamgate-run-linux-amd64 spamgate-windows-amd64.exe SHA256SUMS.txt; do test -s "$OUT/$asset" || exit 1;done
+test "$("$OUT/spamgate-launcher-linux-amd64" -version)" = "$VERSION"
+cmp -s "$OUT/spamgate-worker-linux-amd64" "$OUT/spamgate-linux-amd64"
+(cd "$OUT" && sha256sum spamgate-linux-amd64 spamgate-worker-linux-amd64 spamgate-launcher-linux-amd64 spamgate-windows-amd64.exe > SHA256SUMS.txt && sha256sum -c SHA256SUMS.txt)
+for asset in spamgate-linux-amd64 spamgate-worker-linux-amd64 spamgate-launcher-linux-amd64 spamgate-windows-amd64.exe SHA256SUMS.txt; do test -s "$OUT/$asset" || exit 1; done
 printf 'All release gates passed. Exact assets at %s\n' "$OUT"

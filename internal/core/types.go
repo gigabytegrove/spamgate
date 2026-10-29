@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-const Version = "0.6.0-alpha.15"
+const Version = "0.6.0-alpha.16"
 
 type Finding struct {
 	Symbol string  `json:"symbol"`

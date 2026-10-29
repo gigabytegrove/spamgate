@@ -149,3 +149,18 @@ test('category history escapes subject and does not present sample totals as all
  assert.doesNotMatch(html,/<script>alert/);
  assert.match(html,/maximum 1,000/);
 });
+
+test('unsupervised native worker explains install button absence with correct filenames',()=>{
+ const ctx=context();vm.runInContext('S.updateInfo={current:"0.6.0-alpha.15",latest:"v0.6.0-alpha.16",available:true,staged:true,install_mode:"requires_supervisor"};',ctx);
+ const html=vm.runInContext('updatesPage()',ctx);
+ assert.match(html,/No supervising parent/);
+ assert.match(html,/spamgate-worker/);
+ assert.match(html,/Installation is disabled/);
+ assert.doesNotMatch(html,/id="install-update"/);
+});
+test('supervised install button appears for staged update',()=>{
+ const ctx=context();vm.runInContext('S.updateInfo={current:"0.6.0-alpha.15",latest:"v0.6.0-alpha.16",available:true,staged:true,install_mode:"supervised",install_path:"/opt/spamgate/spamgate-worker"};',ctx);
+ const html=vm.runInContext('updatesPage()',ctx);
+ assert.match(html,/id="install-update"/);
+ assert.match(html,/spamgate-worker/);
+});

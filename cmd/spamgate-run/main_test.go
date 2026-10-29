@@ -19,7 +19,7 @@ import (
 
 func TestArgumentsPreserved(t *testing.T) {
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "spamgate")
+	binary := filepath.Join(dir, "spamgate-worker")
 	if err := os.WriteFile(binary, []byte("valid"), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -38,13 +38,13 @@ func TestArgumentsPreserved(t *testing.T) {
 
 func TestRejectTamperedPayloadAndSymlink(t *testing.T) {
 	dir := t.TempDir()
-	o := options{data: dir, worker: filepath.Join(dir, "spamgate")}
+	o := options{data: dir, worker: filepath.Join(dir, "spamgate-worker")}
 	if err := os.MkdirAll(updateFolder(o), 0700); err != nil {
 		t.Fatal(err)
 	}
 	raw := []byte(strings.Repeat("TEST", 1500))
 	h := sha256.Sum256(raw)
-	m := updateManifest{Version: "v0.6.0-alpha.13", Filename: "spamgate-linux-amd64", SHA256: hex.EncodeToString(h[:])}
+	m := updateManifest{Version: "v0.6.0-alpha.13", Filename: "spamgate-worker-linux-amd64", SHA256: hex.EncodeToString(h[:])}
 	b, _ := json.Marshal(m)
 	if err := os.WriteFile(filepath.Join(updateFolder(o), "pending.json"), b, 0600); err != nil {
 		t.Fatal(err)
@@ -155,7 +155,7 @@ func installFixture(t *testing.T, o options, source, version string) {
 	if err := os.WriteFile(filepath.Join(folder, "pending"), b, 0700); err != nil {
 		t.Fatal(err)
 	}
-	m := updateManifest{Version: "v" + version, Filename: "spamgate-linux-amd64", SHA256: hex.EncodeToString(h[:])}
+	m := updateManifest{Version: "v" + version, Filename: "spamgate-worker-linux-amd64", SHA256: hex.EncodeToString(h[:])}
 	j, _ := json.Marshal(m)
 	if err := os.WriteFile(filepath.Join(folder, "pending.json"), j, 0600); err != nil {
 		t.Fatal(err)
@@ -189,7 +189,7 @@ func TestRunnerEndToEndUpgradeAndRollback(t *testing.T) {
 			dir := t.TempDir()
 			original := buildFixture(t, dir, "original", "0.6.0-alpha.11", false)
 			updated := buildFixture(t, dir, "candidate", "0.6.0-alpha.12", broken)
-			installed := filepath.Join(dir, "spamgate")
+			installed := filepath.Join(dir, "spamgate-worker")
 			if err := copyAtomic(original, installed); err != nil {
 				t.Fatal(err)
 			}

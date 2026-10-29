@@ -1,3 +1,11 @@
+# Native launcher/worker layout for alpha.16
+
+- `spamgate-launcher-linux-amd64` installs as **/opt/spamgate/spamgate**, the permanent supervisor.
+- `spamgate-worker-linux-amd64` installs as **/opt/spamgate/spamgate-worker**, the updatable application.
+- `spamgate-linux-amd64` remains an **identical-byte legacy worker** release asset for older native/systemd/Docker supervisors. It is not the new launcher.
+
+The one-time migration requires stopping the current app before replacing any executable. See [alpha.16 migration](NATIVE_LAUNCHER_ALPHA16.md). The alpha.13 two-binary names are superseded for manual installations; don't run both launchers.
+
 # SpamGate native builds and GitHub Releases
 
 The GitHub repository is the source of truth. Release publication is performed **locally on dockeradm** with `gh`; no GitHub Actions workflow is required or enabled for release automation.

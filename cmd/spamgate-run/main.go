@@ -1,6 +1,6 @@
 package main
 
-// spamgate-run is an independently compiled, deliberately non-updating process
+// spamgate (native launcher) is an independently compiled, deliberately non-updating process
 // supervisor for native SpamGate installations. It never loads mail config or
 // holds HTTP/Milter sockets. All mail traffic and UI run in the spamgate worker.
 // Unlike the legacy detached updater, failures cannot silently kill the parent.
@@ -58,7 +58,7 @@ type updateManifest struct {
 
 func main() {
 	if err := run(); err != nil {
-		log.Printf("spamgate-run: %v", err)
+		log.Printf("SpamGate launcher: %v", err)
 		os.Exit(1)
 	}
 }
@@ -69,7 +69,7 @@ func run() error {
 		return nil
 	}
 	if os.Getenv("SPAMGATE_SUPERVISED") == "1" {
-		return errors.New("nested spamgate-run supervisor refused")
+		return errors.New("nested SpamGate launcher refused")
 	}
 	opts, err := parse(os.Args[1:])
 	if err != nil {
@@ -85,7 +85,7 @@ func parse(args []string) (options, error) {
 	if err != nil {
 		return options{}, err
 	}
-	worker := filepath.Join(filepath.Dir(self), "spamgate")
+	worker := filepath.Join(filepath.Dir(self), "spamgate-worker")
 	// The runner only interprets these control flags. All other arguments are
 	// forwarded unchanged to the worker, including -data and -listen.
 	opts := options{worker: worker, data: "/var/lib/spamgate", listen: os.Getenv("SPAMGATE_WEB_LISTEN"), args: []string{}}
@@ -222,7 +222,7 @@ func staged(o options) (string, string, error) {
 	if err = json.Unmarshal(b, &m); err != nil {
 		return "", "", err
 	}
-	expected := "spamgate-linux-amd64"
+	expected := "spamgate-worker-linux-amd64"
 	if runtime.GOOS == "windows" {
 		expected = "spamgate-windows-amd64.exe"
 	}
@@ -379,7 +379,7 @@ func launch(o options) (*exec.Cmd, <-chan error, error) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
-	cmd.Env = append(os.Environ(), "SPAMGATE_SUPERVISED=1", "SPAMGATE_INSTALLED_WORKER="+o.worker, "SPAMGATE_OPEN_BROWSER=false")
+	cmd.Env = append(os.Environ(), "SPAMGATE_SUPERVISED=1", "SPAMGATE_INSTALLED_WORKER="+o.worker, "SPAMGATE_SPLIT_WORKER=1", "SPAMGATE_OPEN_BROWSER=false")
 	if err := cmd.Start(); err != nil {
 		return nil, nil, err
 	}
@@ -417,7 +417,7 @@ func startHealthy(ctx context.Context, o options, url, expected string) (*exec.C
 
 func supervise(ctx context.Context, o options) error {
 	if runtime.GOOS != "linux" {
-		return errors.New("spamgate-run currently supports native Linux; Windows update requires a Windows-specific replacement procedure")
+		return errors.New("SpamGate split launcher currently supports native Linux; Windows update requires a Windows-specific replacement procedure")
 	}
 	if err := regularFile(o.worker); err != nil {
 		return err
@@ -448,7 +448,7 @@ func supervise(ctx context.Context, o options) error {
 	if err != nil {
 		return fmt.Errorf("worker startup: %w", err)
 	}
-	log.Printf("spamgate-run: worker PID %d version %s, installed at %s", child.Process.Pid, version, o.worker)
+	log.Printf("SpamGate launcher: worker PID %d version %s, installed at %s", child.Process.Pid, version, o.worker)
 	failures := 0
 	previous := filepath.Join(updateFolder(o), "managed.previous"+filepath.Ext(o.worker))
 	for {
@@ -466,7 +466,7 @@ func supervise(ctx context.Context, o options) error {
 			if failures > 3 {
 				return fmt.Errorf("worker crashed repeatedly: %w", err)
 			}
-			log.Printf("spamgate-run: worker crashed %d/3: %v; retrying", failures, err)
+			log.Printf("SpamGate launcher: worker crashed %d/3: %v; retrying", failures, err)
 			select {
 			case <-ctx.Done():
 				return nil
@@ -495,7 +495,7 @@ func supervise(ctx context.Context, o options) error {
 		}
 		if err != nil {
 			record(o, "failed", newVersion, "update refused: "+err.Error())
-			log.Printf("spamgate-run: update refused, restarting original %s: %v", version, err)
+			log.Printf("SpamGate launcher: update refused, restarting original %s: %v", version, err)
 			child, done, err = startHealthy(ctx, o, url, version)
 			if err != nil {
 				return fmt.Errorf("recover original worker: %w", err)
@@ -525,12 +525,12 @@ func supervise(ctx context.Context, o options) error {
 			}
 			clearStaged(o)
 			record(o, "rolled_back", newVersion, "replacement failed; original worker restored and restarted: "+failure.Error())
-			log.Printf("spamgate-run: rolled back %s and verified previous worker: %v", newVersion, failure)
+			log.Printf("SpamGate launcher: rolled back %s and verified previous worker: %v", newVersion, failure)
 			continue
 		}
 		version = newVersion
 		clearStaged(o)
 		record(o, "healthy", version, "installed worker replaced in-place at "+o.worker+" and HTTP health version verified")
-		log.Printf("spamgate-run: updated installed worker to %s; parent process remains alive", version)
+		log.Printf("SpamGate launcher: updated installed worker to %s; parent process remains alive", version)
 	}
 }

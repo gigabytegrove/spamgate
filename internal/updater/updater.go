@@ -59,6 +59,12 @@ func platformAsset() (string, error) {
 	}
 	switch runtime.GOOS {
 	case "linux":
+		// The old native and managed Linux supervisors still install the
+		// legacy worker asset. The independent native launcher explicitly
+		// marks its child, which uses the dedicated worker asset instead.
+		if os.Getenv("SPAMGATE_SPLIT_WORKER") == "1" {
+			return "spamgate-worker-linux-amd64", nil
+		}
 		return "spamgate-linux-amd64", nil
 	case "windows":
 		return "spamgate-windows-amd64.exe", nil
