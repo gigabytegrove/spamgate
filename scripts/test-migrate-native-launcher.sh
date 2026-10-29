@@ -38,4 +38,18 @@ test "$("$TMP/install/spamgate.pre-native-split-0.6.0-alpha.15" -version)" = 0.6
 if bash "$ROOT/migrate-native-launcher.sh" "$TMP/install" "$TMP/assets" >/dev/null 2>&1; then
  echo 'Second migration should refuse overwrite' >&2;exit 1
 fi
+# Refuse a process still executing the current executable, even if port 38470 is not used.
+mkdir -p "$TMP/running-install"
+cp /bin/sleep "$TMP/running-install/spamgate"
+"$TMP/running-install/spamgate" 20 &
+pid=$!
+set +e
+output="$(bash "$ROOT/migrate-native-launcher.sh" "$TMP/running-install" "$TMP/assets" 2>&1)"
+rc=$?
+set -e
+kill "$pid" 2>/dev/null || true
+wait "$pid" 2>/dev/null || true
+if (( rc == 0 )) || [[ "$output" != *'process is running'* ]]; then
+ echo "Running executable was not detected: $rc, $output" >&2; exit 1
+fi
 echo 'Native split migration: checksum refusal, preservation, install, repeat refusal PASS'

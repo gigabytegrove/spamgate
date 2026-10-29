@@ -13,7 +13,7 @@ command -v sha256sum >/dev/null && command -v flock >/dev/null || { echo 'sha256
 # Never replace a running launcher or application executable. /proc also catches
 # processes started with no -listen flags and deleted-but-still-open binaries.
 for proc in /proc/[0-9]*/exe; do
-  [[ -e "$proc" ]] || continue
+  [[ -L "$proc" ]] || continue
   executable="$(readlink "$proc" 2>/dev/null || true)"
   case "$executable" in
     "$TARGET/spamgate"|"$TARGET/spamgate (deleted)"|"$TARGET/spamgate-worker"|"$TARGET/spamgate-worker (deleted)"|"$TARGET/spamgate-run"|"$TARGET/spamgate-run (deleted)")
