@@ -100,12 +100,17 @@ jobs:
           sudo ls -ld /home/spamgatebeta /home/spamgatebeta/Maildir /home/spamgatebeta/Maildir/new
           sudo doveadm mailbox list -u spamgatebeta
           sudo doveadm force-resync -u spamgatebeta INBOX
-          sudo doveadm mailbox status -u spamgatebeta messages INBOX
+          STATUS="$(sudo doveadm mailbox status -u spamgatebeta messages INBOX)"
+          printf 'Dovecot mailbox status: %s\n' "$STATUS"
           RESULTS="$(sudo doveadm search -u spamgatebeta ALL)"
           printf 'Dovecot indexed UIDs: %s\n' "$RESULTS"
-          if [ -z "$RESULTS" ]; then
+          # Exactly three test messages must be visible: ordinary accepted,
+          # null-reverse-path DSN and released Postfix hold. Reject/tempfail
+          # must not produce a fourth or fifth mailbox delivery.
+          COUNT="$(printf '%s\n' "$RESULTS" | sed '/^$/d' | wc -l | tr -d ' ')"
+          if [ "$COUNT" -ne 3 ] || ! printf '%s\n' "$STATUS" | grep -Eq 'INBOX messages=3([[:space:]]|$)'; then
             sudo doveadm -Dv search -u spamgatebeta ALL || true
-            echo 'Dovecot cannot see accepted Maildir message'
+            echo "Expected exactly three Dovecot-visible messages, found $COUNT: $STATUS"
             exit 1
           fi
 
