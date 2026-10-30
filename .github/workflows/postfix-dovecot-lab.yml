@@ -63,6 +63,14 @@ jobs:
           fi
           # This runner is disposable; Dovecot reads Maildir from the local test user's home.
           sudo sed -i -E 's|^[# ]*mail_location[[:space:]]*=.*|mail_location = maildir:~/Maildir|' /etc/dovecot/conf.d/10-mail.conf
+          # Ubuntu's passwd userdb returns mail=mbox even when global mail_location
+          # is Maildir. Override at namespace scope so Dovecot reads the exact
+          # Maildir used by Postfix's home_mailbox in this disposable lab.
+          grep -q '^namespace inbox {' /etc/dovecot/conf.d/15-mailboxes.conf
+          sudo sed -i '/^namespace inbox {/a\  location = maildir:~/Maildir' /etc/dovecot/conf.d/15-mailboxes.conf
+          sudo systemctl restart dovecot
+          sudo doveadm user spamgatebeta
+
           sudo doveconf -n
           sudo postfix status
           sudo postconf -n | grep -E 'milter|mydestination|home_mailbox|inet_interfaces'
