@@ -48,8 +48,14 @@ func checkRelayCapabilities(client *smtp.Client, m core.Message, raw []byte) err
 		}
 	}
 	if requiresSMTPUTF8(m) {
+		// RFC 6531 requires SMTPUTF8-capable relays to also implement
+		// 8BITMIME. Do not entrust an internationalized envelope to a
+		// peer advertising a contradictory, nonconformant capability set.
 		if ok, _ := client.Extension("SMTPUTF8"); !ok {
 			return errors.New("relay lacks SMTPUTF8 required by envelope address")
+		}
+		if ok, _ := client.Extension("8BITMIME"); !ok {
+			return errors.New("relay advertises SMTPUTF8 without required 8BITMIME")
 		}
 	}
 	if ok, advertised := client.Extension("SIZE"); ok {
