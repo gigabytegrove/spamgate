@@ -17,3 +17,7 @@ This change affects the built-in text/URL/filename extraction path. Optional MIM
 `go test -race ./...`
 
 The exact-commit GitHub engineering and Postfix/Dovecot workflows must be checked after push. Passing these tests does not qualify the running mail server or establish corpus accuracy.
+
+## Strict transfer encoding
+
+Base64 and quoted-printable text are now decoded with explicit error detection. Invalid base64, invalid quoted-printable and unsupported text transfer encodings produce zero-score `MIME_COVERAGE_INCOMPLETE` evidence instead of silently treating the undecodable source bytes as ordinary readable content. Standard `7bit`, `8bit`, `binary` and absent transfer encodings remain supported. A decoded body exceeding 2 MiB is marked incomplete before truncation. Tests cover valid and invalid encodings, unsupported encoding, URL extraction and the decoded-text boundary.

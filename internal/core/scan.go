@@ -143,12 +143,10 @@ func bodyPartsWithCoverage(h mail.Header, body []byte, depth int, coverage *mime
 	}
 	if name != "" { return "", []string{name}, nil, false }
 	if media != "text/plain" && media != "text/html" { return "", nil, nil, false }
-	encoding := strings.ToLower(strings.TrimSpace(h.Get("Content-Transfer-Encoding")))
-	var decoded []byte
-	switch encoding {
-	case "base64": decoded = decodeBase64(body)
-	case "quoted-printable": decoded = decodeQP(body)
-	default: decoded = body
+	decoded, transferErr := decodeMIMETextTransfer(body, h.Get("Content-Transfer-Encoding"))
+	if transferErr != nil {
+		coverage.mark(transferErr.Error())
+		return "", nil, nil, media == "text/html"
 	}
 	if len(decoded) > 2<<20 {
 		coverage.mark("Decoded text exceeds 2 MiB extraction limit")
