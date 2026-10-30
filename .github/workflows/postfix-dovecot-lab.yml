@@ -83,8 +83,11 @@ jobs:
         run: |
           set -Eeuo pipefail
           # Only a test-only user, inside an ephemeral GitHub runner.
-          RESULTS="$(sudo doveadm search -u spamgatebeta mailbox INBOX ALL)"
-          printf '%s\n' "$RESULTS"
+          sudo doveadm mailbox list -u spamgatebeta
+          sudo doveadm force-resync -u spamgatebeta INBOX
+          sudo doveadm mailbox status -u spamgatebeta messages INBOX
+          RESULTS="$(sudo doveadm search -u spamgatebeta ALL)"
+          printf 'Dovecot indexed UIDs: %s\n' "$RESULTS"
           test -n "$RESULTS" || { echo 'Dovecot cannot see accepted Maildir message'; exit 1; }
 
       - name: Postfix queue and delivery diagnostics
