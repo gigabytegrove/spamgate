@@ -63,35 +63,31 @@ func (s *Store) EvaluateDeliveryPolicy(m Message, now time.Time) (string, string
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// Prune all expired keys before persisting, bounded to avoid a memory sink.
+	// Compute the entire next state without mutating the live state. A failed
+	// fsync/rename must not silently consume a rate allowance or expire a
+	// greylist entry in memory while the on-disk policy remains unchanged.
+	next := deliveryPolicyState{
+		Greylist: make(map[string]time.Time, len(s.policy.Greylist)),
+		Rates:    make(map[string][]time.Time, len(s.policy.Rates)),
+	}
 	for k, first := range s.policy.Greylist {
-		if now.Sub(first) > 36*time.Hour || first.After(now.Add(time.Minute)) {
-			delete(s.policy.Greylist, k)
+		if now.Sub(first) <= 36*time.Hour && !first.After(now.Add(time.Minute)) {
+			next.Greylist[k] = first
 		}
 	}
 	for k, stamps := range s.policy.Rates {
-		live := stamps[:0]
+		live := make([]time.Time, 0, len(stamps))
 		for _, ts := range stamps {
 			if !ts.After(now) && now.Sub(ts) < time.Hour {
 				live = append(live, ts)
 			}
 		}
-		if len(live) == 0 {
-			delete(s.policy.Rates, k)
-		} else {
-			s.policy.Rates[k] = live
+		if len(live) != 0 {
+			next.Rates[k] = live
 		}
 	}
-	if len(s.policy.Greylist) > 20000 || len(s.policy.Rates) > 20000 {
+	if len(next.Greylist) > 20000 || len(next.Rates) > 20000 {
 		return "", "", errors.New("delivery policy state capacity reached; disable policy or investigate hostile traffic")
-	}
-	previous := s.policy
-	next := deliveryPolicyState{Greylist: make(map[string]time.Time, len(previous.Greylist)), Rates: make(map[string][]time.Time, len(previous.Rates))}
-	for k, v := range previous.Greylist {
-		next.Greylist[k] = v
-	}
-	for k, v := range previous.Rates {
-		next.Rates[k] = append([]time.Time(nil), v...)
 	}
 	action, reason := "", ""
 	if cfg.RateLimitEnabled {
