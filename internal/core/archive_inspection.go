@@ -43,6 +43,8 @@ func archiveUnsafeName(name string) bool {
 
 func inspectZIPAttachment(payload []byte, name string, add func(string, string, float64)) {
     budget := archiveTotalReadBudget
+    remainingEntries := archiveMaxEntries
+    remainingExpanded := archiveMaxExpanded
     var inspect func([]byte, string, int)
     inspect = func(data []byte, label string, depth int) {
         zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
@@ -58,6 +60,16 @@ func inspectZIPAttachment(payload []byte, name string, add func(string, string, 
             if i >= archiveMaxEntries {
                 break
             }
+            if remainingEntries == 0 {
+                add("ARCHIVE_LIMIT", "Combined nested ZIP entry budget exceeded: "+label, 2)
+                return
+            }
+            remainingEntries--
+            if f.UncompressedSize64 > remainingExpanded {
+                add("ARCHIVE_EXPANSION_RISK", "Combined nested ZIP expansion budget exceeded: "+label, 3)
+                break
+            }
+            remainingExpanded -= f.UncompressedSize64
             if f.UncompressedSize64 > archiveMaxExpanded-declared {
                 add("ARCHIVE_EXPANSION_RISK", "Archive declares over 30 MiB expanded content: "+label, 3)
                 break
