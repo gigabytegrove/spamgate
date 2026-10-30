@@ -82,6 +82,11 @@ func (r *Relay) Send(ctx context.Context, m core.Message, raw []byte) error {
 			return e
 		}
 	}
+	// Capability checks must precede MAIL FROM: an incompatible next hop
+	// cannot be allowed to downgrade original bytes or UTF-8 recipients.
+	if e = checkRelayCapabilities(client, m, raw); e != nil {
+		return e
+	}
 	sender := strings.TrimSpace(m.Sender)
 	if sender == "" {
 		sender = "<>"
