@@ -10,7 +10,7 @@ The outbound relay validates the actual post-EHLO capabilities of the configured
 | --- | --- | --- |
 | Seven-bit RFC 5322 bytes, ASCII reverse path and recipients | No ESMTP extension required | Normal delivery |
 | Any original octet >= 0x80 | 8BITMIME | Retryable delivery failure; original remains in durable spool |
-| Non-ASCII SMTP envelope sender or recipient | SMTPUTF8 | Retryable delivery failure; original remains in durable spool |
+| Non-ASCII SMTP envelope sender or recipient | SMTPUTF8 **and** 8BITMIME (RFC 6531) | Retryable delivery failure; original remains in durable spool |
 | Advertised numeric SIZE limit below original byte length | SIZE preflight | Retryable delivery failure; original remains in durable spool |
 | Malformed advertised SIZE parameter | Valid numeric SIZE parameter | Retryable delivery failure; original remains in durable spool |
 
