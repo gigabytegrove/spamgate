@@ -3,7 +3,10 @@
 package transport
 
 import (
+ "bufio"
+ "bytes"
  "context"
+ "encoding/json"
  "errors"
  "fmt"
  "net"
@@ -32,6 +35,7 @@ func TestRealPostfixMilterLocalDeliveryAndTempfail(t *testing.T) {
  if err!=nil{t.Fatal(err)}
  if err:=store.UpdateConfig(func(c *core.Config)error{
   c.SetupComplete=true
+  c.Rules=append(c.Rules,core.Rule{ID:"ci-postfix-hold",Name:"Test Postfix hold",Kind:"sender_email",Value:"hold-lab@example.org",Action:"quarantine",Enabled:true})
   return nil
  });err!=nil{t.Fatal(err)}
  t.Setenv("SPAMGATE_TEST_RECIPIENTS",recipient)
@@ -80,6 +84,46 @@ func TestRealPostfixMilterLocalDeliveryAndTempfail(t *testing.T) {
   t.Fatalf("Milter did not save valid accept request: %+v",scans)
  }
  t.Logf("Postfix confirmed local Maildir receipt; accepted Milter scan %s",scans[0].ID)
+ // Real Postfix Milter quarantine: the mail must enter Postfix's hold queue,
+ // not be misreported as delivered or placed into Dovecot Junk.
+ if e:=smtp.SendMail("127.0.0.1:25",nil,"hold-lab@example.org",[]string{recipient},msg("hold-request","Harmless forced Postfix hold scenario."));e!=nil{
+  t.Fatalf("Postfix refused the intended hold request: %v",e)
+ }
+ type queueItem struct{QueueName string `json:"queue_name"`;QueueID string `json:"queue_id"`;Sender string `json:"sender"`}
+ heldID:=""
+ for i:=0;i<80;i++{
+  output,e:=exec.Command("sudo","-n","postqueue","-j").CombinedOutput()
+  if e!=nil{t.Fatalf("postqueue -j: %v %s",e,output)}
+  sc:=bufio.NewScanner(bytes.NewReader(output))
+  for sc.Scan(){
+   var item queueItem
+   if json.Unmarshal(sc.Bytes(),&item)==nil&&item.QueueName=="hold"&&item.Sender=="hold-lab@example.org"{
+    heldID=item.QueueID
+    break
+   }
+  }
+  if heldID!=""{break}
+  time.Sleep(100*time.Millisecond)
+ }
+ if heldID==""{t.Fatal("Postfix Milter hold was requested but no actual held queue entry was found")}
+ afterHold,e:=listMaildir();if e!=nil{t.Fatal(e)}
+ if len(afterHold)!=len(accepted){t.Fatal("held mail was delivered despite hold request")}
+ scans=store.List(20,"")
+ if len(scans)<2||scans[0].Action!="quarantine"||scans[0].MTAAction!="postfix_hold_requested"{
+  t.Fatalf("hold request not recorded: %+v",scans)
+ }
+ for _,c:=range heldID{if !(c>='0'&&c<='9'||c>='a'&&c<='z'||c>='A'&&c<='Z'){t.Fatalf("unsafe queue ID %q",heldID)}}
+ output,e:=exec.Command("sudo","-n","postsuper","-H",heldID).CombinedOutput()
+ if e!=nil{t.Fatalf("test Postfix hold release: %v %s",e,output)}
+ output,e=exec.Command("sudo","-n","postqueue","-f").CombinedOutput()
+ if e!=nil{t.Fatalf("flush released test hold: %v %s",e,output)}
+ for i:=0;i<80;i++{
+  accepted,e=listMaildir();if e!=nil{t.Fatal(e)}
+  if len(accepted)>len(afterHold){break}
+  time.Sleep(150*time.Millisecond)
+ }
+ if len(accepted)<=len(afterHold){t.Fatal("Postfix hold released but no delivery to test Maildir observed")}
+ t.Logf("Postfix hold and postsuper release observed for queue %s; Dovecot receipt checked separately",heldID)
  err=send("synthetic-reject",core.StandardGTUBE)
  if err==nil{t.Fatal("real Postfix accepted SGTUBE synthetic reject")}
  var smtpError *textproto.Error
