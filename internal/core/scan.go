@@ -375,11 +375,17 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (out Message, scanErr erro
 	note("Links", matchedSince(urlStart), fmt.Sprintf("Inspected %d extracted link(s) for suspicious URL patterns", len(urls)))
 	if cfg.Settings.PhishingLinks {
 		phishStart := len(findings)
-		phish := detectPhishingLinks(in.Raw)
+		phish, phishingCoverage := detectPhishingLinksWithCoverage(in.Raw)
 		for _, item := range phish {
 			add("PHISHING_VISIBLE_LINK", "builtin/phishing", item, 3)
 		}
-		note("Visible-link impersonation", matchedSince(phishStart), fmt.Sprintf("Compared link display text to actual destinations; %d mismatches", len(phish)))
+		if phishingCoverage.Incomplete {
+			detail := strings.Join(phishingCoverage.Reasons, "; ")
+			findings = append(findings, Finding{Symbol: "PHISHING_COVERAGE_INCOMPLETE", Source: "diagnostic/phishing", Detail: detail, Score: 0})
+			note("Visible-link impersonation", "error", detail)
+		} else {
+			note("Visible-link impersonation", matchedSince(phishStart), fmt.Sprintf("Compared link display text to actual destinations; %d mismatches", len(phish)))
+		}
 	} else {
 		note("Visible-link impersonation", "skipped", "Opt-in phishing link inspection is disabled")
 	}

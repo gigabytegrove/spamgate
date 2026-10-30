@@ -1,0 +1,7 @@
+# Phishing MIME inspection coverage and false-positive controls — 2026-10-30
+
+This change advances issue #5 without changing default enforcement. Opt-in `PhishingLinks` continues to produce `PHISHING_VISIBLE_LINK` with its existing score. It now uses strict MIME text transfer decoding, a shared 75-part traversal budget, an 8-level nesting limit, 2 MiB decoded HTML/forwarded-message bounds, a 10 MiB outer-message bound, and a 50-anchor inspection cap. Invalid base64/quoted-printable, unsupported encodings, malformed multipart boundaries, truncated parts, and exhausted limits produce `PHISHING_COVERAGE_INCOMPLETE` at **score zero** with an error scan trace. This is an observation, not a rejection or a claim of malware.
+
+An HTML file explicitly marked `Content-Disposition: attachment` is not treated as a browser-rendered message link, avoiding an avoidable false-positive path. Forwarded `message/rfc822` is inspected only after bounded, validated transfer decoding. All findings remain bounded and no URLs, subjects, senders, or message bodies are copied into coverage diagnostics.
+
+Regression tests cover valid/invalid base64 and quoted-printable, attachments, budget exhaustion, malformed multipart, opt-in behavior, and zero-score coverage evidence. The independent labelled corpus and production Postfix/Dovecot qualification remain required. This does not certify HTML browser rendering equivalence, external URL redirects, or live false-positive rates.
