@@ -286,36 +286,18 @@ func (c *Client) Stage(ctx context.Context, current, dir string) (Status, error)
 		return s, errors.New("not a Linux executable")
 	}
 	destination := filepath.Join(dir, "updates")
-	if e = os.MkdirAll(destination, 0700); e != nil {
+	if e = ensureUpdateDir(destination, true); e != nil {
 		return s, e
 	}
-	path := filepath.Join(destination, "pending"+filepath.Ext(name))
-	tmp, e := os.CreateTemp(destination, ".download-*")
-	if e != nil {
-		return s, e
-	}
-	defer os.Remove(tmp.Name())
-	if e = tmp.Chmod(0700); e != nil {
-		tmp.Close()
-		return s, e
-	}
-	if _, e = tmp.Write(binary); e != nil {
-		tmp.Close()
-		return s, e
-	}
-	if e = tmp.Sync(); e != nil {
-		tmp.Close()
-		return s, e
-	}
-	if e = tmp.Close(); e != nil {
-		return s, e
-	}
-	if e = os.Rename(tmp.Name(), path); e != nil {
+	if e = atomicUpdateFile(destination, "pending"+filepath.Ext(name), binary, 0700); e != nil {
 		return s, e
 	}
 	record := struct{ Version, Filename, SHA256 string }{r.Tag, name, expected}
-	b, _ := json.Marshal(record)
-	if e = os.WriteFile(filepath.Join(destination, "pending.json"), b, 0600); e != nil {
+	b, e := json.Marshal(record)
+	if e != nil {
+		return s, e
+	}
+	if e = atomicUpdateFile(destination, "pending.json", b, 0600); e != nil {
 		return s, e
 	}
 	s.Staged = true
@@ -325,34 +307,40 @@ func (c *Client) Stage(ctx context.Context, current, dir string) (Status, error)
 // Pending independently verifies the staged bytes before any executable replacement.
 func Pending(dir string) (string, string, error) {
 	base := filepath.Join(dir, "updates")
-	raw, e := os.ReadFile(filepath.Join(base, "pending.json"))
-	if e != nil {
-		return "", "", e
+	if err := ensureUpdateDir(base, false); err != nil {
+		return "", "", err
+	}
+	raw, err := readUpdateRegularFile(filepath.Join(base, "pending.json"), 4096)
+	if err != nil {
+		return "", "", err
 	}
 	var m struct{ Version, Filename, SHA256 string }
-	if e = json.Unmarshal(raw, &m); e != nil {
-		return "", "", e
+	if err = json.Unmarshal(raw, &m); err != nil {
+		return "", "", err
 	}
 	expected, _ := platformAsset()
 	if m.Filename != expected || !releaseTag.MatchString(m.Version) || !hexDigest.MatchString(m.SHA256) {
 		return "", "", errors.New("invalid staged update metadata")
 	}
 	path := filepath.Join(base, "pending"+filepath.Ext(expected))
-	f, e := os.Open(path)
-	if e != nil {
-		return "", "", e
+	f, info, err := openUpdateRegularFile(path)
+	if err != nil {
+		return "", "", err
 	}
 	defer f.Close()
-	info, e := f.Stat()
-	if e != nil {
-		return "", "", e
-	}
-	if !info.Mode().IsRegular() || info.Size() > maxBinary || info.Size() < 4096 {
+	if info.Size() > maxBinary || info.Size() < 4096 {
 		return "", "", errors.New("invalid staged binary")
 	}
 	h := sha256.New()
-	if _, e = io.Copy(h, f); e != nil {
-		return "", "", e
+	if _, err = io.Copy(h, f); err != nil {
+		return "", "", err
+	}
+	after, err := f.Stat()
+	if err != nil {
+		return "", "", err
+	}
+	if !os.SameFile(info, after) || info.Size() != after.Size() || !info.ModTime().Equal(after.ModTime()) {
+		return "", "", errors.New("staged binary changed during verification")
 	}
 	if hex.EncodeToString(h.Sum(nil)) != strings.ToLower(m.SHA256) {
 		return "", "", errors.New("staged update checksum changed")

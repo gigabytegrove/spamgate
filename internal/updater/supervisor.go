@@ -124,37 +124,20 @@ func executableVersion(path string) (string, error) {
 
 
 func Record(dir, state, version, detail string) error {
-	if err := os.MkdirAll(updateDir(dir), 0700); err != nil {
-		return err
-	}
 	data, err := json.Marshal(UpdateRecord{State: state, Version: version, Detail: detail, At: time.Now().UTC()})
 	if err != nil {
 		return err
 	}
-	f, err := os.CreateTemp(updateDir(dir), ".update-record-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(f.Name())
-	if err = f.Chmod(0600); err != nil {
-		f.Close()
-		return err
-	}
-	if _, err = f.Write(data); err != nil {
-		f.Close()
-		return err
-	}
-	if err = f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	if err = f.Close(); err != nil {
-		return err
-	}
-	return os.Rename(f.Name(), lastRecordPath(dir))
+	return atomicUpdateFile(updateDir(dir), "last-update.json", data, 0600)
 }
 func LastRecord(dir string) (*UpdateRecord, error) {
-	raw, err := os.ReadFile(lastRecordPath(dir))
+	if err := ensureUpdateDir(updateDir(dir), false); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	raw, err := readUpdateRegularFile(lastRecordPath(dir), 16<<10)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
