@@ -4,7 +4,6 @@ package core
 // replacement for antivirus, dynamic analysis or an archive decompression
 // sandbox. No attachment is executed or written to disk.
 import (
-	"archive/zip"
 	"bytes"
 	"encoding/base64"
 	"fmt"
@@ -12,7 +11,6 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/mail"
-	"path"
 	"strings"
 )
 
@@ -50,8 +48,10 @@ func attachmentPayload(raw []byte, transfer string) ([]byte, error) {
 		}
 		return out, nil
 	case "quoted-printable":
-		out, err := io.ReadAll(io.LimitReader(quotedPrintableReader(bytes.NewReader(raw)), 4<<20))
-		return out, err
+		out, err := io.ReadAll(io.LimitReader(quotedPrintableReader(bytes.NewReader(raw)), (4<<20)+1))
+		if err != nil { return nil, err }
+		if len(out) > 4<<20 { return nil, fmt.Errorf("decoded MIME part exceeds 4 MiB limit") }
+		return out, nil
 	default:
 		return raw, nil
 	}
@@ -137,38 +137,7 @@ func InspectMIMEAttachments(raw []byte) ([]AttachmentFinding, error) {
 			appendFinding("ATTACHMENT_EXECUTABLE_CONTENT", "Executable file signature in: "+name, 6)
 		}
 		if bytes.HasPrefix(payload, []byte("PK\x03\x04")) {
-			reader, err := zip.NewReader(bytes.NewReader(payload), int64(len(payload)))
-			if err != nil {
-				appendFinding("ARCHIVE_UNREADABLE", "ZIP archive structure not readable: "+name, 0)
-				return
-			}
-			if len(reader.File) > 100 {
-				appendFinding("ARCHIVE_LIMIT", "Archive contains over 100 entries: "+name, 2)
-			}
-			var expanded uint64
-			for i, f := range reader.File {
-				if i >= 100 {
-					break
-				}
-				expanded += f.UncompressedSize64
-				if expanded > 30<<20 {
-					appendFinding("ARCHIVE_EXPANSION_RISK", "Archive declares over 30 MiB expanded content: "+name, 3)
-					break
-				}
-				if f.Flags&1 != 0 {
-					appendFinding("ARCHIVE_ENCRYPTED", "Encrypted ZIP entry cannot be inspected: "+name, 0)
-				}
-				if f.CompressedSize64 > 0 && f.UncompressedSize64/f.CompressedSize64 > 500 && f.UncompressedSize64 > 1<<20 {
-					appendFinding("ARCHIVE_EXPANSION_RISK", "Very high archive compression ratio: "+name, 3)
-				}
-				inside := strings.ReplaceAll(f.Name, "\\", "/")
-				if strings.HasPrefix(inside, "/") || strings.HasPrefix(inside, "../") || strings.Contains(inside, "/../") {
-					appendFinding("ARCHIVE_TRAVERSAL_NAME", "Unsafe archive member path in: "+name, 2)
-				}
-				if riskyFilename(path.Base(inside)) {
-					appendFinding("ARCHIVE_RISKY_MEMBER", "Risky filename inside ZIP: "+path.Base(inside), 5)
-				}
-			}
+			inspectZIPAttachment(payload, name, appendFinding)
 		}
 	}
 	inspect(msg.Header, body, 0)
