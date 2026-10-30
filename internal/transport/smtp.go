@@ -249,6 +249,7 @@ func (s *SMTP) handle(conn net.Conn) {
 	heloName := ""
 	mailIssued := false
 	forwardedIP := ""
+	forwardedHelo := ""
 	for commands := 0; commands < 500; commands++ {
 		lineBytes, e := readLineLimited(reader, 4096)
 		line := string(lineBytes)
@@ -274,6 +275,7 @@ func (s *SMTP) handle(conn net.Conn) {
 			heloName = strings.TrimSpace(line[5:])
 			greeted = true
 			forwardedIP = ""
+			forwardedHelo = ""
 			mailIssued = false
 			sender = ""
 			recipients = nil
@@ -287,6 +289,7 @@ func (s *SMTP) handle(conn net.Conn) {
 			heloName = strings.TrimSpace(line[5:])
 			greeted = true
 			forwardedIP = ""
+			forwardedHelo = ""
 			mailIssued = false
 			sender = ""
 			recipients = nil
@@ -296,6 +299,7 @@ func (s *SMTP) handle(conn net.Conn) {
 		case upper == "RSET":
 			mailIssued = false
 			forwardedIP = ""
+			forwardedHelo = ""
 			sender = ""
 			recipients = nil
 			reply(250, "2.0.0 Reset")
@@ -307,20 +311,55 @@ func (s *SMTP) handle(conn net.Conn) {
 				reply(503, "5.5.1 XFORWARD only before MAIL FROM")
 				continue
 			}
-			proposed := ""
+			// Postfix may split XFORWARD metadata across commands. Preserve the
+			// original HELO alongside ADDR: SPF for MAIL FROM:<> uses HELO,
+			// never the intermediate content-filter gateway's greeting.
+			proposedIP, proposedHelo := "", ""
+			hasIP, hasHelo, invalid := false, false, false
 			for _, field := range strings.Fields(line[len("XFORWARD "):]) {
-				if strings.HasPrefix(strings.ToUpper(field), "ADDR=") {
-					proposed = field[len("ADDR="):]
+				key, value, ok := strings.Cut(field, "=")
+				if !ok || value == "" {
+					invalid = true
+					break
+				}
+				switch strings.ToUpper(key) {
+				case "ADDR":
+					if hasIP {
+						invalid = true
+						break
+					}
+					candidate := strings.Trim(value, "[]")
+					candidate = strings.TrimPrefix(candidate, "IPv6:")
+					if net.ParseIP(candidate) == nil {
+						invalid = true
+						break
+					}
+					proposedIP, hasIP = candidate, true
+				case "HELO":
+					if hasHelo || len(value) > 255 || strings.ContainsAny(value, "\r\n\x00") {
+						invalid = true
+						break
+					}
+					proposedHelo, hasHelo = value, true
+					if value == "[UNAVAILABLE]" || value == "[TEMPUNAVAIL]" {
+						proposedHelo = ""
+					}
+				}
+				if invalid {
+					break
 				}
 			}
-			proposed = strings.Trim(proposed, "[]")
-			proposed = strings.TrimPrefix(proposed, "IPv6:")
-			if net.ParseIP(proposed) == nil {
-				reply(501, "5.5.2 XFORWARD requires valid ADDR")
+			if invalid || (!hasIP && !hasHelo) {
+				reply(501, "5.5.2 Invalid or duplicate XFORWARD identity")
 				continue
 			}
-			forwardedIP = proposed
-			reply(250, "2.0.0 Original IP recorded")
+			if hasIP {
+				forwardedIP = proposedIP
+			}
+			if hasHelo {
+				forwardedHelo = proposedHelo
+			}
+			reply(250, "2.0.0 Original SMTP identity recorded")
 		case strings.HasPrefix(upper, "MAIL FROM:"):
 			if !greeted {
 				reply(503, "5.5.1 HELO first")
@@ -404,6 +443,7 @@ func (s *SMTP) handle(conn net.Conn) {
 				sender = ""
 				mailIssued = false
 				forwardedIP = ""
+				forwardedHelo = ""
 				recipients = nil
 				continue
 			}
@@ -412,8 +452,12 @@ func (s *SMTP) handle(conn net.Conn) {
 			if forwardedIP != "" {
 				originIP = forwardedIP
 			}
+			originHelo := heloName
+			if forwardedIP != "" {
+				originHelo = forwardedHelo
+			}
 			scanCtx, cancelScan := context.WithTimeout(context.Background(), 45*time.Second)
-   m, e := s.Scanner.Scan(scanCtx, core.Input{Raw: raw.Bytes(), Sender: sender, Recipients: recipients, ClientIP: originIP, Helo: heloName, Connector: "smtp"})
+   m, e := s.Scanner.Scan(scanCtx, core.Input{Raw: raw.Bytes(), Sender: sender, Recipients: recipients, ClientIP: originIP, Helo: originHelo, Connector: "smtp"})
    cancelScan()
 			if e == nil {
 				m.IngestIP = clientIP
@@ -423,6 +467,7 @@ func (s *SMTP) handle(conn net.Conn) {
 				sender = ""
 				mailIssued = false
 				forwardedIP = ""
+				forwardedHelo = ""
 				recipients = nil
 				continue
 			}
@@ -442,6 +487,7 @@ func (s *SMTP) handle(conn net.Conn) {
 				sender = ""
 				mailIssued = false
 				forwardedIP = ""
+				forwardedHelo = ""
 				recipients = nil
 				continue
 			}
@@ -455,6 +501,7 @@ func (s *SMTP) handle(conn net.Conn) {
 				sender = ""
 				mailIssued = false
 				forwardedIP = ""
+				forwardedHelo = ""
 				recipients = nil
 				continue
 			}
@@ -480,6 +527,7 @@ func (s *SMTP) handle(conn net.Conn) {
 				sender = ""
 				mailIssued = false
 				forwardedIP = ""
+				forwardedHelo = ""
 				recipients = nil
 				continue
 			}
@@ -489,6 +537,7 @@ func (s *SMTP) handle(conn net.Conn) {
 				sender = ""
 				mailIssued = false
 				forwardedIP = ""
+				forwardedHelo = ""
 				recipients = nil
 				continue
 			}

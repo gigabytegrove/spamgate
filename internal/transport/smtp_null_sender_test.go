@@ -79,7 +79,9 @@ func TestSMTPNullReversePathSurvivesDurableHandoff(t *testing.T) {
 		read(prefix)
 	}
 	read("220 ")
-	send("HELO mx.example.org", "250 ")
+	send("HELO relay.internal", "250 ")
+	send("XFORWARD ADDR=127.0.0.1 ADDR=127.0.0.2", "501 ")
+	send("XFORWARD ADDR=127.0.0.1 HELO=mx.example.org", "250 ")
 	send("MAIL FROM:<>", "250 ")
 	send("RCPT TO:<recipient@localhost>", "250 ")
 	send("DATA", "354 ")
@@ -96,8 +98,8 @@ func TestSMTPNullReversePathSurvivesDurableHandoff(t *testing.T) {
 	if sends != 0 {
 		t.Fatal("delivery occurred before worker handoff")
 	}
-	// RFC 7208 uses HELO as the SPF identity when MAIL FROM is null.
-	// A missing HELO propagation would silently report SPF none.
+	// RFC 7208 uses the original HELO as the SPF identity when MAIL FROM
+	// is null. Postfix XFORWARD must not substitute relay.internal.
 	entries := store.List(10, "")
 	if len(entries) != 1 || entries[0].Sender != "" {
 		t.Fatalf("null sender not preserved in scan history: %+v", entries)
