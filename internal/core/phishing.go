@@ -95,21 +95,42 @@ func phishingVisibleLinks(body string) []string {
 // Walk decoded MIME text/html parts; avoid treating base64 attachment bytes as
 // HTML. Per-part and nesting limits match the existing bounded MIME scanner.
 func phishingMIME(h mail.Header, body []byte, depth int, out *[]string) {
-    if depth > 8 || len(*out) >= 10 { return }
+    // One shared part budget for the complete MIME tree. Per-level budgets
+    // allow an attacker to multiply work with nested multipart containers.
+    remaining := 75
+    phishingMIMEWalk(h, body, depth, out, &remaining)
+}
+
+func phishingMIMEWalk(h mail.Header, body []byte, depth int, out *[]string, remaining *int) {
+    if depth > 8 || len(*out) >= 10 || *remaining <= 0 { return }
     media, params, err := mime.ParseMediaType(h.Get("Content-Type"))
     if err != nil { return }
     if strings.HasPrefix(media, "multipart/") {
         if params["boundary"] == "" { return }
         r := multipart.NewReader(bytes.NewReader(body), params["boundary"])
-        for i := 0; i < 75 && len(*out) < 10; i++ {
+        for *remaining > 0 && len(*out) < 10 {
             part, err := r.NextPart()
             if err != nil { break }
+            *remaining--
             data, err := io.ReadAll(io.LimitReader(part, (2<<20)+1))
-            part.Close()
+            _ = part.Close()
             if err == nil && len(data) <= 2<<20 {
-                phishingMIME(mail.Header(part.Header), data, depth+1, out)
+                phishingMIMEWalk(mail.Header(part.Header), data, depth+1, out, remaining)
             }
         }
+        return
+    }
+    if media == "message/rfc822" {
+        // Inspect links inside attached/forwarded messages rather than
+        // trusting an outer wrapper. Invalid or oversized content is skipped,
+        // never treated as a positive phishing verdict.
+        payload, err := attachmentPayload(body, h.Get("Content-Transfer-Encoding"))
+        if err != nil || len(payload) > 2<<20 { return }
+        embedded, err := mail.ReadMessage(bytes.NewReader(payload))
+        if err != nil { return }
+        inner, err := io.ReadAll(io.LimitReader(embedded.Body, (2<<20)+1))
+        if err != nil || len(inner) > 2<<20 { return }
+        phishingMIMEWalk(embedded.Header, inner, depth+1, out, remaining)
         return
     }
     if media != "text/html" { return }
@@ -122,7 +143,7 @@ func phishingMIME(h mail.Header, body []byte, depth int, out *[]string) {
     default:
         decoded = body
     }
-    if len(decoded) > 2<<20 { return } // never score silently truncated HTML
+    if len(decoded) > 2<<20 { return }
     *out = append(*out, phishingVisibleLinks(string(decoded))...)
     if len(*out) > 10 { *out = (*out)[:10] }
 }
