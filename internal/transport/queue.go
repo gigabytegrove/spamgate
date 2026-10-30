@@ -517,7 +517,8 @@ func (q *DeliveryQueue) ProcessDue(ctx context.Context) error {
 			if len(rec.LastError) > 320 {
 				rec.LastError = rec.LastError[:320]
 			}
-			if rec.Attempts >= MaxDeliveryAttempts {
+			permanent := isPermanentRelayFailure(sendErr)
+			if permanent || rec.Attempts >= MaxDeliveryAttempts {
 				rec.State = "dead"
 			} else {
 				rec.State = "queued"
@@ -526,8 +527,21 @@ func (q *DeliveryQueue) ProcessDue(ctx context.Context) error {
 			rec.Updated = q.now()
 			err = q.put(rec)
 			if err == nil {
-				msg.Delivery = "relay_failed"
-				_ = q.store.Save(msg)
+				if rec.State == "dead" {
+					msg.Delivery = "delivery_dead"
+					detail := "SMTP delivery attempts exhausted; original retained for operator review"
+					if permanent {
+						detail = "Upstream SMTP permanently rejected MAIL, RCPT or DATA; original retained for operator review"
+					}
+					msg.Findings = append(msg.Findings, core.Finding{
+						Symbol: "QUEUE_DELIVERY_DEAD", Source: "smtp/relay", Detail: detail,
+					})
+				} else {
+					msg.Delivery = "relay_failed"
+				}
+				if historyErr := q.store.Save(msg); historyErr != nil {
+					slog.Error("delivery failure history persistence failed; retaining spool", "id", rec.ID, "error", historyErr)
+				}
 			}
 			q.mu.Unlock()
 			if err != nil {
