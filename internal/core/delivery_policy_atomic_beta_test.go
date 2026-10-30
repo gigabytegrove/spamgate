@@ -18,7 +18,7 @@ func TestDeliveryPolicyFailurePreservesInMemoryState(t *testing.T) {
 		c.Settings.GreylistEnabled = true
 		c.Settings.GreylistWaitMinutes = 5
 		c.Settings.RateLimitEnabled = true
-		c.Settings.RateLimitPerHour = 2
+		c.Settings.RateLimitPerHour = 100
 		return nil
 	}); err != nil { t.Fatal(err) }
 	now := time.Date(2026, 10, 30, 3, 0, 0, 0, time.UTC)
@@ -72,7 +72,12 @@ func TestDeliveryPolicyPersistenceFailureDoesNotConsumeAllowance(t *testing.T) {
 	if action, _, err := store.EvaluateDeliveryPolicy(m, now); err != nil || action != "" {
 		t.Fatalf("first accepted request after recovery should be allowed: %q %v", action, err)
 	}
-	if action, _, err := store.EvaluateDeliveryPolicy(m, now.Add(time.Second)); err != nil || action != "soft_reject" {
-		t.Fatalf("second request must be rate-limited: %q %v", action, err)
+	for i := 1; i < 10; i++ {
+		if action, _, err := store.EvaluateDeliveryPolicy(m, now.Add(time.Duration(i)*time.Second)); err != nil || action != "" {
+			t.Fatalf("request %d should remain within rate allowance: %q %v", i+1, action, err)
+		}
+	}
+	if action, _, err := store.EvaluateDeliveryPolicy(m, now.Add(10*time.Second)); err != nil || action != "soft_reject" {
+		t.Fatalf("eleventh request must be rate-limited: %q %v", action, err)
 	}
 }
