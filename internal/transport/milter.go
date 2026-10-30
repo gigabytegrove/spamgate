@@ -243,6 +243,7 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 		hasEOH       bool
 		queueID      string
 		spoofHeaders []string
+		poisoned     bool // any failed callback invalidates this entire transaction
 	}
 	var msg transaction
 	var clientIP string
@@ -304,18 +305,30 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 			msg.mailSeen = true
 			msg.sender = firstMilterString(data)
 		case 'R':
+			if !msg.mailSeen || msg.poisoned || msg.hasEOH {
+				msg.poisoned = true
+				reply = 't'
+				break
+			}
 			if v := firstMilterString(data); v != "" {
 				msg.recipients = append(msg.recipients, v)
 			}
 		case 'L':
+			if !msg.mailSeen || msg.poisoned || msg.hasEOH {
+				msg.poisoned = true
+				reply = 't'
+				break
+			}
 			line, err := milterHeader(data)
 			if err != nil {
 				slog.Warn("milter rejected header callback", "reason", "invalid_header", "error", err)
+				msg.poisoned = true
 				reply = 't'
 				break
 			}
 			if msg.headers.Len()+len(line) > milterMaxMessage {
 				slog.Warn("milter rejected header callback", "reason", "headers_exceed_message_size_limit")
+				msg.poisoned = true
 				reply = 't'
 				break
 			}
@@ -324,17 +337,29 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 				msg.spoofHeaders = append(msg.spoofHeaders, name)
 				if len(msg.spoofHeaders) > 100 {
 					slog.Warn("Milter received excessive untrusted SpamGate headers")
+					msg.poisoned = true
 					reply = 't'
 					break
 				}
 			}
 			_, _ = msg.headers.Write(line)
 		case 'N':
+			if !msg.mailSeen || msg.poisoned {
+				msg.poisoned = true
+				reply = 't'
+				break
+			}
 			msg.hasEOH = true
 		case 'T', 'U': // DATA and unknown SMTP commands; continue
 		case 'B':
+			if !msg.mailSeen || !msg.hasEOH || msg.poisoned {
+				msg.poisoned = true
+				reply = 't'
+				break
+			}
 			if msg.body.Len()+len(data) > milterMaxMessage {
 				slog.Warn("milter rejected body callback", "reason", "body_exceeds_message_size_limit")
+				msg.poisoned = true
 				reply = 't'
 				break
 			}
@@ -349,6 +374,14 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 		case 'Q':
 			return nil
 		case 'E':
+			// A failed header/body callback must never be followed by an
+			// accepted end-of-message using a truncated or altered original.
+			if msg.poisoned || !msg.mailSeen || len(msg.recipients) == 0 {
+				slog.Warn("milter refused incomplete transaction", "reason", "failed_callback_or_missing_envelope")
+				reply = 't'
+				reset()
+				break
+			}
 			if !msg.hasEOH {
 				slog.Warn("milter could not finish message", "reason", "missing_end_of_headers")
 				reply = 't'
@@ -371,7 +404,10 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 				reset()
 				break
 			}
-			scanned, err := m.Scanner.Scan(ctx, core.Input{Raw: raw, Sender: msg.sender, Recipients: msg.recipients, ClientIP: clientIP, Helo: helo, Connector: "milter"})
+			// Bound each message scan independently of the long-lived listener.
+			scanCtx, cancelScan := context.WithTimeout(ctx, 45*time.Second)
+			scanned, err := m.Scanner.Scan(scanCtx, core.Input{Raw: raw, Sender: msg.sender, Recipients: msg.recipients, ClientIP: clientIP, Helo: helo, Connector: "milter"})
+			cancelScan()
 			if err != nil {
 				slog.Error("milter could not finish message", "reason", "scan_failed", "error", err)
 				reply = 't'
