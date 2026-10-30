@@ -214,8 +214,8 @@ func (q *DeliveryQueue) get(id string) (spoolRecord, error) {
  b, err := readSpoolFile(path, meta)
  if err != nil { return spoolRecord{}, fmt.Errorf("unsafe queue job %s: %w", id, err) }
 	var rec spoolRecord
-	if e = json.Unmarshal(b, &rec); e != nil {
-		return spoolRecord{}, e
+	if err = json.Unmarshal(b, &rec); err != nil {
+		return spoolRecord{}, err
 	}
 	if rec.ID != id || rec.Size <= 0 || rec.Size > 10<<20 || len(rec.RawRFC822) != rec.Size ||
 		len(rec.Recipients) == 0 || len(rec.Recipients) > 1000 {
