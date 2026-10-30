@@ -106,3 +106,18 @@ func TestPhishingFindingCapIsVisible(t *testing.T) {
         t.Fatalf("finding cap silently dropped remaining anchors: %d %+v",len(found),coverage)
     }
 }
+
+func TestPhishingMultipartQuotedPrintableCannotBypassStrictDecoder(t *testing.T) {
+    for _,tc:=range []struct{name,body string; matches int; incomplete bool}{
+        {"valid",strings.ReplaceAll(phishingMismatch,"=","=3D"),1,false},
+        {"invalid","=ZZ"+phishingMismatch,0,true},
+    }{
+        t.Run(tc.name,func(t *testing.T){
+            body:="--boundary\r\nContent-Type: text/html\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n"+tc.body+"\r\n--boundary--\r\n"
+            found,coverage:=detectPhishingLinksWithCoverage(phishingFixture("multipart/mixed; boundary=boundary","","",body))
+            if len(found)!=tc.matches||coverage.Incomplete!=tc.incomplete{
+                t.Fatalf("multipart transfer bypass: findings=%+v coverage=%+v",found,coverage)
+            }
+        })
+    }
+}

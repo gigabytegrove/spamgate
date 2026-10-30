@@ -42,3 +42,19 @@ func TestMIMETextTransferDecodedLimitIsReported(t *testing.T) {
 		t.Fatalf("decoded-text truncation hidden: bytes=%d coverage=%+v", len(text), coverage)
 	}
 }
+
+func TestMultipartTextPreservesRawQuotedPrintableForStrictValidation(t *testing.T){
+    for _,tc:=range []struct{name,body string; incomplete bool; hasURL bool}{
+        {"valid","https://example.org/?a=3Db",false,true},
+        {"invalid","=ZZhttps://example.org",true,false},
+    }{
+        t.Run(tc.name,func(t *testing.T){
+            body:="--boundary\r\nContent-Type: text/plain\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n"+tc.body+"\r\n--boundary--\r\n"
+            coverage:=&mimeCoverage{}
+            _,_,urls,_:=bodyPartsWithCoverage(mail.Header{"Content-Type":{"multipart/mixed; boundary=boundary"}},[]byte(body),0,coverage)
+            if coverage.Incomplete!=tc.incomplete||(len(urls)>0)!=tc.hasURL{
+                t.Fatalf("multipart transfer bypass: urls=%+v coverage=%+v",urls,coverage)
+            }
+        })
+    }
+}

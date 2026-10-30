@@ -91,6 +91,8 @@ func bodyPartsWithCoverage(h mail.Header, body []byte, depth int, coverage *mime
 			coverage.mark("Multipart boundary missing")
 			return "", nil, nil, false
 		}
+		// Keep transfer encoding intact: NextPart's permissive quoted-printable
+		// decoder can conceal malformed escapes before our strict validator.
 		reader := multipart.NewReader(bytes.NewReader(body), params["boundary"])
 		var all strings.Builder
 		var attachments, urls []string
@@ -99,7 +101,7 @@ func bodyPartsWithCoverage(h mail.Header, body []byte, depth int, coverage *mime
 			// A single shared budget across nested multiparts prevents a
 			// malicious tree of 75 children per level from bypassing limits.
 			if coverage.Parts >= 75 {
-				part, nextErr := reader.NextPart()
+				part, nextErr := reader.NextRawPart()
 				if nextErr == nil {
 					_ = part.Close()
 					coverage.mark("More than 75 MIME parts; remainder not scanned")
@@ -108,7 +110,7 @@ func bodyPartsWithCoverage(h mail.Header, body []byte, depth int, coverage *mime
 				}
 				break
 			}
-			part, nextErr := reader.NextPart()
+			part, nextErr := reader.NextRawPart()
 			if nextErr == io.EOF { break }
 			if nextErr != nil {
 				coverage.mark("Multipart section could not be parsed")

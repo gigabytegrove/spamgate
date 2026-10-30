@@ -145,10 +145,12 @@ func phishingMIMEWalkWithCoverage(h mail.Header, body []byte, depth int, out *[]
             coverage.mark("Phishing MIME multipart boundary missing")
             return
         }
+        // NextRawPart preserves Content-Transfer-Encoding for strict validation.
+        // NextPart silently decodes quoted-printable and hides malformed escapes.
         reader := multipart.NewReader(bytes.NewReader(body), params["boundary"])
         for {
             if *remaining <= 0 {
-                part, nextErr := reader.NextPart()
+                part, nextErr := reader.NextRawPart()
                 if nextErr == nil {
                     _ = part.Close()
                     coverage.mark("More than 75 phishing MIME parts; remainder not inspected")
@@ -157,7 +159,7 @@ func phishingMIMEWalkWithCoverage(h mail.Header, body []byte, depth int, out *[]
                 }
                 return
             }
-            part, nextErr := reader.NextPart()
+            part, nextErr := reader.NextRawPart()
             if nextErr == io.EOF { return }
             if nextErr != nil {
                 coverage.mark("Phishing MIME multipart section invalid")
