@@ -36,13 +36,26 @@ type report struct{
  MaximumFalsePositiveUpper95 float64 `json:"maximum_false_positive_upper_95"`
  MinimumRecallLower95 float64 `json:"minimum_recall_lower_95"`
  GatePassed bool `json:"gate_passed"`
+ Cohorts []cohortResult `json:"cohorts,omitempty"`
+ CohortGatePassed bool `json:"cohort_gate_passed"`
+ UnspecifiedCohort int `json:"unspecified_cohort"`
+ CohortGateRequired bool `json:"cohort_gate_required"`
  Limitation string `json:"limitation"`
 }
 
 // A "soft_reject" is conservatively counted as a positive intervention: it
 // can delay legitimate mail even when caused by rate or greylist policy.
 func readLabels(r io.Reader)(counts,error){
+ c,_,_,err:=readLabelledCorpus(r)
+ return c,err
+}
+
+// readLabelledCorpus accepts only category names, never message identifiers or
+// raw mail. The legacy two-field format remains valid and unstratified.
+func readLabelledCorpus(r io.Reader)(counts,map[string]counts,int,error){
  var c counts
+ cohorts:=map[string]counts{}
+ unspecified:=0
  scanner:=bufio.NewScanner(r)
  scanner.Buffer(make([]byte,4096),64<<10)
  line:=0
@@ -53,30 +66,35 @@ func readLabels(r io.Reader)(counts,error){
   var record struct{
    Label string `json:"label"`
    Action string `json:"action"`
+   Cohort string `json:"cohort,omitempty"`
   }
   d:=json.NewDecoder(bytes.NewReader(raw))
   d.DisallowUnknownFields()
-  if err:=d.Decode(&record);err!=nil{return counts{},fmt.Errorf("line %d: invalid labelled JSON: %w",line,err)}
+  if err:=d.Decode(&record);err!=nil{return counts{},nil,0,fmt.Errorf("line %d: invalid labelled JSON: %w",line,err)}
   var extra any
-  if err:=d.Decode(&extra);err!=io.EOF{return counts{},fmt.Errorf("line %d: trailing JSON content",line)}
-  if record.Label!="ham"&&record.Label!="spam"{return counts{},fmt.Errorf("line %d: label must be ham or spam",line)}
+  if err:=d.Decode(&extra);err!=io.EOF{return counts{},nil,0,fmt.Errorf("line %d: trailing JSON content",line)}
+  if record.Label!="ham"&&record.Label!="spam"{return counts{},nil,0,fmt.Errorf("line %d: label must be ham or spam",line)}
   flagged:=false
   switch record.Action{
   case "accept":flagged=false
   case "tag","quarantine","reject","soft_reject":flagged=true
-  default:return counts{},fmt.Errorf("line %d: unsupported action %q",line,record.Action)
+  default:return counts{},nil,0,fmt.Errorf("line %d: unsupported action %q",line,record.Action)
   }
-  if record.Label=="ham"{
-   c.Ham++
-   if flagged{c.FP++}else{c.TN++}
+  if record.Cohort!=""&&!validEvaluationCohort(record.Cohort){
+   return counts{},nil,0,fmt.Errorf("line %d: unsupported privacy-safe cohort",line)
+  }
+  addEvaluationOutcome(&c,record.Label,flagged)
+  if record.Cohort==""{
+   unspecified++
   }else{
-   c.Spam++
-   if flagged{c.TP++}else{c.FN++}
+   x:=cohorts[record.Cohort]
+   addEvaluationOutcome(&x,record.Label,flagged)
+   cohorts[record.Cohort]=x
   }
  }
- if err:=scanner.Err();err!=nil{return counts{},fmt.Errorf("reading labels: %w",err)}
- if c.Ham==0||c.Spam==0{return counts{},errors.New("corpus must contain both independently labelled ham and spam")}
- return c,nil
+ if err:=scanner.Err();err!=nil{return counts{},nil,0,fmt.Errorf("reading labels: %w",err)}
+ if c.Ham==0||c.Spam==0{return counts{},nil,0,errors.New("corpus must contain both independently labelled ham and spam")}
+ return c,cohorts,unspecified,nil
 }
 
 // Wilson interval avoids reporting 0% observed false positives as proof of
@@ -116,8 +134,13 @@ func run(args []string,output,errorsOut io.Writer)int{
  minSpam:=fs.Int("min-spam",1000,"minimum independently labelled spam messages")
  maxFPR:=fs.Float64("max-fpr-upper",0.01,"maximum Wilson 95% upper bound for false-positive rate")
  minRecall:=fs.Float64("min-recall-lower",0.90,"minimum Wilson 95% lower bound for recall")
+ requireCohorts:=fs.Bool("require-cohorts",false,"require at least two sufficiently powered independently labelled cohorts")
+ minCohortHam:=fs.Int("min-cohort-ham",100,"minimum ham per cohort when required")
+ minCohortSpam:=fs.Int("min-cohort-spam",100,"minimum spam per cohort when required")
+ maxCohortFPR:=fs.Float64("max-cohort-fpr-upper",0.05,"maximum Wilson upper false-positive bound per cohort")
+ minCohortRecall:=fs.Float64("min-cohort-recall-lower",0.75,"minimum Wilson lower recall bound per cohort")
  if err:=fs.Parse(args);err!=nil{return 2}
- if fs.NArg()!=1||*minHam<1||*minSpam<1||math.IsNaN(*maxFPR)||math.IsNaN(*minRecall)||*maxFPR<0||*maxFPR>1||*minRecall<0||*minRecall>1{
+ if fs.NArg()!=1||*minHam<1||*minSpam<1||math.IsNaN(*maxFPR)||math.IsNaN(*minRecall)||*maxFPR<0||*maxFPR>1||*minRecall<0||*minRecall>1||*minCohortHam<1||*minCohortSpam<1||math.IsNaN(*maxCohortFPR)||math.IsNaN(*minCohortRecall)||*maxCohortFPR<0||*maxCohortFPR>1||*minCohortRecall<0||*minCohortRecall>1{
   fmt.Fprintln(errorsOut,"usage: spamgate-eval [--min-ham=N --min-spam=N --max-fpr-upper=0.01 --min-recall-lower=0.90] labels.jsonl")
   return 2
  }
@@ -126,9 +149,13 @@ func run(args []string,output,errorsOut io.Writer)int{
  file,err:=os.Open(name)
  if err!=nil{fmt.Fprintln(errorsOut,"cannot open corpus:",err);return 2}
  defer file.Close()
- c,err:=readLabels(file)
+ c,cohorts,unspecified,err:=readLabelledCorpus(file)
  if err!=nil{fmt.Fprintln(errorsOut,"invalid corpus:",err);return 2}
  result:=evaluate(c,*minHam,*minSpam,*maxFPR,*minRecall)
+ result.Cohorts,result.CohortGatePassed=evaluateCohorts(cohorts,unspecified,*minCohortHam,*minCohortSpam,*maxCohortFPR,*minCohortRecall)
+ result.UnspecifiedCohort=unspecified
+ result.CohortGateRequired=*requireCohorts
+ if *requireCohorts {result.GatePassed=result.GatePassed&&result.CohortGatePassed}
  if err:=json.NewEncoder(output).Encode(result);err!=nil{fmt.Fprintln(errorsOut,"cannot write evaluation:",err);return 2}
  if !result.GatePassed{return 3}
  return 0
