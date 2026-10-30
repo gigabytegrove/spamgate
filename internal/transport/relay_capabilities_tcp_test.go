@@ -160,6 +160,27 @@ func TestRelayCapabilityPreflightOverTCP(t *testing.T) {
 				if mailSeen != tt.wantMail {
 					t.Fatalf("MAIL FROM sent=%t, want %t; commands=%q", mailSeen, tt.wantMail, result.commands)
 				}
+				// Assert actual RFC 6531 parameters on the SMTP wire.
+				if mailSeen {
+					var mailCommand string
+					for _, command := range result.commands {
+						if strings.HasPrefix(command, "MAIL FROM:") {
+							mailCommand = command
+							break
+						}
+					}
+					headerUTF8, headerErr := inspectRelayHeader([]byte(tt.raw))
+					if headerErr != nil {
+						t.Fatalf("accepted invalid RFC 5322 headers: %v", headerErr)
+					}
+					message := core.Message{Sender: tt.sender, Recipients: []string{tt.recipient}}
+					if (requiresSMTPUTF8(message) || headerUTF8) && !strings.Contains(mailCommand, " SMTPUTF8") {
+						t.Fatalf("internationalized original missing SMTPUTF8 MAIL parameter: %q", mailCommand)
+					}
+					if containsEightBit([]byte(tt.raw)) && !strings.Contains(mailCommand, " BODY=8BITMIME") {
+						t.Fatalf("eight-bit original missing BODY=8BITMIME MAIL parameter: %q", mailCommand)
+					}
+				}
 			case <-time.After(6 * time.Second):
 				t.Fatal("SMTP relay peer did not finish")
 			}
