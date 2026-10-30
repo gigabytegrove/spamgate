@@ -53,6 +53,7 @@ func TestLegacyOutboxBackfillsHistoryWithoutClaimingOriginalClassification(t *te
  record,err:=q.get(msg.ID)
  if err!=nil{t.Fatal(err)}
  record.Scan=nil // Simulate an old alpha.16-format spooled job.
+ record.IntegritySHA256="" // Legacy records predate the integrity field as well.
  if err:=q.put(record);err!=nil{t.Fatal(err)}
  q.mu.Unlock()
  restarted,err:=core.Open(dir);if err!=nil{t.Fatal(err)}
