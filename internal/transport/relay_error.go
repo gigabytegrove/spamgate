@@ -24,10 +24,30 @@ func wrapRelayStage(stage string, err error) error {
 	return &relayStageError{stage: stage, err: err}
 }
 
+// invalidRelayOriginalError identifies deterministic malformed persisted mail.
+// Unlike an upstream capability mismatch, no number of retries can make the
+// original RFC 5322 bytes or the accepted envelope valid. Retain the original
+// in the dead-letter spool for operator investigation and explicit recovery.
+type invalidRelayOriginalError struct{ err error }
+
+func (e *invalidRelayOriginalError) Error() string { return "invalid original: " + e.err.Error() }
+func (e *invalidRelayOriginalError) Unwrap() error { return e.err }
+
+func wrapInvalidRelayOriginal(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &invalidRelayOriginalError{err: err}
+}
+
 // isPermanentRelayFailure is deliberately conservative. A 5xx returned
 // during authentication can be fixed by an administrator, and a transport
 // failure after DATA may have an ambiguous delivery outcome.
 func isPermanentRelayFailure(err error) bool {
+	var invalid *invalidRelayOriginalError
+	if errors.As(err, &invalid) {
+		return true
+	}
 	var stage *relayStageError
 	if !errors.As(err, &stage) {
 		return false
