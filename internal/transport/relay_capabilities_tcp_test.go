@@ -40,6 +40,13 @@ func TestRelayCapabilityPreflightOverTCP(t *testing.T) {
 		{"upstream SIZE too small", []string{"SIZE 20"}, "sender@example.invalid", "recipient@example.invalid", "Subject: test\r\n\r\nbody longer than twenty bytes\r\n", "SIZE", false},
 		{"upstream SIZE adequate", []string{"SIZE 4096"}, "sender@example.invalid", "recipient@example.invalid", "Subject: test\r\n\r\nplain\r\n", "", true},
 		{"upstream SIZE malformed", []string{"SIZE nope"}, "sender@example.invalid", "recipient@example.invalid", "Subject: test\r\n\r\nplain\r\n", "malformed", false},
+		{"RFC6532 header needs SMTPUTF8", []string{"8BITMIME"}, "sender@example.invalid", "recipient@example.invalid", "Subject: caf\xc3\xa9\r\n\r\nplain\r\n", "SMTPUTF8", false},
+		{"RFC6532 header accepted by conformant peer", []string{"8BITMIME", "SMTPUTF8"}, "sender@example.invalid", "recipient@example.invalid", "Subject: caf\xc3\xa9\r\n\r\nplain\r\n", "", true},
+		{"eight bit body does not need SMTPUTF8", []string{"8BITMIME"}, "sender@example.invalid", "recipient@example.invalid", "Subject: plain\r\n\r\ncaf\xc3\xa9\r\n", "", true},
+		{"encoded word header does not need SMTPUTF8", []string{"8BITMIME"}, "sender@example.invalid", "recipient@example.invalid", "Subject: =?UTF-8?B?Y2Fmw6k=?=\r\n\r\nplain\r\n", "", true},
+		{"invalid UTF8 header cannot be sent", []string{"8BITMIME", "SMTPUTF8"}, "sender@example.invalid", "recipient@example.invalid", "Subject: \xff\r\n\r\nplain\r\n", "invalid UTF-8", false},
+		{"unsafe recipient cannot reach MAIL", []string{"8BITMIME"}, "sender@example.invalid", "to@example.invalid\r\nRCPT TO:<evil@example.invalid>", "Subject: plain\r\n\r\nplain\r\n", "invalid SMTP recipient", false},
+		{"null sender DSN accepted", []string{"8BITMIME"}, "<>", "recipient@example.invalid", "Subject: DSN\r\n\r\nplain\r\n", "", true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			ln, err := net.Listen("tcp", "127.0.0.1:0")
