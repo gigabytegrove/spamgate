@@ -97,3 +97,12 @@ func TestPhishingAnchorBudgetIsVisible(t *testing.T){
         t.Fatalf("anchor truncation not reported: %+v %+v",coverage,got)
     }
 }
+
+func TestPhishingFindingCapIsVisible(t *testing.T) {
+    html:=strings.Repeat(phishingMismatch,11)
+    coverage:=&mimeCoverage{}
+    found:=phishingVisibleLinksWithCoverage(html,coverage)
+    if len(found)!=10||!coverage.Incomplete {
+        t.Fatalf("finding cap silently dropped remaining anchors: %d %+v",len(found),coverage)
+    }
+}

@@ -75,7 +75,7 @@ func phishingVisibleLinksWithCoverage(body string, coverage *mimeCoverage) []str
         coverage.mark("More than 50 HTML anchors; remaining links not inspected")
         anchors = anchors[:50]
     }
-    for _, match := range anchors {
+    for anchorIndex, match := range anchors {
         href := strings.TrimSpace(html.UnescapeString(anchorHref(match[1])))
         if len(href) == 0 || len(href) > 4096 { continue }
         if strings.HasPrefix(href, "//") { href = "https:" + href }
@@ -96,7 +96,12 @@ func phishingVisibleLinksWithCoverage(body string, coverage *mimeCoverage) []str
             continue
         }
         findings = append(findings, fmt.Sprintf("Visible link claims %s but navigates to %s", shownHost, destHost))
-        if len(findings) == 10 { break }
+        if len(findings) == 10 {
+            if anchorIndex+1 < len(anchors) {
+                coverage.mark("Phishing visible-link finding limit reached; remaining anchors not inspected")
+            }
+            break
+        }
     }
     return findings
 }
