@@ -43,13 +43,16 @@ func checkRelayCapabilities(client *smtp.Client, m core.Message, raw []byte) err
 		return errors.New("SMTP relay client is nil")
 	}
 	if err := validateRelayEnvelope(m); err != nil {
-		return err
+		return wrapInvalidRelayOriginal(err)
+	}
+	if err := validateRelayWireData(raw); err != nil {
+		return wrapInvalidRelayOriginal(err)
 	}
 	// RFC 6532 raw UTF-8 headers require SMTPUTF8 even when the envelope
 	// is entirely ASCII. Eight-bit body data alone only needs 8BITMIME.
 	headerUTF8, err := inspectRelayHeader(raw)
 	if err != nil {
-		return err
+		return wrapInvalidRelayOriginal(err)
 	}
 	if containsEightBit(raw) {
 		if ok, _ := client.Extension("8BITMIME"); !ok {
