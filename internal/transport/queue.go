@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -177,19 +178,41 @@ func (q *DeliveryQueue) put(rec spoolRecord) error {
 	}
 	return q.syncDirectory()
 }
+// readSpoolFile checks the opened descriptor against the lstat result
+// BEFORE reading any message bytes. A replaced path or symlink cannot make
+// the queue read a different file between inspection and open. The read is
+// bounded even when the file grows after the initial stat.
+func readSpoolFile(path string, inspected os.FileInfo) ([]byte, error) {
+ const maxRecordSize int64 = 20 << 20
+ if !inspected.Mode().IsRegular() || inspected.Size() < 2 || inspected.Size() > maxRecordSize {
+  return nil, errors.New("unsafe or oversized queue record")
+ }
+ f, err := os.Open(path)
+ if err != nil { return nil, err }
+ defer f.Close()
+ opened, err := f.Stat()
+ if err != nil { return nil, err }
+ if !opened.Mode().IsRegular() || !os.SameFile(inspected, opened) {
+  return nil, errors.New("queue record changed between inspection and open")
+ }
+ if opened.Size() < 2 || opened.Size() > maxRecordSize {
+  return nil, errors.New("queue record size changed or exceeds limit")
+ }
+ raw, err := io.ReadAll(io.LimitReader(f, maxRecordSize+1))
+ if err != nil { return nil, err }
+ if int64(len(raw)) != opened.Size() {
+  return nil, errors.New("queue record changed size while reading")
+ }
+ return raw, nil
+}
+
 func (q *DeliveryQueue) get(id string) (spoolRecord, error) {
-	if !validQueueID(id) { return spoolRecord{}, os.ErrNotExist }
-	// Never follow a symlink or load an unbounded, attacker-replaced spool file.
-	path := q.path(id)
-	meta, e := os.Lstat(path)
-	if e != nil { return spoolRecord{}, e }
-	if !meta.Mode().IsRegular() || meta.Size() > 20<<20 || meta.Size() < 2 {
-		return spoolRecord{}, fmt.Errorf("unsafe or oversized queue job %s", id)
-	}
-	b, e := os.ReadFile(path)
-	if e != nil {
-		return spoolRecord{}, e
-	}
+ if !validQueueID(id) { return spoolRecord{}, os.ErrNotExist }
+ path := q.path(id)
+ meta, err := os.Lstat(path)
+ if err != nil { return spoolRecord{}, err }
+ b, err := readSpoolFile(path, meta)
+ if err != nil { return spoolRecord{}, fmt.Errorf("unsafe queue job %s: %w", id, err) }
 	var rec spoolRecord
 	if e = json.Unmarshal(b, &rec); e != nil {
 		return spoolRecord{}, e

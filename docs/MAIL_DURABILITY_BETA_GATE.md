@@ -63,3 +63,18 @@ Perform only on a **designated test mailbox** under an administrator's supervisi
 - A cold backup/restore regression now exercises the full original-message
   recovery path: archived outbox, restored data directory, rebuilt scan history,
   one relay attempt and queue finalization.
+
+## Queue record replacement and bounded read (October 30 beta gate)
+
+The native delivery spool now validates the identity of an opened file
+descriptor against the preceding `lstat` before reading the original
+message. This closes the inspect-then-`ReadFile` replacement window.
+Reads are capped at 20 MiB, and a size change during reading fails
+closed. Symlinked, replaced, truncated and oversized records cannot
+be forwarded. The SHA-256 immutable-envelope and mutable-state
+integrity checks still apply after the descriptor-level validation.
+
+This is a defense-in-depth hardening of the local single-node spool,
+not a claim of exactly-once SMTP delivery or immunity to a compromised
+same-UID process. Real disk-full/crash testing and upstream
+acknowledgement ambiguity remain production gates.
