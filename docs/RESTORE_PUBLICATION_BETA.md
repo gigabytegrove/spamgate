@@ -1,19 +1,18 @@
 # Native beta backup/restore publication safety
 
 Offline restore verifies the backup manifest before extracting. Each restored
-file is now independently checked against the manifest SHA-256 while being
-written and fsynced; a changed archive cannot silently publish different
-bytes between initial verification and extraction.
+file is independently checked against the manifest SHA-256 while being written
+and fsynced, guarding against archive mutation between inspection and extraction.
 
-On Unix, the final restore destination is reserved with an exclusive
-directory creation before the staged directory is renamed over the empty
-reservation. An already-existing destination, including one created after
-the initial check, is refused. A destination that another writer populates
-cannot be overwritten by the rename; failure cleanup never recursively
-removes a destination. The parent directory is fsynced after publication.
-On Windows, the platform rename's existing-destination refusal is retained.
+On Linux amd64/arm64, final publication uses the kernel's
+`renameat2(RENAME_NOREPLACE)` syscall. It atomically moves the staged,
+verified directory only when the destination does **not** exist, even if
+another process creates that destination after the initial check. It then
+fsyncs the parent directory. An unsupported Linux architecture fails closed
+rather than falling back to overwrite-capable rename. Windows uses its
+existing-destination-refusing directory rename behavior.
 
-This is **offline-only** and requires SpamGate to be stopped. The test suite
-covers normal publication and a concurrent destination containing data.
-It does not certify a live production-host restore, data migration, actual
-systemd update or rollback. No running mail server is changed.
+The test suite covers normal publication, concurrent destination creation,
+and refusal to replace existing data. This remains an **offline-only**
+operation with SpamGate stopped. Real production-host backup, restore,
+update and rollback are not yet qualified. No running mail server is changed.

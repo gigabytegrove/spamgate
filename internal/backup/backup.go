@@ -325,26 +325,3 @@ func Restore(archive, destination string) error {
 	return publishRestoredDirectory(stage, dest)
 }
 
-// Reserve the destination after staging, so a concurrent restore or operator
-// cannot have an existing directory silently replaced by os.Rename. On Unix
-// an empty directory can be replaced atomically; a nonempty one cannot.
-// Windows Rename already refuses an existing directory. The reservation is
-// removed only when still empty after a failed rename.
-func publishRestoredDirectory(stage, dest string) error {
-	if runtime.GOOS != "windows" {
-		if err := os.Mkdir(dest, 0700); err != nil {
-			return fmt.Errorf("restore destination appeared before publication: %w", err)
-		}
-		if err := os.Rename(stage, dest); err != nil {
-			_ = os.Remove(dest) // never recursively delete another writer's files
-			return fmt.Errorf("cannot atomically publish restored data: %w", err)
-		}
-		parent, err := os.Open(filepath.Dir(dest))
-		if err != nil { return fmt.Errorf("restore published but parent directory sync failed: %w", err) }
-		syncErr := parent.Sync()
-		closeErr := parent.Close()
-		if syncErr != nil { return fmt.Errorf("restore published but parent directory sync failed: %w", syncErr) }
-		return closeErr
-	}
-	return os.Rename(stage, dest)
-}
