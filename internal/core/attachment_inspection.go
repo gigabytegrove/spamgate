@@ -80,6 +80,9 @@ func InspectMIMEAttachments(raw []byte) ([]AttachmentFinding, error) {
 		found = append(found, AttachmentFinding{Symbol: symbol, Detail: detail, Score: score})
 	}
 	count := 0
+	// Shared across nested multiparts and forwarded messages; a message may
+	// contain many individually small parts without being cheap to inspect.
+	remainingBytes := int64(20 << 20)
 	var inspect func(mail.Header, []byte, int)
 	inspect = func(h mail.Header, data []byte, depth int) {
 		if depth > 6 || count >= 60 {
@@ -112,8 +115,46 @@ func InspectMIMEAttachments(raw []byte) ([]AttachmentFinding, error) {
 					appendFinding("MIME_LIMIT", "Attachment exceeds 5 MiB inspection limit", 0)
 					continue
 				}
+				if int64(len(chunk)) > remainingBytes {
+					appendFinding("MIME_LIMIT", "Combined MIME inspection byte budget exceeded", 0)
+					break
+				}
+				remainingBytes -= int64(len(chunk))
 				inspect(mail.Header(part.Header), chunk, depth+1)
 			}
+			// Exhausting the part budget is not evidence that the multipart ended.
+			// Check for one more part so a hidden 61st attachment is reported.
+			if count >= 60 {
+				part, nextErr := mr.NextPart()
+				if nextErr == nil {
+					_ = part.Close()
+					appendFinding("MIME_LIMIT", "More than 60 MIME sections; remaining parts uninspected", 0)
+				} else if nextErr != io.EOF {
+					appendFinding("MIME_MALFORMED", "Multipart termination could not be parsed", 0)
+				}
+			}
+			return
+		}
+		// Forwarded RFC822 messages can contain an executable or a ZIP several
+		// MIME layers below an innocuous message/rfc822 wrapper. Decode the
+		// wrapper, then apply the same depth, count and byte budgets recursively.
+		if media == "message/rfc822" {
+			payload, decodeErr := attachmentPayload(data, h.Get("Content-Transfer-Encoding"))
+			if decodeErr != nil || len(payload) > 5<<20 {
+				appendFinding("MIME_UNREADABLE", "Forwarded message cannot be decoded safely", 0)
+				return
+			}
+			embedded, parseErr := mail.ReadMessage(bytes.NewReader(payload))
+			if parseErr != nil {
+				appendFinding("MIME_MALFORMED", "Forwarded RFC822 message is malformed", 0)
+				return
+			}
+			inner, readErr := io.ReadAll(io.LimitReader(embedded.Body, (5<<20)+1))
+			if readErr != nil || len(inner) > 5<<20 {
+				appendFinding("MIME_LIMIT", "Forwarded RFC822 body exceeds inspection limit", 0)
+				return
+			}
+			inspect(embedded.Header, inner, depth+1)
 			return
 		}
 		name := params["name"]
