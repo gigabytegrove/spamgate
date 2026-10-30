@@ -13,6 +13,12 @@ async function api(path,options={}){
   try{data=await response.json()}catch{data={error:'Unexpected response from SpamGate'}}
   if(!response.ok)throw Error(data?.error||`Request failed (${response.status})`);return data;
 }
+async function saveRecipientPolicies(policies){
+ const expected_revision=S.config?.recipient_policies_revision;
+ if(!expected_revision)throw Error('Mailbox policy revision unavailable; reload before editing');
+ try{return await api('/api/v1/recipient-policies',{method:'PUT',json:{policies,expected_revision}})}
+ catch(e){if(e.message.includes('changed since'))await refresh();throw e}
+}
 async function start(){try{const status=await api('/api/v1/status');if(!status.configured){S.setup=true;render();return}try{S.me=await api('/api/v1/me');S.authenticated=true;S.section=permitted(sectionFromLocation())?sectionFromLocation():'overview';await refresh();if(S.section==='diagnostics')void loadDiagnostics()}catch{S.authenticated=false;render()}}catch(e){$('#app').innerHTML=`<div class="auth-side"><div class="auth-panel"><h1>Cannot connect</h1><p>${esc(e.message)}</p><button class="primary" id="retry">Retry connection</button></div></div>`}}
 async function refresh(){if(!S.authenticated)return;try{
  const [cfg,msg,stats]=await Promise.all([api('/api/v1/config'),api('/api/v1/messages?limit=1000'),api('/api/v1/statistics')]);
@@ -782,7 +788,7 @@ document.addEventListener('click',async event=>{const el=event.target.closest('b
   if(id==='close-detail'||id==='detail-layer'){S.preview=null;S.headerView=null;S.deliveryEvidence=null;S.investigation=null;S.inspect=null;render();restoreInspectionFocus();return}
   if(id==='copy-token'){await navigator.clipboard.writeText(S.onceToken);alertUser('Key copied');return}
   if(el.dataset.neuralLabel){const label=el.dataset.neuralLabel;if(!S.inspect || !confirm(`Train the neural model with this confirmed ${label} message? This modifies future scoring.`))return;await api('/api/v1/neural/train/'+encodeURIComponent(S.inspect.id)+'?label='+label,{method:'POST'});await refresh();alertUser('Neural classifier trained');return}
-  if(el.dataset.removeRecipientPolicy){const mailbox=el.dataset.removeRecipientPolicy;if(!confirm('Remove special scoring thresholds for '+mailbox+'?'))return;const policies=(S.config?.recipient_policies||[]).filter(p=>p.mailbox.toLowerCase()!==mailbox.toLowerCase());await api('/api/v1/recipient-policies',{method:'PUT',json:{policies}});await refresh();alertUser('Mailbox policy removed');return}
+  if(el.dataset.removeRecipientPolicy){const mailbox=el.dataset.removeRecipientPolicy;if(!confirm('Remove special scoring thresholds for '+mailbox+'?'))return;const policies=(S.config?.recipient_policies||[]).filter(p=>p.mailbox.toLowerCase()!==mailbox.toLowerCase());await saveRecipientPolicies(policies);await refresh();alertUser('Mailbox policy removed');return}
   if(el.dataset.fuzzyDelete){if(!confirm('Delete this fuzzy fingerprint? Future scans will no longer match it.'))return;await api('/api/v1/fuzzy/entries/'+encodeURIComponent(el.dataset.fuzzyDelete),{method:'DELETE'});await refresh();alertUser('Fingerprint deleted');return}
   if(id==='discard-quarantine'){if(!confirm('Permanently delete this quarantined email? The original cannot be recovered or released afterward.'))return;const discarded=await api('/api/v1/messages/'+S.inspect.id+'/quarantine',{method:'DELETE'});await refresh();S.inspect=discarded;render();alertUser('Quarantined original permanently deleted');return}
   if(id==='release'){if(!confirm('Release this original quarantined message to its recipient(s)? This cannot be undone.'))return;const updated=await api('/api/v1/messages/'+S.inspect.id+'/release',{method:'POST'});await refresh();S.inspect=updated;render();alertUser('Message released to the SMTP relay');return}
@@ -832,7 +838,7 @@ document.addEventListener('submit',async event=>{const form=event.target;if(!(fo
       const policy={mailbox:String(fields.mailbox).trim().toLowerCase(),tag_threshold:Number(fields.tag_threshold),quarantine_threshold:Number(fields.quarantine_threshold),reject_threshold:Number(fields.reject_threshold)};
       const policies=(S.config?.recipient_policies||[]).filter(p=>p.mailbox.toLowerCase()!==policy.mailbox);
       policies.push(policy);
-      await api('/api/v1/recipient-policies',{method:'PUT',json:{policies}});
+      await saveRecipientPolicies(policies);
       await refresh();alertUser('Mailbox policy saved');break;
     }
     case 'settings-form':data={site_name:'SpamGate',tag_threshold:Number(fields.tag_threshold),quarantine_threshold:Number(fields.quarantine_threshold),reject_threshold:Number(fields.reject_threshold),retention_days:Number(fields.retention_days),max_history:Number(fields.max_history),dnsbl_enabled:fields.dnsbl_enabled==='on',quarantine_mode:fields.quarantine_mode||'hold',subject_rewrite:fields.subject_rewrite==='on',phishing_links:fields.phishing_links==='on',attachment_inspection:fields.attachment_inspection==='on',external_fuzzy_enabled:fields.external_fuzzy_enabled==='on',threat_feed_enabled:fields.threat_feed_enabled==='on',reviewed_reputation:fields.reviewed_reputation==='on',greylist_enabled:fields.greylist_enabled==='on',greylist_wait_minutes:Number(fields.greylist_wait_minutes)||5,rate_limit_enabled:fields.rate_limit_enabled==='on',rate_limit_per_hour:Number(fields.rate_limit_per_hour)||240};await api('/api/v1/settings',{method:'PUT',json:data});await refresh();alertUser('Policy saved');break;

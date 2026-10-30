@@ -618,6 +618,13 @@ func (s *Server) config(w http.ResponseWriter, r *http.Request) {
 		c.RecipientPolicies = nil
 		c.Onboarding = core.Onboarding{}
 	}
+	if id.Role == "admin" {
+		jsonReply(w, 200, struct {
+			core.Config
+			RecipientPoliciesRevision string `json:"recipient_policies_revision"`
+		}{Config: c, RecipientPoliciesRevision: recipientPoliciesRevision(c.RecipientPolicies)})
+		return
+	}
 	jsonReply(w, 200, c)
 }
 func (s *Server) settings(w http.ResponseWriter, r *http.Request) {

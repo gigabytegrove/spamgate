@@ -38,7 +38,7 @@ func TestRecipientPolicyAdminUpdateAndRedaction(t *testing.T) {
 		s.Router().ServeHTTP(resp, req)
 		return resp
 	}
-	valid := map[string]any{"policies": []map[string]any{{"mailbox": "alice@example.org", "tag_threshold": 2, "quarantine_threshold": 5, "reject_threshold": 10}}}
+	valid := map[string]any{"expected_revision": recipientPoliciesRevision(nil), "policies": []map[string]any{{"mailbox": "alice@example.org", "tag_threshold": 2, "quarantine_threshold": 5, "reject_threshold": 10}}}
 	if r := call("PUT", "/api/v1/recipient-policies", "admin-token", "", valid); r.Code != 403 {
 		t.Fatalf("CSRF bypass: %d", r.Code)
 	}
@@ -48,7 +48,7 @@ func TestRecipientPolicyAdminUpdateAndRedaction(t *testing.T) {
 	if r := call("PUT", "/api/v1/recipient-policies", "admin-token", "admin-csrf", valid); r.Code != 200 {
 		t.Fatalf("policy not accepted: %d %s", r.Code, r.Body)
 	}
-	bad := map[string]any{"policies": []map[string]any{{"mailbox": "alice@example.org", "tag_threshold": 10, "quarantine_threshold": 5, "reject_threshold": 20}}}
+	bad := map[string]any{"expected_revision": recipientPoliciesRevision(st.Config().RecipientPolicies), "policies": []map[string]any{{"mailbox": "alice@example.org", "tag_threshold": 10, "quarantine_threshold": 5, "reject_threshold": 20}}}
 	if r := call("PUT", "/api/v1/recipient-policies", "admin-token", "admin-csrf", bad); r.Code != 400 {
 		t.Fatalf("bad thresholds accepted: %d", r.Code)
 	}
