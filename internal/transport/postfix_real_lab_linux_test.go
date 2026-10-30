@@ -84,6 +84,26 @@ func TestRealPostfixMilterLocalDeliveryAndTempfail(t *testing.T) {
   t.Fatalf("Milter did not save valid accept request: %+v",scans)
  }
  t.Logf("Postfix confirmed local Maildir receipt; accepted Milter scan %s",scans[0].ID)
+ // A real Postfix MAIL FROM:<> DSN must retain its null reverse path in
+ // SpamGate history and still reach the recipient's Maildir.
+ beforeDSN:=len(accepted)
+ if e:=smtp.SendMail("127.0.0.1:25",nil,"",[]string{recipient},msg("null-reverse-path","Legitimate delivery status report."));e!=nil{
+  t.Fatalf("real Postfix rejected null-sender DSN: %v",e)
+ }
+ for i:=0;i<80;i++{
+  accepted,e=listMaildir();if e!=nil{t.Fatal(e)}
+  if len(accepted)>beforeDSN{break}
+  time.Sleep(150*time.Millisecond)
+ }
+ if len(accepted)<=beforeDSN{t.Fatal("Postfix accepted null-sender DSN but no Maildir delivery was observed")}
+ scans=store.List(20,"")
+ if len(scans)<2||scans[0].Sender!=""||scans[0].MTAAction!="continue_requested"{
+  t.Fatalf("null-sender Milter scan lost reverse path or disposition: %+v",scans)
+ }
+ if scans[0].MTAQueueID==""{
+  t.Fatal("real Postfix null-sender Milter scan lacks queue ID correlation")
+ }
+ t.Logf("Real Postfix null-sender DSN reached Maildir with Milter queue ID %s",scans[0].MTAQueueID)
  // Real Postfix Milter quarantine: the mail must enter Postfix's hold queue,
  // not be misreported as delivered or placed into Dovecot Junk.
  if e:=smtp.SendMail("127.0.0.1:25",nil,"hold-lab@example.org",[]string{recipient},msg("hold-request","Harmless forced Postfix hold scenario."));e!=nil{
