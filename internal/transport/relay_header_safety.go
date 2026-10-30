@@ -88,8 +88,15 @@ func validateRelayAddress(address string, allowNull bool) error {
 	// single bare RFC 5322 mailbox to prevent angle-bracket and ESMTP
 	// parameter injection; quoted local parts remain valid.
 	parsed, err := mail.ParseAddress(address)
-	if err != nil || parsed.Address != address {
+	if err != nil {
 		return errors.New("address is not a single bare mailbox")
+	}
+	// ParseAddress removes quoting from the local part. Compare against
+	// its canonical mailbox rendering instead of parsed.Address, so
+	// legitimate quoted local parts remain valid without allowing
+	// display names, comments or injected ESMTP parameters.
+	if (&mail.Address{Address: parsed.Address}).String() != "<"+address+">" {
+		return errors.New("address is not a canonical bare mailbox")
 	}
 	return nil
 }
