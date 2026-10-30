@@ -83,8 +83,8 @@ func InspectMIMEAttachments(raw []byte) ([]AttachmentFinding, error) {
 	// Shared across nested multiparts and forwarded messages; a message may
 	// contain many individually small parts without being cheap to inspect.
 	remainingBytes := int64(20 << 20)
-	var inspect func(mail.Header, []byte, int)
-	inspect = func(h mail.Header, data []byte, depth int) {
+	var inspect func(mail.Header, []byte, int, bool)
+	inspect = func(h mail.Header, data []byte, depth int, forwarded bool) {
 		if depth > 6 || count >= 60 {
 			appendFinding("MIME_LIMIT", "Attachment inspection depth or part count exceeded", 0)
 			return
@@ -120,7 +120,7 @@ func InspectMIMEAttachments(raw []byte) ([]AttachmentFinding, error) {
 					break
 				}
 				remainingBytes -= int64(len(chunk))
-				inspect(mail.Header(part.Header), chunk, depth+1)
+				inspect(mail.Header(part.Header), chunk, depth+1, forwarded)
 			}
 			// Exhausting the part budget is not evidence that the multipart ended.
 			// Check for one more part so a hidden 61st attachment is reported.
@@ -154,7 +154,7 @@ func InspectMIMEAttachments(raw []byte) ([]AttachmentFinding, error) {
 				appendFinding("MIME_LIMIT", "Forwarded RFC822 body exceeds inspection limit", 0)
 				return
 			}
-			inspect(embedded.Header, inner, depth+1)
+			inspect(embedded.Header, inner, depth+1, true)
 			return
 		}
 		name := params["name"]
@@ -169,7 +169,12 @@ func InspectMIMEAttachments(raw []byte) ([]AttachmentFinding, error) {
 			name = "unnamed attachment"
 		}
 		for _, risk := range attachmentNameFindings(name) {
-			appendFinding(risk.Symbol, risk.Detail, risk.Score)
+			// The main scanner already scores ordinary MIME filenames.
+			// Retain diagnostic evidence here without scoring them twice.
+			// Forwarded RFC822 attachments are not covered by that outer pass.
+			weight := 0.0
+			if forwarded { weight = risk.Score }
+			appendFinding(risk.Symbol, risk.Detail, weight)
 		}
 		label := attachmentLabel(name)
 		payload, err := attachmentPayload(data, h.Get("Content-Transfer-Encoding"))
@@ -185,6 +190,6 @@ func InspectMIMEAttachments(raw []byte) ([]AttachmentFinding, error) {
 			inspectZIPAttachment(payload, label, appendFinding)
 		}
 	}
-	inspect(msg.Header, body, 0)
+	inspect(msg.Header, body, 0, false)
 	return found, nil
 }
