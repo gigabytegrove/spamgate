@@ -2,6 +2,8 @@ package core
 
 import (
 	"bufio"
+ "context"
+ "runtime"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -27,6 +29,8 @@ type Store struct {
 	neural   NeuralModel
 	order    []string
 	policy   deliveryPolicyState
+	journalSize int64
+	journalKnown bool
 }
 
 func ID() string {
@@ -74,6 +78,7 @@ func Open(dir string) (*Store, error) {
 		return nil, err
 	}
 	defer f.Close()
+	if fi, e := f.Stat(); e == nil {s.journalKnown=true;s.journalSize=fi.Size()}
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	for scanner.Scan() {
@@ -193,29 +198,36 @@ func (s *Store) Save(m Message) error {
 		return e
 	}
 	b = append(b, '\n')
-	f, e := os.OpenFile(filepath.Join(s.dir, "events.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	path := filepath.Join(s.dir, "events.jsonl")
+ if s.journalKnown {
+  fi,e:=os.Lstat(path)
+  if e!=nil{return fmt.Errorf("existing history journal missing: %w",e)}
+  if !fi.Mode().IsRegular() || fi.Size()<s.journalSize{
+   return errors.New("history journal deleted/truncated; refusing to append or overwrite forensic evidence")
+  }
+ }
+ f, e := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if e != nil {
 		return e
 	}
 	_, e = f.Write(b)
-	if e == nil {
-		e = f.Sync()
-	}
-	closeErr := f.Close()
+	if e==nil { e=f.Sync() }
+ var size int64
+ if e==nil {if fi,statErr:=f.Stat();statErr==nil{size=fi.Size()}else{e=statErr}}
+ closeErr := f.Close()
 	if e != nil {
 		return e
 	}
-	if closeErr != nil {
-		return closeErr
-	}
-	if _, ok := s.messages[m.ID]; !ok {
+	if closeErr != nil {return closeErr}
+ s.journalSize=size;s.journalKnown=true
+ if _, ok := s.messages[m.ID]; !ok {
 		s.order = append(s.order, m.ID)
 	}
 	s.messages[m.ID] = m
 	prior := len(s.order)
 	s.pruneLocked()
 	if len(s.order) != prior {
-		_ = s.compactLocked()
+		if err:=s.compactLocked();err!=nil{slog.Error("history compaction failed; original journal retained", "error",err)}
 	}
 	return nil
 }
@@ -303,10 +315,14 @@ func (s *Store) pruneLocked() {
 	s.order = keep
 }
 func (s *Store) Compact() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.pruneLocked()
-	return s.compactLocked()
+ s.mu.Lock();defer s.mu.Unlock()
+ audit,err:=s.auditHistoryLocked(context.Background())
+ if err!=nil{return err}
+ if audit.Status!="ok" && !(audit.Status=="missing"&&!s.journalKnown&&len(s.order)==0){
+  return fmt.Errorf("refusing history compaction: %s (%s)",audit.Status,audit.Detail)
+ }
+ s.pruneLocked()
+ return s.compactLocked()
 }
 func (s *Store) compactLocked() error {
 	path := filepath.Join(s.dir, "events.jsonl")
@@ -334,7 +350,13 @@ func (s *Store) compactLocked() error {
 	if e = f.Close(); e != nil {
 		return e
 	}
-	return os.Rename(name, path)
+	if e=os.Rename(name,path);e!=nil{return e}
+ if fi,e:=os.Stat(path);e==nil{s.journalSize=fi.Size();s.journalKnown=true}else{return e}
+ if runtime.GOOS!="windows" {
+  directory,e:=os.Open(s.dir);if e!=nil{return e};defer directory.Close()
+  if e=directory.Sync();e!=nil{return e}
+ }
+ return nil
 }
 func (s *Store) Quarantine(id string, raw []byte) error {
 	dir := filepath.Join(s.dir, "quarantine")

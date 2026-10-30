@@ -38,6 +38,10 @@ type HistoryIntegrity struct {
 func (s *Store) AuditHistory(ctx context.Context) (HistoryIntegrity, error) {
  s.mu.RLock()
  defer s.mu.RUnlock()
+ return s.auditHistoryLocked(ctx)
+}
+
+func (s *Store) auditHistoryLocked(ctx context.Context) (HistoryIntegrity, error) {
  out := HistoryIntegrity{
   Status:"ok", Detail:"Disk records and loaded retained scans are consistent",
   LoadedRetained:len(s.order),

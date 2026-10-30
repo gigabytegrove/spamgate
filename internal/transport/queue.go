@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -43,6 +44,7 @@ type QueuedMessage struct {
 type spoolRecord struct {
 	QueuedMessage
 	RawRFC822 []byte `json:"raw"`
+	Scan *core.Message `json:"scan,omitempty"` // persisted metadata survives crash before events.jsonl mirror
 }
 
 type QueueSummary struct {
@@ -131,7 +133,14 @@ func (q *DeliveryQueue) get(id string) (spoolRecord, error) {
 			}
 		}
 	}
-	b, e := os.ReadFile(q.path(id))
+	// Never follow a symlink or load an unbounded, attacker-replaced spool file.
+	path := q.path(id)
+	meta, e := os.Lstat(path)
+	if e != nil { return spoolRecord{}, e }
+	if !meta.Mode().IsRegular() || meta.Size() > 20<<20 || meta.Size() < 2 {
+		return spoolRecord{}, fmt.Errorf("unsafe or oversized queue job %s", id)
+	}
+	b, e := os.ReadFile(path)
 	if e != nil {
 		return spoolRecord{}, e
 	}
@@ -139,7 +148,8 @@ func (q *DeliveryQueue) get(id string) (spoolRecord, error) {
 	if e = json.Unmarshal(b, &rec); e != nil {
 		return spoolRecord{}, e
 	}
-	if rec.ID != id || rec.Size <= 0 || rec.Size > 10<<20 || len(rec.RawRFC822) != rec.Size {
+	if rec.ID != id || rec.Size <= 0 || rec.Size > 10<<20 || len(rec.RawRFC822) != rec.Size ||
+		len(rec.Recipients) == 0 || len(rec.Recipients) > 1000 {
 		return spoolRecord{}, fmt.Errorf("invalid queue job %s", id)
 	}
 	switch rec.State {
@@ -208,7 +218,13 @@ func (q *DeliveryQueue) Enqueue(m core.Message, raw []byte) error {
 	} else if !errors.Is(e, os.ErrNotExist) {
 		return e
 	}
-	return q.put(spoolRecord{QueuedMessage: job, RawRFC822: raw})
+	// Save the complete scan decision with the fsync'd outbox entry. The
+	// events.jsonl mirror is best-effort after SMTP 250 and may not exist
+	// after an interruption; the queue must be able to reconstruct it.
+	saved := m
+	saved.HeaderSnapshot = nil
+	saved.HeaderTruncated = false
+	return q.put(spoolRecord{QueuedMessage: job, RawRFC822: raw, Scan: &saved})
 }
 func (q *DeliveryQueue) Retry(id string) error {
 	q.mu.Lock()
@@ -301,7 +317,15 @@ func (q *DeliveryQueue) ProcessDue(ctx context.Context) error {
 		q.mu.Unlock()
 		msg, ok := q.store.Get(rec.ID)
 		if !ok {
-			msg = core.Message{ID: rec.ID, Sender: rec.Sender, Recipients: rec.Recipients, Subject: rec.Subject, Delivery: "queued"}
+			// Restore a missing history entry from the durable outbox before
+			// forwarding. Never silently send then delete an untracked mail.
+			msg = queueHistoryMessage(rec)
+			if err := q.store.Save(msg); err != nil {
+				q.mu.Lock()
+				// Keep the in-flight spool for a later recovery attempt.
+				q.mu.Unlock()
+				return fmt.Errorf("cannot reconstruct queued scan history: %w", err)
+			}
 		}
 		sendCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
 		sendErr := q.send(sendCtx, msg, rec.RawRFC822)
@@ -345,13 +369,33 @@ func (q *DeliveryQueue) ProcessDue(ctx context.Context) error {
 	}
 	return nil
 }
+func queueHistoryMessage(rec spoolRecord) core.Message {
+	if rec.Scan != nil && rec.Scan.ID == rec.ID {
+		msg := *rec.Scan
+		msg.HeaderSnapshot = nil
+		msg.HeaderTruncated = false
+		msg.Delivery = "queued"
+		return msg
+	}
+	// Older queue formats lacked the full scan; recover the envelope and
+	// mark evidence limitations explicitly, never claim an old verdict.
+	return core.Message{
+		ID: rec.ID, Timestamp: rec.Created,
+		Sender: rec.Sender, Recipients: append([]string(nil), rec.Recipients...),
+		Subject: rec.Subject, Connector: "smtp", Action: "accept", Delivery: "queued",
+		Findings: []core.Finding{{Symbol:"QUEUE_HISTORY_RECOVERED",Source:"recovery/spool",Detail:"Recreated envelope from legacy queue record; original scan evidence unavailable"}},
+	}
+}
 func (q *DeliveryQueue) finalizeLocked(rec spoolRecord) {
 	msg, ok := q.store.Get(rec.ID)
-	if ok {
-		msg.Delivery = "relayed"
-		if err := q.store.Save(msg); err != nil {
-			return
-		} // leave delivered record for recovery
+	if !ok {
+		msg = queueHistoryMessage(rec)
+		slog.Warn("reconstructing delivered mail history from durable spool", "id", rec.ID)
+	}
+	msg.Delivery = "relayed"
+	if err := q.store.Save(msg); err != nil {
+		slog.Error("delivered mail history persistence failed; retaining durable spool", "id", rec.ID, "error", err)
+		return
 	}
 	if err := os.Remove(q.path(rec.ID)); err != nil {
 		return
