@@ -1,5 +1,5 @@
 'use strict';
-const S={authenticated:false,setup:false,me:null,config:null,messages:[],stats:null,bayesStats:null,fuzzyStats:null,fuzzyEntries:[],neuralStats:null,signals:[],runtime:null,hostReport:null,section:'overview',inspect:null,search:'',filterAction:'all',onceToken:null,menu:false,deliveryQueue:null,postfixHold:null,investigation:null,historyResults:null,historyOffset:0,editRule:null,preview:null,diagnostics:null,readiness:null,wizardLoaded:false,wizardStep:0,wizardServer:'testing',wizardMode:'test',wizardPolicy:'balanced',livePollBusy:false,liveLastCheck:null,liveError:null,liveNewCount:0,overviewWindow:'24h',headerView:null,updateInfo:null,updateError:null,telemetry:null,telemetryError:null,diagnosticsCheckedAt:null,diagnosticsBusy:false,monitorData:null,monitorError:null,policyPreview:null,policyPreviewError:null,sgtubeCatalog:null,sgtubeSelected:null,sgtubeMessages:null,sgtubeResult:null,sgtubeError:null};
+const S={authenticated:false,setup:false,me:null,config:null,messages:[],stats:null,bayesStats:null,fuzzyStats:null,fuzzyEntries:[],neuralStats:null,signals:[],runtime:null,hostReport:null,section:'overview',inspect:null,search:'',filterAction:'all',onceToken:null,menu:false,deliveryQueue:null,postfixHold:null,investigation:null,historyResults:null,historyOffset:0,editRule:null,preview:null,diagnostics:null,readiness:null,wizardLoaded:false,wizardStep:0,wizardServer:'testing',wizardMode:'test',wizardPolicy:'balanced',livePollBusy:false,liveLastCheck:null,liveError:null,liveNewCount:0,overviewWindow:'24h',headerView:null,updateInfo:null,updateError:null,telemetry:null,telemetryError:null,diagnosticsCheckedAt:null,diagnosticsBusy:false,monitorData:null,monitorError:null,policyPreview:null,policyPreviewError:null,sgtubeCatalog:null,sgtubeSelected:null,sgtubeMessages:null,sgtubeResult:null,sgtubeError:null,historyAudit:null,historyAuditError:null,historyAuditBusy:false,historyLoaded:false,historyRefreshError:null};
 const $=q=>document.querySelector(q);
 const esc=v=>String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const n=v=>Number(v||0).toLocaleString();
@@ -14,7 +14,19 @@ async function api(path,options={}){
   if(!response.ok)throw Error(data?.error||`Request failed (${response.status})`);return data;
 }
 async function start(){try{const status=await api('/api/v1/status');if(!status.configured){S.setup=true;render();return}try{S.me=await api('/api/v1/me');S.authenticated=true;S.section=permitted(sectionFromLocation())?sectionFromLocation():'overview';await refresh();if(S.section==='diagnostics')void loadDiagnostics()}catch{S.authenticated=false;render()}}catch(e){$('#app').innerHTML=`<div class="auth-side"><div class="auth-panel"><h1>Cannot connect</h1><p>${esc(e.message)}</p><button class="primary" id="retry">Retry connection</button></div></div>`}}
-async function refresh(){if(!S.authenticated)return;try{const [cfg,msg,stats,signals,bayes,fuzzy,entries,neural]=await Promise.all([api('/api/v1/config'),api('/api/v1/messages?limit=1000'),api('/api/v1/statistics'),api('/api/v1/signals'),S.me.role==='admin'?api('/api/v1/bayes/stats'):Promise.resolve(null),S.me.role==='admin'?api('/api/v1/fuzzy/stats'):Promise.resolve(null),S.me.role==='admin'?api('/api/v1/fuzzy/entries'):Promise.resolve([]),S.me.role==='admin'?api('/api/v1/neural/stats'):Promise.resolve(null)]);S.config=cfg;if(!S.wizardLoaded&&cfg.onboarding?.completed){S.wizardServer=cfg.onboarding.server||'testing';S.wizardMode=cfg.onboarding.mode||'test';S.wizardPolicy=cfg.onboarding.policy||'balanced';S.wizardLoaded=true;if(cfg.onboarding.mode!=='test'&&!cfg.onboarding.activated)S.wizardStep=4}if(S.me.role==='admin'&&!cfg.onboarding?.completed&&S.section==='overview'){S.section='welcome';window.history.replaceState({section:'welcome'},'','/welcome')}S.messages=Array.isArray(msg)?msg:[];S.stats=stats;S.signals=Array.isArray(signals)?signals:[];S.bayesStats=bayes;S.fuzzyStats=fuzzy;S.fuzzyEntries=entries;S.neuralStats=neural;
+async function refresh(){if(!S.authenticated)return;try{
+ const [cfg,msg,stats]=await Promise.all([api('/api/v1/config'),api('/api/v1/messages?limit=1000'),api('/api/v1/statistics')]);
+ // History is essential. Optional detector endpoints must never make a
+ // successful history response disappear when a model is unavailable.
+ const optional=await Promise.allSettled([
+  api('/api/v1/signals'),
+  S.me.role==='admin'?api('/api/v1/bayes/stats'):Promise.resolve(null),
+  S.me.role==='admin'?api('/api/v1/fuzzy/stats'):Promise.resolve(null),
+  S.me.role==='admin'?api('/api/v1/fuzzy/entries'):Promise.resolve([]),
+  S.me.role==='admin'?api('/api/v1/neural/stats'):Promise.resolve(null)
+ ]);
+ const [signals,bayes,fuzzy,entries,neural]=optional.map(x=>x.status==='fulfilled'?x.value:null);
+ S.historyLoaded=true;S.historyRefreshError=null;S.config=cfg;if(!S.wizardLoaded&&cfg.onboarding?.completed){S.wizardServer=cfg.onboarding.server||'testing';S.wizardMode=cfg.onboarding.mode||'test';S.wizardPolicy=cfg.onboarding.policy||'balanced';S.wizardLoaded=true;if(cfg.onboarding.mode!=='test'&&!cfg.onboarding.activated)S.wizardStep=4}if(S.me.role==='admin'&&!cfg.onboarding?.completed&&S.section==='overview'){S.section='welcome';window.history.replaceState({section:'welcome'},'','/welcome')}S.messages=Array.isArray(msg)?msg:[];S.stats=stats;S.signals=Array.isArray(signals)?signals:[];S.bayesStats=bayes;S.fuzzyStats=fuzzy;S.fuzzyEntries=Array.isArray(entries)?entries:[];S.neuralStats=neural;
     if(S.me.role==='admin') {
       try{S.runtime=await api('/api/v1/runtime')}catch{S.runtime=null}
       try{S.hostReport=await api('/api/v1/host')}catch{S.hostReport=null}
@@ -23,7 +35,13 @@ async function refresh(){if(!S.authenticated)return;try{const [cfg,msg,stats,sig
       try{S.monitorData=await api('/api/v1/operations/monitor');S.monitorError=null}catch(e){S.monitorData=null;S.monitorError=e.message}
       try{S.sgtubeCatalog=await api('/api/v1/spam-categories');S.sgtubeError=null}catch(e){S.sgtubeError=e.message}
     } else S.runtime=null;
-    render()}catch(e){alertUser(e.message,true);if(e.message.includes('Authentication')){S.authenticated=false;render()}}}
+    render();if(S.section==='history'&&S.me?.role==='admin')void loadHistoryAudit()
+ }catch(e){
+   S.historyRefreshError=e.message;S.historyLoaded=false;
+   alertUser(e.message,true);
+   if(e.message.includes('Authentication')){S.authenticated=false;render()}
+   else render();
+ }}
 const navigation=[
  ['overview','Home','/overview','Everyday'],
  ['investigate','Review mail','/investigations','Everyday'],
@@ -50,7 +68,7 @@ const navigation=[
 const primarySections=new Set(['overview','investigate','quarantine','history','settings']);
 function permitted(id){return S.me?.role==='admin'||!['users','tokens','lists','settings','updates','policy','connect','learning','threats','delivery','welcome','diagnostics','categories'].includes(id)}
 function sectionFromLocation(){return navigation.find(r=>r[2]===window.location.pathname)?.[0]||'overview'}
-function routeTo(id,replace=false){if(!navigation.some(r=>r[0]===id)||!permitted(id))return;S.section=id;S.menu=false;S.inspect=null;S.search='';S.filterAction='all';S.historyResults=null;S.historyOffset=0;const path=navigation.find(r=>r[0]===id)[2];if(window.location.pathname!==path)window.history[replace?'replaceState':'pushState']({section:id},'',path);render();window.scrollTo(0,0);if(id==='diagnostics'){void loadDiagnostics();void loadMonitor()}if(id==='categories')void loadCategoryCatalog() }
+function routeTo(id,replace=false){if(!navigation.some(r=>r[0]===id)||!permitted(id))return;S.section=id;S.menu=false;S.inspect=null;S.search='';S.filterAction='all';S.historyResults=null;S.historyOffset=0;const path=navigation.find(r=>r[0]===id)[2];if(window.location.pathname!==path)window.history[replace?'replaceState':'pushState']({section:id},'',path);render();window.scrollTo(0,0);if(id==='diagnostics'){void loadDiagnostics();void loadMonitor()}if(id==='categories')void loadCategoryCatalog();if(id==='history'&&S.me?.role==='admin')void loadHistoryAudit() }
 
 function authLayout(){const first=S.setup;return `<div class="auth-layout"><aside class="auth-brand"><a class="brand-lockup" href="/overview"><img class="auth-logo-image" src="/assets/spamgate-logo.png" alt="SpamGate"></a><div><div class="hero-rule" style="color:#E7BE58">YOUR EMAIL, YOUR RULES</div><h1>Less junk. More control.</h1><p>Spot spam, fix wrong decisions, and stay in control of your inbox.</p></div><div><div class="auth-graphic" aria-hidden="true"><div class="line"></div><div class="line"></div><div class="line"></div><div class="line"></div></div><small>NO HIDDEN SCORING · NO DEFAULT ADMIN PASSWORD</small></div></aside><main id="main" class="auth-side"><section class="auth-panel"><div class="overline">${first?'CREATE YOUR ACCOUNT':'WELCOME BACK'}</div><h1>${first?'First, create your account.':'Welcome back.'}</h1><p>${first?'Create your login. The setup guide comes next — no mail server changes yet.':'Sign in to review messages and manage protection.'}</p><form id="${first?'setup-form':'login-form'}">${first?`<div class="field"><label for="setupkey">First-run claim key</label><input id="setupkey" name="setup_key" required autocomplete="off" placeholder="Paste the claim key from SpamGate" spellcheck="false"></div>`:''}<div class="field"><label for="username">Administrator username</label><input id="username" name="username" required minlength="3" maxlength="48" autocomplete="username"></div><div class="field"><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="${first?'new-password':'current-password'}" required ${first?'minlength="12"':''}></div><button type="submit" class="primary">${first?'Create administrator':'Sign in'} ↗</button></form><div class="auth-foot">${first?'The claim key is unique to the current startup. Choose a password of at least 12 characters.':'Sessions expire after 12 hours. Repeated failed sign-in attempts are rate-limited.'}</div></section></main></div>`}
 
@@ -277,6 +295,28 @@ async function loadCategoryCatalog(){try{S.sgtubeCatalog=await api('/api/v1/spam
 
 function scanlab(){return `${taskIntro('TESTING','Analyze an email','Evaluate an RFC 822 message locally, without sending or modifying live mail.',[['Review mail','investigate',false]])}<div class="task-two-columns task-rule-layout"><section class="task-surface task-side-panel"><span class="task-kicker">HOW THIS WORKS</span><h2>Scan a copy of a message</h2><ol class="task-numbered"><li><b>Save a message as an .eml file.</b><span>Use a message you are authorized to inspect.</span></li><li><b>Upload it and add the SMTP details.</b><span>These help the authentication checks evaluate the right sender.</span></li><li><b>Open the result under All messages.</b><span>See the score, evidence and thresholds for that scan.</span></li></ol><div class="task-notice slim"><strong>This does not filter live mail.</strong><p>An uploaded message is an advisory scan only. It will not release, reject or hold a copy on your mail server.</p></div></section><section class="task-surface task-side-panel"><h2>Choose the email to test</h2><form id="scan-form"><div class="field"><label for="scan-file">Original email (.eml, up to 10 MiB)</label><input id="scan-file" name="eml" type="file" accept=".eml,message/rfc822" required></div><div class="field"><label for="scan-sender">SMTP envelope sender</label><input id="scan-sender" name="sender" placeholder="sender@example.com"></div><div class="field"><label for="scan-recipient">Recipient email</label><input id="scan-recipient" name="recipients" placeholder="recipient@example.com"></div><details class="task-settings-fold"><summary><b>Optional: original sending IP</b></summary><div><label for="scan-ip">Public sending IP (for SPF or DNSBL checks)</label><input id="scan-ip" name="client_ip" placeholder="203.0.113.10"><p>Use the public connecting IP, not a private server address or one from a forwarded header.</p></div></details><button class="primary" type="submit">Analyze email</button></form></section></div>`}
 
+async function loadHistoryAudit(){
+ if(S.me?.role!=='admin')return;
+ S.historyAuditBusy=true;S.historyAuditError=null;
+ try{S.historyAudit=await api('/api/v1/history/integrity')}
+ catch(e){S.historyAuditError=e.message;S.historyAudit=null}
+ finally{S.historyAuditBusy=false;if(S.section==='history')render()}
+}
+function historyIntegrityPanel(){
+ if(S.me?.role!=='admin')return '';
+ const h=S.historyAudit;
+ const fields=h?'<p><strong>Disk events: '+n(h.disk_events)+'</strong> · Unique scans: '+n(h.unique_scan_ids)+' · Loaded retained: '+n(h.loaded_retained)+' · Journal: '+n(h.file_bytes)+' bytes</p>'+
+ '<p><strong>Storage status: '+esc(h.status)+'</strong> — '+esc(h.detail)+'</p>':'<p>No on-disk integrity result yet. Verify history to distinguish an empty list from missing or unreadable storage.</p>';
+ const warning=h&&h.status!=='ok'?'<p role="alert"><strong>History needs investigation.</strong> The audit reports '+esc(h.status)+'. Preserve events.jsonl and inspect storage before attempting recovery or compaction.</p>':'';
+ const countMismatch=h&&Number(h.loaded_retained)>0&&S.historyLoaded&&S.messages.length===0?'<p role="alert">The store reports retained scans, but the browser has an empty message list. Refresh and investigate the API before assuming records were deleted.</p>':'';
+ return '<section class="task-surface task-side-panel"><h2>Saved history integrity</h2>'+
+ (S.historyRefreshError?'<p role="alert">Message history could not refresh: '+esc(S.historyRefreshError)+'. The previous list may be stale or incomplete.</p>':'')+
+ (!S.historyLoaded?'<p role="alert">Message history has not finished loading successfully. Empty results are not evidence of missing data.</p>':'')+
+ (S.historyAuditError?'<p role="alert">History audit unavailable: '+esc(S.historyAuditError)+'</p>':'')+
+ warning+countMismatch+fields+
+ '<button type="button" class="secondary" id="history-audit" '+(S.historyAuditBusy?'disabled':'')+'>'+(S.historyAuditBusy?'Verifying…':'Verify on-disk history')+'</button></section>';
+}
+
 function messageHistory(){
  const q=S.search.toLowerCase();
  const remote=!!S.historyResults;
@@ -284,6 +324,7 @@ function messageHistory(){
  const total=remote?S.historyResults.total:S.messages.length;
  return `${taskIntro('MAIL HISTORY','Message history','Search retained scan records, evidence, and transport action requests.',[['Review flagged mail','investigate',false]])}
  <section class="task-surface"><div class="task-section-head"><div><h2>All messages</h2><p>${remote?'Searching retained history':'Showing the latest '+n(S.messages.length)+' messages'} · ${n(matched.length)} matching entries. Past decisions are never silently rewritten.</p></div>${S.me.role==='admin'?'<a class="secondary" href="/api/v1/export" download>Export history</a>':''}</div>
+ ${historyIntegrityPanel()}
  ${taskSearch('Search sender, recipient, subject or message ID')}
  <div class="task-history-tools"><button class="secondary" id="search-full" type="button">Search entire saved history</button><span>Results shown newest first</span></div>${quickMessageList(matched,1000)}
  ${remote?`<div class="task-pagination"><button class="secondary" id="search-prev" ${S.historyOffset===0?'disabled':''}>Previous</button><span>${n(S.historyOffset+1)}–${n(Math.min(S.historyOffset+50,total))} of ${n(total)}</span><button class="secondary" id="search-next" ${S.historyOffset+50>=total?'disabled':''}>Next</button></div>`:''}</section>`;
@@ -712,6 +753,7 @@ document.addEventListener('click',async event=>{const el=event.target.closest('b
     const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='spamgate-headers-'+S.inspect.id+'.txt';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);return
   }
   if(id==='reload'){await refresh();alertUser('Message history refreshed');return}
+  if(id==='history-audit'){await loadHistoryAudit();return}
   if(id==='search-full'){await runHistorySearch(0);return}
   if(id==='sgtube-refresh'){await loadCategoryCatalog();return}
   if(el.dataset.sgtubeCopy){const c=S.sgtubeCatalog?.categories?.find(x=>x.id===el.dataset.sgtubeCopy);if(!c)throw Error('Unknown category');await navigator.clipboard.writeText(c.test_marker);alertUser('SGTUBE category test signature copied');return}

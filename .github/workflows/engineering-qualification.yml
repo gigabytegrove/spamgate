@@ -1,0 +1,67 @@
+name: SpamGate engineering qualification — no automatic release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spamgate-engineering-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  qualify:
+    if: github.repository == 'gigabytegrove/spamgate'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install patched Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - name: Install Node for UI regression
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Go unit and race tests
+        run: |
+          set -Eeuo pipefail
+          go test -count=1 ./...
+          go test -race -count=1 ./...
+          go vet ./...
+      - name: UI regressions and native migration
+        run: |
+          set -Eeuo pipefail
+          node --check internal/server/assets/app.js
+          node --test scripts/ui-regression.test.mjs
+          bash -n scripts/migrate-native-launcher.sh
+          bash scripts/test-migrate-native-launcher.sh
+          bash scripts/test-supervised-updates.sh
+      - name: Compile native Linux and Windows programs
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          set -Eeuo pipefail
+          mkdir -p dist
+          GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o dist/spamgate-worker-linux-amd64 ./cmd/spamgate
+          GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o dist/spamgate-launcher-linux-amd64 ./cmd/spamgate-run
+          GOOS=windows GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w -H=windowsgui' -o dist/spamgate-windows-amd64.exe ./cmd/spamgate
+          chmod 0755 dist/spamgate-worker-linux-amd64 dist/spamgate-launcher-linux-amd64
+          test "$(dist/spamgate-worker-linux-amd64 -version)" = "0.6.0-alpha.17"
+          test "$(dist/spamgate-launcher-linux-amd64 -version)" = "0.6.0-alpha.17"
+          (cd dist && sha256sum * > SHA256SUMS.txt && sha256sum -c SHA256SUMS.txt)
+      - name: Preserve unreleased qualification artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: spamgate-alpha17-unreleased-${{ github.sha }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7

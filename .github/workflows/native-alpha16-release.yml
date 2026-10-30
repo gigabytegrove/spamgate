@@ -1,11 +1,8 @@
-name: SpamGate alpha.16 split-native release qualification
+name: SpamGate alpha.16 legacy release qualification
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/native-alpha16-release.yml'
-      - 'scripts/ui-regression.test.mjs'
+  # Retained only for forensic reproducibility. Never publish alpha.16
+  # in response to later engineering commits.
   workflow_dispatch:
 
 permissions:

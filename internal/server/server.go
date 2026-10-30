@@ -231,6 +231,7 @@ func (s *Server) Router() http.Handler {
 	m.HandleFunc("POST /api/v1/spam-categories/{id}/simulate", s.spamCategorySimulate)
 	m.HandleFunc("GET /api/v1/messages", s.messages)
 	m.HandleFunc("GET /api/v1/history/search", s.searchHistory)
+	m.HandleFunc("GET /api/v1/history/integrity", s.historyIntegrity)
 	m.HandleFunc("GET /api/v1/messages/{id}/preview", s.quarantinePreview)
 
 	m.HandleFunc("GET /api/v1/messages/{id}", s.message)

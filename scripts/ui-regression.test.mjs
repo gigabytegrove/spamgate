@@ -164,3 +164,48 @@ test('supervised install button appears for staged update',()=>{
  assert.match(html,/id="install-update"/);
  assert.match(html,/spamgate-worker/);
 });
+
+test('history integrity panel differentiates disk evidence and UI errors, escaping diagnostics',()=>{
+ const ctx=context();
+ vm.runInContext(`S.section='history';S.historyLoaded=false;S.historyRefreshError='<img src=x onerror=1>';S.historyAudit={status:'mismatch',detail:'Retained scans not found on disk',file_bytes:483184,disk_events:155,unique_scan_ids:155,loaded_retained:155};`,ctx);
+ const html=vm.runInContext('historyIntegrityPanel()',ctx);
+ assert.match(html,/Verify on-disk history/);
+ assert.match(html,/155/);
+ assert.match(html,/History needs investigation/);
+ assert.match(html,/has not finished loading successfully/);
+ assert.match(html,/&lt;img src=x/);
+ assert.doesNotMatch(html,/<img src=x/);
+});
+test('optional detector failure does not blank essential message history',async()=>{
+ const ctx=context();
+ vm.runInContext(`
+ S.section='history';S.me={role:'admin',name:'ops'};S.config={onboarding:{completed:true,activated:true}};
+ render=()=>{};alertUser=()=>{};
+ api=async(path)=>{
+  if(path==='/api/v1/config')return {onboarding:{completed:true,activated:true}};
+  if(path==='/api/v1/messages?limit=1000')return [{id:'persisted-1',action:'accept',subject:'real history'}];
+  if(path==='/api/v1/statistics')return {total:155};
+  if(path==='/api/v1/history/integrity')return {status:'ok',disk_events:155,loaded_retained:155};
+  if(path==='/api/v1/signals')throw Error('optional detector offline');
+  if(path.startsWith('/api/v1/'))throw Error('optional subsystem offline');
+  return null;
+ };
+ `,ctx);
+ await vm.runInContext('refresh()',ctx);
+ assert.equal(vm.runInContext('S.historyLoaded',ctx),true);
+ assert.equal(vm.runInContext('S.messages.length',ctx),1);
+ assert.equal(vm.runInContext('S.stats.total',ctx),155);
+ assert.equal(vm.runInContext('S.historyRefreshError',ctx),null);
+});
+test('failed essential history API is visible, not an empty-success condition',async()=>{
+ const ctx=context();
+ vm.runInContext(`
+ S.section='history';S.me={role:'admin',name:'ops'};
+ render=()=>{};alertUser=()=>{};
+ api=async(path)=>{if(path==='/api/v1/messages?limit=1000')throw Error('history service unavailable');return {}};
+ `,ctx);
+ await vm.runInContext('refresh()',ctx);
+ assert.equal(vm.runInContext('S.historyLoaded',ctx),false);
+ assert.match(vm.runInContext('S.historyRefreshError',ctx),/history service unavailable/);
+ assert.match(vm.runInContext('historyIntegrityPanel()',ctx),/Message history could not refresh/);
+});

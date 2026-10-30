@@ -178,6 +178,11 @@ func execute(args []string) error {
 }
 
 func runApp(ctx context.Context, opts options) error {
+	// Exclusive Linux writer ownership prevents two workers from compacting
+	// the same events.jsonl with divergent in-memory history.
+	unlock, err := acquireInstanceLock(opts.dataDir)
+	if err != nil { return err }
+	defer unlock()
 	store, err := core.Open(opts.dataDir)
 	if err != nil {
 		return err
