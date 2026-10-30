@@ -415,6 +415,81 @@ func startHealthy(ctx context.Context, o options, url, expected string) (*exec.C
 	return cmd, done, nil
 }
 
+const workerProbeInterval = 15 * time.Second
+const workerProbeFailureLimit = 3
+
+// A healthy HTTP endpoint does not certify Milter delivery, but persistent
+// health failures must not leave a hung worker holding both service ports.
+func probeWorkerHealth(ctx context.Context, url, expected string) error {
+	requestCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	client := &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 2 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("health HTTP status %d", resp.StatusCode)
+	}
+	var body struct { Version string `json:"version"` }
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 2048)).Decode(&body); err != nil {
+		return fmt.Errorf("invalid health response: %w", err)
+	}
+	if body.Version != expected {
+		return fmt.Errorf("worker health version mismatch: expected %s, received %s", expected, body.Version)
+	}
+	return nil
+}
+
+func restartBackoff(failures int) time.Duration {
+	if failures < 1 {
+		return 0
+	}
+	delay := 2 * time.Second
+	for i := 1; i < failures && delay < 30*time.Second; i++ {
+		delay *= 2
+	}
+	if delay > 30*time.Second {
+		return 30 * time.Second
+	}
+	return delay
+}
+
+func waitRestart(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+// Unlike a fixed three-crash cutoff, recovery remains active while the
+// foreground launcher lives. Every failed start is logged and rate-limited.
+func recoverWorker(ctx context.Context, o options, url, expected string, failures int) (*exec.Cmd, <-chan error, error) {
+	for {
+		if err := waitRestart(ctx, restartBackoff(failures)); err != nil {
+			return nil, nil, err
+		}
+		child, done, err := startHealthy(ctx, o, url, expected)
+		if err == nil {
+			return child, done, nil
+		}
+		if ctx.Err() != nil {
+			return nil, nil, ctx.Err()
+		}
+		failures++
+		log.Printf("SpamGate launcher: worker start/health failed (attempt %d): %v; will retry", failures, err)
+	}
+}
+
 func supervise(ctx context.Context, o options) error {
 	if runtime.GOOS != "linux" {
 		return errors.New("SpamGate split launcher currently supports native Linux; Windows update requires a Windows-specific replacement procedure")
@@ -444,41 +519,53 @@ func supervise(ctx context.Context, o options) error {
 	if err != nil {
 		return fmt.Errorf("installed worker version: %w", err)
 	}
-	child, done, err := startHealthy(ctx, o, url, version)
+	child, done, err := recoverWorker(ctx, o, url, version, 0)
 	if err != nil {
+		if ctx.Err() != nil { return nil }
 		return fmt.Errorf("worker startup: %w", err)
 	}
 	log.Printf("SpamGate launcher: worker PID %d version %s, installed at %s", child.Process.Pid, version, o.worker)
 	failures := 0
+	healthySince := time.Now()
+	probeFailures := 0
+	probeTicker := time.NewTicker(workerProbeInterval)
+	defer probeTicker.Stop()
 	previous := filepath.Join(updateFolder(o), "managed.previous"+filepath.Ext(o.worker))
 	for {
 		select {
 		case <-ctx.Done():
 			shutdown(child, done)
 			return nil
+		case <-probeTicker.C:
+			if probeErr := probeWorkerHealth(ctx, url, version); probeErr != nil {
+				probeFailures++
+				log.Printf("SpamGate launcher: worker health failure %d/%d: %v", probeFailures, workerProbeFailureLimit, probeErr)
+				if probeFailures < workerProbeFailureLimit { continue }
+				shutdown(child, done)
+				err = fmt.Errorf("worker unhealthy for %d probes: %w", probeFailures, probeErr)
+			} else {
+				probeFailures = 0
+				continue
+			}
 		case err = <-done:
 		}
 		if !isUpdateExit(err) {
-			if err == nil {
-				return nil
-			}
+			if err == nil { return nil }
+			if time.Since(healthySince) >= 5*time.Minute { failures = 0 }
 			failures++
-			if failures > 3 {
-				return fmt.Errorf("worker crashed repeatedly: %w", err)
-			}
-			log.Printf("SpamGate launcher: worker crashed %d/3: %v; retrying", failures, err)
-			select {
-			case <-ctx.Done():
-				return nil
-			case <-time.After(2 * time.Second):
-			}
-			child, done, err = startHealthy(ctx, o, url, version)
+			log.Printf("SpamGate launcher: worker failure %d: %v; recovering with bounded backoff", failures, err)
+			child, done, err = recoverWorker(ctx, o, url, version, failures)
 			if err != nil {
-				return fmt.Errorf("worker recovery failed: %w", err)
+				if ctx.Err() != nil { return nil }
+				return fmt.Errorf("worker recovery: %w", err)
 			}
+			healthySince = time.Now()
+			probeFailures = 0
+			log.Printf("SpamGate launcher: worker recovered, PID %d", child.Process.Pid)
 			continue
 		}
 		failures = 0
+		probeFailures = 0
 		pending, newVersion, err := staged(o)
 		if err == nil {
 			var cmp int
@@ -529,6 +616,8 @@ func supervise(ctx context.Context, o options) error {
 			continue
 		}
 		version = newVersion
+		healthySince = time.Now()
+		probeFailures = 0
 		clearStaged(o)
 		record(o, "healthy", version, "installed worker replaced in-place at "+o.worker+" and HTTP health version verified")
 		log.Printf("SpamGate launcher: updated installed worker to %s; parent process remains alive", version)
