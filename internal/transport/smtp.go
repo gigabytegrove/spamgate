@@ -10,7 +10,6 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"net/mail"
 	"net/smtp"
 	"os"
 	"strconv"
@@ -163,7 +162,10 @@ func SMTPFromEnv(store *core.Store, relay *Relay) (*SMTP, error) {
 	return s, nil
 }
 func (s *SMTP) Listen(ctx context.Context) error {
-	listener, e := net.Listen("tcp", s.Addr)
+ // The native SMTP listener must never accept a message without the
+ // fsync-backed outbox. Direct relay before SMTP 250 has ambiguous outcomes.
+ if s.Queue == nil { return errors.New("SMTP listener requires a durable delivery queue") }
+ listener, e := net.Listen("tcp", s.Addr)
 	if e != nil {
 		return e
 	}
@@ -213,34 +215,6 @@ func (s *SMTP) allowedRecipient(address string) bool {
 		}
 	}
 	return false
-}
-func parseAddress(line, prefix string) (string, error) {
-	if !strings.HasPrefix(strings.ToUpper(line), prefix) {
-		return "", errors.New("syntax")
-	}
-	value := strings.TrimSpace(line[len(prefix):])
-	if strings.HasPrefix(value, "<") {
-		end := strings.IndexByte(value, '>')
-		if end < 0 {
-			return "", errors.New("missing >")
-		}
-		value = value[1:end]
-	} else {
-		fields := strings.Fields(value)
-		if len(fields) == 0 {
-			return "", errors.New("empty address")
-		}
-		value = fields[0]
-	}
-	if strings.ContainsAny(value, "\r\n ") || len(value) > 254 {
-		return "", errors.New("invalid address")
-	}
-	if value != "" {
-		if _, e := mail.ParseAddress(value); e != nil {
-			return "", e
-		}
-	}
-	return value, nil
 }
 func readLineLimited(reader *bufio.Reader, limit int) ([]byte, error) {
 	var out []byte
@@ -341,12 +315,21 @@ func (s *SMTP) handle(conn net.Conn) {
 				reply(503, "5.5.1 HELO first")
 				continue
 			}
-			addr, e := parseAddress(line, "MAIL FROM:")
-			if e != nil {
-				reply(501, "5.1.7 Invalid sender")
-				continue
-			}
-			sender = addr
+			// A new MAIL command starts a new transaction, including when invalid.
+   // Never accidentally reuse an earlier sender or recipient set.
+   sender = ""
+   recipients = nil
+   mailIssued = false
+   addr, declaredSize, e := parseSMTPMail(line)
+   if e != nil {
+    reply(501, "5.5.4 Invalid MAIL FROM path or unsupported ESMTP parameter")
+    continue
+   }
+   if declaredSize > 10<<20 {
+    reply(552, "5.3.4 Declared message size exceeds 10485760 bytes")
+    continue
+   }
+   sender = addr
 			mailIssued = true
 			recipients = nil
 			reply(250, "2.1.0 Sender accepted")
@@ -359,7 +342,7 @@ func (s *SMTP) handle(conn net.Conn) {
 				reply(503, "5.5.1 Need MAIL FROM first")
 				continue
 			}
-			addr, e := parseAddress(line, "RCPT TO:")
+			addr, e := parseSMTPRecipient(line)
 			if e != nil || addr == "" {
 				reply(501, "5.1.3 Invalid recipient")
 				continue
@@ -418,7 +401,9 @@ func (s *SMTP) handle(conn net.Conn) {
 			if forwardedIP != "" {
 				originIP = forwardedIP
 			}
-			m, e := s.Scanner.Scan(context.Background(), core.Input{Raw: raw.Bytes(), Sender: sender, Recipients: recipients, ClientIP: originIP, Connector: "smtp"})
+			scanCtx, cancelScan := context.WithTimeout(context.Background(), 45*time.Second)
+   m, e := s.Scanner.Scan(scanCtx, core.Input{Raw: raw.Bytes(), Sender: sender, Recipients: recipients, ClientIP: originIP, Connector: "smtp"})
+   cancelScan()
 			if e == nil {
 				m.IngestIP = clientIP
 			}
