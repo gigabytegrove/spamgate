@@ -8,6 +8,7 @@ import (
  "fmt"
  "net"
  "net/smtp"
+ "net/textproto"
  "os"
  "os/exec"
  "path/filepath"
@@ -81,7 +82,7 @@ func TestRealPostfixMilterLocalDeliveryAndTempfail(t *testing.T) {
  t.Logf("Postfix confirmed local Maildir receipt; accepted Milter scan %s",scans[0].ID)
  err=send("synthetic-reject",core.StandardGTUBE)
  if err==nil{t.Fatal("real Postfix accepted SGTUBE synthetic reject")}
- var smtpError *smtp.SMTPError
+ var smtpError *textproto.Error
  if !errors.As(err,&smtpError)||smtpError.Code<500||smtpError.Code>=600{
   t.Fatalf("expected Milter 5xx rejection by real Postfix, got %v",err)
  }
