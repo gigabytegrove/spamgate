@@ -218,8 +218,11 @@ func readSpoolFile(path string, inspected os.FileInfo) ([]byte, error) {
  }
  raw, err := io.ReadAll(io.LimitReader(f, maxRecordSize+1))
  if err != nil { return nil, err }
- if int64(len(raw)) != opened.Size() {
-  return nil, errors.New("queue record changed size while reading")
+ after, err := f.Stat()
+ if err != nil { return nil, err }
+ if int64(len(raw)) != opened.Size() || after.Size() != opened.Size() ||
+  !after.ModTime().Equal(opened.ModTime()) || !os.SameFile(opened, after) {
+  return nil, errors.New("queue record changed during read")
  }
  return raw, nil
 }
@@ -236,7 +239,7 @@ func (q *DeliveryQueue) get(id string) (spoolRecord, error) {
 		return spoolRecord{}, err
 	}
 	if rec.ID != id || rec.Size <= 0 || rec.Size > 10<<20 || len(rec.RawRFC822) != rec.Size ||
-		len(rec.Recipients) == 0 || len(rec.Recipients) > 1000 {
+		len(rec.Recipients) == 0 || len(rec.Recipients) > 1000 || rec.Attempts < 0 {
 		return spoolRecord{}, fmt.Errorf("invalid queue job %s", id)
 	}
 	switch rec.State {
@@ -253,12 +256,17 @@ func (q *DeliveryQueue) get(id string) (spoolRecord, error) {
 	return rec, nil
 }
 func (q *DeliveryQueue) snapshotLocked() (QueueSummary, error) {
-	names, e := os.ReadDir(q.dir)
-	if e != nil {
-		return QueueSummary{}, e
-	}
+	d, e := os.Open(q.dir)
+	if e != nil { return QueueSummary{}, e }
+	defer d.Close()
 	var info QueueSummary
-	for _, entry := range names {
+	seen := 0
+	for {
+		names, readErr := d.ReadDir(128)
+		if readErr != nil && !errors.Is(readErr, io.EOF) { return QueueSummary{}, readErr }
+		for _, entry := range names {
+			seen++
+			if seen > 4096 { return QueueSummary{}, errors.New("SMTP spool directory exceeds 4096 entries; inventory refused") }
 		// A crash between fsync and rename can leave a .pending-* file.
 		// It may contain the only surviving copy of an attempted SMTP intake.
 		// Never silently delete it or report a clean queue inventory.
@@ -292,6 +300,8 @@ func (q *DeliveryQueue) snapshotLocked() (QueueSummary, error) {
 		}
 		rec.RawRFC822 = nil
 		info.Jobs = append(info.Jobs, rec.QueuedMessage)
+		}
+		if errors.Is(readErr, io.EOF) { break }
 	}
 	sort.Slice(info.Jobs, func(i, j int) bool { return info.Jobs[i].Created.Before(info.Jobs[j].Created) })
 	return info, nil
