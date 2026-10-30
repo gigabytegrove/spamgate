@@ -48,18 +48,32 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Fprintf(w, "spamgate_runtime_scan_duration_seconds_sum %.6f\n", telemetry.DurationSecondsSum)
 	fmt.Fprintf(w, "spamgate_runtime_scan_duration_seconds_count %d\n", telemetry.Total)
-	if s.Queue != nil {
-		q, e := s.Queue.Snapshot()
-		if e == nil {
-			fmt.Fprintln(w, "# HELP spamgate_outbox_messages Persistent delivery jobs by status.")
-			fmt.Fprintln(w, "# TYPE spamgate_outbox_messages gauge")
-			for _, entry := range []struct {
-				name  string
-				count int
-			}{{"queued", q.Queued}, {"delivering", q.Delivering}, {"dead", q.Dead}} {
-				fmt.Fprintf(w, "spamgate_outbox_messages{status=%q} %d\n", entry.name, entry.count)
-			}
-			fmt.Fprintf(w, "spamgate_outbox_bytes %d\n", q.Bytes)
-		}
+	fmt.Fprintln(w, "# HELP spamgate_outbox_snapshot_available Whether the durable outbox snapshot could be read; zero also means the outbox is disabled.")
+	fmt.Fprintln(w, "# TYPE spamgate_outbox_snapshot_available gauge")
+	fmt.Fprintln(w, "# HELP spamgate_outbox_snapshot_error Whether the enabled durable outbox failed its integrity/readability check.")
+	fmt.Fprintln(w, "# TYPE spamgate_outbox_snapshot_error gauge")
+	if s.Queue == nil {
+		fmt.Fprintln(w, "spamgate_outbox_snapshot_available 0")
+		fmt.Fprintln(w, "spamgate_outbox_snapshot_error 0")
+		return
 	}
+	q, e := s.Queue.Snapshot()
+	if e != nil {
+		// Never silently omit metrics and make a corrupt queue appear empty.
+		// The detailed error remains in authenticated operations diagnostics.
+		fmt.Fprintln(w, "spamgate_outbox_snapshot_available 0")
+		fmt.Fprintln(w, "spamgate_outbox_snapshot_error 1")
+		return
+	}
+	fmt.Fprintln(w, "spamgate_outbox_snapshot_available 1")
+	fmt.Fprintln(w, "spamgate_outbox_snapshot_error 0")
+	fmt.Fprintln(w, "# HELP spamgate_outbox_messages Persistent delivery jobs by status.")
+	fmt.Fprintln(w, "# TYPE spamgate_outbox_messages gauge")
+	for _, entry := range []struct {
+		name string
+		count int
+	}{{"queued", q.Queued}, {"delivering", q.Delivering}, {"dead", q.Dead}} {
+		fmt.Fprintf(w, "spamgate_outbox_messages{status=%q} %d\n", entry.name, entry.count)
+	}
+	fmt.Fprintf(w, "spamgate_outbox_bytes %d\n", q.Bytes)
 }
