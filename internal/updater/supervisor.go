@@ -166,44 +166,8 @@ func ReadyForSupervisorUpdate(dataDir string) (string, error) {
 	return version, nil
 }
 
-func copyExecutable(source, target string) error {
-	input, err := os.Open(source)
-	if err != nil {
-		return err
-	}
-	defer input.Close()
-	info, err := input.Stat()
-	if err != nil {
-		return err
-	}
-	if !info.Mode().IsRegular() {
-		return errors.New("update must be a regular file")
-	}
-	temp, err := os.CreateTemp(filepath.Dir(target), ".spamgate-exe-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(temp.Name())
-	if err = temp.Chmod(0700); err != nil {
-		temp.Close()
-		return err
-	}
-	if _, err = io.Copy(temp, input); err != nil {
-		temp.Close()
-		return err
-	}
-	if err = temp.Sync(); err != nil {
-		temp.Close()
-		return err
-	}
-	if err = temp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(temp.Name(), target)
-}
-
 func promoteStaged(dir, base string) (string, error) {
-	staged, version, err := Pending(dir)
+	staged, version, digest, err := pendingDetails(dir)
 	if err != nil {
 		return "", err
 	}
@@ -220,7 +184,7 @@ func promoteStaged(dir, base string) (string, error) {
 	if err := copyExecutable(active, previous); err != nil {
 		return "", fmt.Errorf("preserve previous executable: %w", err)
 	}
-	if err := copyExecutable(staged, current); err != nil {
+	if err := copyExecutableVerified(staged, current, digest); err != nil {
 		return "", fmt.Errorf("stage active executable: %w", err)
 	}
 	return version, nil

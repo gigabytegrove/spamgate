@@ -305,45 +305,52 @@ func (c *Client) Stage(ctx context.Context, current, dir string) (Status, error)
 }
 
 // Pending independently verifies the staged bytes before any executable replacement.
-func Pending(dir string) (string, string, error) {
+// pendingDetails binds the verified digest to the later executable copy.
+func pendingDetails(dir string) (string, string, string, error) {
 	base := filepath.Join(dir, "updates")
 	if err := ensureUpdateDir(base, false); err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	raw, err := readUpdateRegularFile(filepath.Join(base, "pending.json"), 4096)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	var m struct{ Version, Filename, SHA256 string }
 	if err = json.Unmarshal(raw, &m); err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	expected, _ := platformAsset()
 	if m.Filename != expected || !releaseTag.MatchString(m.Version) || !hexDigest.MatchString(m.SHA256) {
-		return "", "", errors.New("invalid staged update metadata")
+		return "", "", "", errors.New("invalid staged update metadata")
 	}
 	path := filepath.Join(base, "pending"+filepath.Ext(expected))
 	f, info, err := openUpdateRegularFile(path)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	defer f.Close()
 	if info.Size() > maxBinary || info.Size() < 4096 {
-		return "", "", errors.New("invalid staged binary")
+		return "", "", "", errors.New("invalid staged binary")
 	}
 	h := sha256.New()
 	if _, err = io.Copy(h, f); err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	after, err := f.Stat()
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	if !os.SameFile(info, after) || info.Size() != after.Size() || !info.ModTime().Equal(after.ModTime()) {
-		return "", "", errors.New("staged binary changed during verification")
+		return "", "", "", errors.New("staged binary changed during verification")
 	}
 	if hex.EncodeToString(h.Sum(nil)) != strings.ToLower(m.SHA256) {
-		return "", "", errors.New("staged update checksum changed")
+		return "", "", "", errors.New("staged update checksum changed")
 	}
-	return path, m.Version, nil
+	return path, m.Version, strings.ToLower(m.SHA256), nil
+}
+
+// Pending preserves the public three-value interface for existing callers.
+func Pending(dir string) (string, string, error) {
+ path, version, _, err := pendingDetails(dir)
+ return path, version, err
 }
