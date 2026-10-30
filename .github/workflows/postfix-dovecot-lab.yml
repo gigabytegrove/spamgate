@@ -50,6 +50,10 @@ jobs:
           sudo postconf -e 'non_smtpd_milters ='
           sudo postconf -e 'milter_default_action = tempfail'
           sudo postconf -e 'milter_protocol = 6'
+          # Loopback-only ephemeral lab: do not advertise the distro's unrelated
+          # self-signed STARTTLS certificate to net/smtp. Production TLS is a
+          # separate, stricter qualification path and is never disabled here.
+          sudo postconf -e 'smtpd_tls_security_level = none'
           sudo postconf -e 'smtpd_recipient_restrictions = permit_mynetworks,reject_unauth_destination'
           sudo postfix check
           if sudo postfix status; then
