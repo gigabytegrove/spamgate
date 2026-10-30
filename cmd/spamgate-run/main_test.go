@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -86,6 +87,7 @@ func main(){
  mux:=http.NewServeMux()
  mux.HandleFunc("/healthz",func(w http.ResponseWriter,r *http.Request){w.Header().Set("Content-Type","application/json");fmt.Fprintf(w,"{\"version\":%%q}",version)})
  mux.HandleFunc("/trigger",func(w http.ResponseWriter,r *http.Request){w.WriteHeader(202);w.(http.Flusher).Flush();go func(){os.Exit(75)}()})
+ mux.HandleFunc("/crash",func(w http.ResponseWriter,r *http.Request){w.WriteHeader(202);w.(http.Flusher).Flush();go func(){os.Exit(2)}()})
  s:=&http.Server{Addr:listen,Handler:mux}
  signalChan:=make(chan os.Signal,1);signal.Notify(signalChan,os.Interrupt,syscall.SIGTERM)
  go func(){<-signalChan;_ =s.Close();os.Exit(0)}()
@@ -251,5 +253,81 @@ func TestVersionMonotonic(t *testing.T) {
 		if err != nil || got != x.want {
 			t.Fatalf("compare %s/%s got=%d err=%v", x.a, x.b, got, err)
 		}
+	}
+}
+
+func TestRestartBackoffBounded(t *testing.T) {
+	cases := []struct{ failures int; want time.Duration }{
+		{0, 0}, {1, 2 * time.Second}, {2, 4 * time.Second},
+		{3, 8 * time.Second}, {4, 16 * time.Second},
+		{5, 30 * time.Second}, {1000000, 30 * time.Second},
+	}
+	for _, tc := range cases {
+		if got := restartBackoff(tc.failures); got != tc.want {
+			t.Fatalf("failures %d: got %v want %v", tc.failures, got, tc.want)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := waitRestart(ctx, time.Hour); err != context.Canceled {
+		t.Fatalf("cancelled backoff: %v", err)
+	}
+}
+
+func TestProbeWorkerHealth(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		status int
+		body string
+		ok bool
+	}{
+		{"healthy", 200, `{"version":"0.6.0-beta.1"}`, true},
+		{"wrong-version", 200, `{"version":"0.6.0-beta.2"}`, false},
+		{"bad-json", 200, `not-json`, false},
+		{"server-error", 503, `{"version":"0.6.0-beta.1"}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.status)
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			defer srv.Close()
+			err := probeWorkerHealth(context.Background(), srv.URL, "0.6.0-beta.1")
+			if (err == nil) != tc.ok { t.Fatalf("health error: %v", err) }
+		})
+	}
+}
+
+func TestRunnerRecoversWorkerCrash(t *testing.T) {
+	if testing.Short() { t.Skip("integration build") }
+	dir := t.TempDir()
+	binary := buildFixture(t, dir, "crash-worker", "0.6.0-beta.1", false)
+	installed := filepath.Join(dir, "spamgate-worker")
+	if err := copyAtomic(binary, installed); err != nil { t.Fatal(err) }
+	o := options{worker: installed, data: filepath.Join(dir, "data"), listen: port(t)}
+	o.args = []string{"-data", o.data, "-listen", o.listen}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- supervise(ctx, o) }()
+	defer func() {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil { t.Errorf("supervisor returned error: %v", err) }
+		case <-time.After(10 * time.Second):
+			t.Error("supervisor did not stop")
+		}
+	}()
+	awaitVersion(t, o.listen, "0.6.0-beta.1")
+	// Exit code 2 is a crash, not the private update exit code 75.
+	resp, err := http.Get("http://" + o.listen + "/crash")
+	if err != nil { t.Fatal(err) }
+	resp.Body.Close()
+	time.Sleep(350 * time.Millisecond)
+	awaitVersion(t, o.listen, "0.6.0-beta.1")
+	select {
+	case err := <-done:
+		t.Fatalf("supervisor exited after recoverable crash: %v", err)
+	default:
 	}
 }
