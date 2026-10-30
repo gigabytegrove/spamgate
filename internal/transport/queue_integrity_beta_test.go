@@ -112,3 +112,15 @@ func TestQueueRejectsTamperedScanEvidence(t *testing.T) {
   t.Fatalf("modified scan verdict was not detected: %v", err)
  }
 }
+
+func TestAcceptedScanWithoutTimestampUsesDurableAcceptanceTime(t *testing.T) {
+ q, store, _ := newIntegrityQueue(t)
+ id := core.ID()
+ msg := core.Message{ID:id, Sender:"a@example.org", Recipients:[]string{"b@example.net"}, Action:"accept"}
+ if err := q.Enqueue(msg, []byte("Subject: no timestamp\r\n\r\nbody")); err != nil { t.Fatal(err) }
+ if err := q.DiscardWithAudit(id, "administrator"); err != nil { t.Fatal(err) }
+ saved, ok := store.Get(id)
+ if !ok || saved.Timestamp.IsZero() || saved.Delivery != "discarded" {
+  t.Fatalf("audit was pruned because recovered scan lacked timestamp: %+v, found=%v", saved, ok)
+ }
+}

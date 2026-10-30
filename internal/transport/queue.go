@@ -248,6 +248,7 @@ func (q *DeliveryQueue) Enqueue(m core.Message, raw []byte) error {
 	// events.jsonl mirror is best-effort after SMTP 250 and may not exist
 	// after an interruption; the queue must be able to reconstruct it.
 	saved := m
+	if saved.Timestamp.IsZero() { saved.Timestamp = now }
 	saved.HeaderSnapshot = nil
 	saved.HeaderTruncated = false
 	rec := spoolRecord{QueuedMessage: job, RawRFC822: append([]byte(nil), raw...), Scan: &saved}
@@ -440,6 +441,7 @@ func (q *DeliveryQueue) ProcessDue(ctx context.Context) error {
 func queueHistoryMessage(rec spoolRecord) core.Message {
 	if rec.Scan != nil && rec.Scan.ID == rec.ID {
 		msg := *rec.Scan
+		if msg.Timestamp.IsZero() { msg.Timestamp = rec.Created }
 		msg.HeaderSnapshot = nil
 		msg.HeaderTruncated = false
 		msg.Delivery = "queued"
