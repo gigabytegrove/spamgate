@@ -48,6 +48,11 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Fprintf(w, "spamgate_runtime_scan_duration_seconds_sum %.6f\n", telemetry.DurationSecondsSum)
 	fmt.Fprintf(w, "spamgate_runtime_scan_duration_seconds_count %d\n", telemetry.Total)
+    fmt.Fprintln(w, "# HELP spamgate_runtime_detection_messages_total Scanned messages containing each allowlisted detection symbol since process start.")
+    fmt.Fprintln(w, "# TYPE spamgate_runtime_detection_messages_total counter")
+    for _, symbol := range core.RuntimeDetectionSymbols() {
+        fmt.Fprintf(w, "spamgate_runtime_detection_messages_total{symbol=%q} %d\n", symbol, telemetry.DetectionMessages[symbol])
+    }
 	fmt.Fprintln(w, "# HELP spamgate_outbox_snapshot_available Whether the durable outbox snapshot could be read; zero also means the outbox is disabled.")
 	fmt.Fprintln(w, "# TYPE spamgate_outbox_snapshot_available gauge")
 	fmt.Fprintln(w, "# HELP spamgate_outbox_snapshot_error Whether the enabled durable outbox failed its integrity/readability check.")

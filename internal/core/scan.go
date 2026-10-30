@@ -151,7 +151,10 @@ func decodeQP(b []byte) []byte {
 // Decoding functions are in codec.go to isolate MIME transfer handling.
 func (s *Scanner) Scan(ctx context.Context, in Input) (out Message, scanErr error) {
 	started := time.Now()
-	defer func() { observeScan(in.Connector, out.Action, time.Since(started), scanErr != nil) }()
+	defer func() {
+        observeScan(in.Connector, out.Action, time.Since(started), scanErr != nil)
+        if scanErr == nil { observeDetectionFindings(out.Findings) }
+    }()
 	if len(in.Raw) == 0 || len(in.Raw) > 10<<20 {
 		return Message{}, fmt.Errorf("message size must be 1–10485760 bytes")
 	}

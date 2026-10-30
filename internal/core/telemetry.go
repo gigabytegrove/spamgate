@@ -16,6 +16,7 @@ type ScanTelemetry struct {
 	ByConnector        map[string]uint64
 	DurationSecondsSum float64
 	DurationBuckets    [7]uint64
+	DetectionMessages map[string]uint64
 }
 
 var scanMetrics struct {
@@ -68,6 +69,35 @@ func observeScan(connector, action string, elapsed time.Duration, failed bool) {
 	v.DurationBuckets[6]++
 }
 
+// Only these fixed symbols can become metric labels. Never expose attacker-
+// controlled finding details, subjects, domains, or recipient addresses.
+func RuntimeDetectionSymbols() []string {
+    return []string{
+        "ARCHIVE_EXECUTABLE_CONTENT", "ARCHIVE_EXPANSION_RISK",
+        "ARCHIVE_TRAVERSAL_NAME", "ARCHIVE_RISKY_MEMBER", "ARCHIVE_SYMLINK",
+        "MIME_UNREADABLE", "MIME_LIMIT", "PHISHING_VISIBLE_LINK", "CLAMAV_MALWARE",
+    }
+}
+
+// Count messages, not individual duplicate findings, for each allowed symbol.
+// These are process-lifetime operational counters, not retained history.
+func observeDetectionFindings(findings []Finding) {
+    if len(findings) == 0 { return }
+    allowed := map[string]bool{}
+    for _, symbol := range RuntimeDetectionSymbols() { allowed[symbol] = true }
+    seen := map[string]bool{}
+    for _, f := range findings {
+        if allowed[f.Symbol] { seen[f.Symbol] = true }
+    }
+    if len(seen) == 0 { return }
+    scanMetrics.Lock()
+    defer scanMetrics.Unlock()
+    if scanMetrics.value.DetectionMessages == nil {
+        scanMetrics.value.DetectionMessages = map[string]uint64{}
+    }
+    for symbol := range seen { scanMetrics.value.DetectionMessages[symbol]++ }
+}
+
 func RuntimeScanTelemetry() ScanTelemetry {
 	scanMetrics.Lock()
 	defer scanMetrics.Unlock()
@@ -80,5 +110,9 @@ func RuntimeScanTelemetry() ScanTelemetry {
 	for k, n := range scanMetrics.value.ByConnector {
 		v.ByConnector[k] = n
 	}
+	v.DetectionMessages = make(map[string]uint64, len(scanMetrics.value.DetectionMessages))
+    for k, n := range scanMetrics.value.DetectionMessages {
+        v.DetectionMessages[k] = n
+    }
 	return v
 }
