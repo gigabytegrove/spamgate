@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/beta1-release.yml'
+      - 'scripts/test-supervised-updates.sh'
   workflow_dispatch:
 
 permissions:
