@@ -57,7 +57,23 @@ func (r *Relay) Send(ctx context.Context, m core.Message, raw []byte) error {
 		return e
 	}
 	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(40 * time.Second))
+	// A shorter caller deadline must govern the entire SMTP transaction,
+	// including greeting, EHLO, TLS, AUTH, RCPT, DATA and final response.
+	// A fixed 40-second socket deadline alone does not honor cancellation.
+	deadline := time.Now().Add(40 * time.Second)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+	if e = conn.SetDeadline(deadline); e != nil {
+		return fmt.Errorf("relay socket deadline: %w", e)
+	}
+	// Capture the underlying connection: conn is reassigned to tls.Client
+	// for implicit TLS and must not race the cancellation callback.
+	baseConn := conn
+	stopCancellation := context.AfterFunc(ctx, func() {
+		_ = baseConn.SetDeadline(time.Now())
+	})
+	defer stopCancellation()
 	if r.TLSMode == "implicit" {
 		conn = tls.Client(conn, &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12})
 		if e = conn.(*tls.Conn).HandshakeContext(ctx); e != nil {
