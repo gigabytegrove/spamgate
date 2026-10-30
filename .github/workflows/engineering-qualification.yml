@@ -53,6 +53,7 @@ jobs:
           mkdir -p dist
           GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o dist/spamgate-worker-linux-amd64 ./cmd/spamgate
           GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o dist/spamgate-launcher-linux-amd64 ./cmd/spamgate-run
+          GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o dist/spamgate-eval-linux-amd64 ./cmd/spamgate-eval
           GOOS=windows GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w -H=windowsgui' -o dist/spamgate-windows-amd64.exe ./cmd/spamgate
           chmod 0755 dist/spamgate-worker-linux-amd64 dist/spamgate-launcher-linux-amd64
           test "$(dist/spamgate-worker-linux-amd64 -version)" = "$(go run ./cmd/spamgate -version)"
