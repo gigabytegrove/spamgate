@@ -60,6 +60,8 @@ type QueueSummary struct {
 	Delivering int             `json:"delivering"`
 	Dead       int             `json:"dead"`
 	Bytes      int64           `json:"bytes"`
+	PendingTemps int          `json:"pending_temps"`
+	PendingTempBytes int64    `json:"pending_temp_bytes"`
 	Jobs       []QueuedMessage `json:"jobs"`
 }
 
@@ -86,8 +88,12 @@ func NewDeliveryQueue(dataDir string, store *core.Store, deliver func(context.Co
 		return nil, errors.New("delivery queue must be a real directory without group/world write access")
 	}
 	q := &DeliveryQueue{dir: path, store: store, send: deliver, now: func() time.Time { return time.Now().UTC() }}
-	if _, err := q.snapshotLocked(); err != nil {
+	summary, err := q.snapshotLocked()
+	if err != nil {
 		return nil, fmt.Errorf("existing spool is not readable: %w", err)
+	}
+	if summary.PendingTemps > 0 {
+		slog.Warn("unpublished SMTP spool temporary files require operator investigation; no originals were deleted", "count", summary.PendingTemps, "bytes", summary.PendingTempBytes)
 	}
 	return q, nil
 }
@@ -241,6 +247,19 @@ func (q *DeliveryQueue) snapshotLocked() (QueueSummary, error) {
 	}
 	var info QueueSummary
 	for _, entry := range names {
+		// A crash between fsync and rename can leave a .pending-* file.
+		// It may contain the only surviving copy of an attempted SMTP intake.
+		// Never silently delete it or report a clean queue inventory.
+		if strings.HasPrefix(entry.Name(), ".pending-") {
+			meta, err := entry.Info()
+			if err != nil { return QueueSummary{}, err }
+			if !meta.Mode().IsRegular() || meta.Size() < 0 || meta.Size() > 20<<20 {
+				return QueueSummary{}, fmt.Errorf("unsafe unpublished spool file: %s", entry.Name())
+			}
+			info.PendingTemps++
+			info.PendingTempBytes += meta.Size()
+			continue
+		}
 		if filepath.Ext(entry.Name()) != ".json" { continue }
 		if entry.IsDir() { return QueueSummary{}, fmt.Errorf("directory masquerading as queue job: %s", entry.Name()) }
 		id := entry.Name()[:len(entry.Name())-5]
