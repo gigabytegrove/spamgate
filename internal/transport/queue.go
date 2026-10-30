@@ -163,7 +163,15 @@ func (q *DeliveryQueue) put(rec spoolRecord) error {
 		return e
 	}
 	tmp := f.Name()
-	defer os.Remove(tmp)
+	// A fully synced unpublished original is forensic evidence if rename
+	// fails (for example disk or destination failures). Only remove partial
+	// writes; never erase a complete original after persistence failed.
+	complete := false
+	defer func() {
+		if !complete {
+			_ = os.Remove(tmp)
+		}
+	}()
 	if e = f.Chmod(0600); e != nil {
 		f.Close()
 		return e
@@ -179,9 +187,13 @@ func (q *DeliveryQueue) put(rec spoolRecord) error {
 	if e = f.Close(); e != nil {
 		return e
 	}
+	complete = true
 	if e = os.Rename(tmp, q.path(rec.ID)); e != nil {
-		return e
+		return fmt.Errorf("durable unpublished spool retained at %s: %w", filepath.Base(tmp), e)
 	}
+	// If directory fsync fails, the published record may exist even though
+	// the SMTP caller must return 451. The queue is at-least-once and a
+	// client retry can duplicate the message; preserve the published record.
 	return q.syncDirectory()
 }
 // readSpoolFile checks the opened descriptor against the lstat result
@@ -444,21 +456,16 @@ func (q *DeliveryQueue) ProcessDue(ctx context.Context) error {
 			q.mu.Unlock()
 			continue
 		}
-		rec.State = "delivering"
-		rec.Updated = q.now()
-		rec.NextAttempt = q.now().Add(2 * time.Minute)
-		rec.Attempts++
-		if err = q.put(rec); err != nil {
-			q.mu.Unlock()
-			return err
-		}
-		q.mu.Unlock()
+		// Reconstruct and validate durable history BEFORE consuming a delivery
+		// attempt. A journal outage must not transition queued mail into
+		// "delivering" or exhaust retries without any SMTP attempt.
 		msg, ok := q.store.Get(rec.ID)
 		if !ok {
 			// Restore a missing history entry from the durable outbox before
 			// forwarding. Never silently send then delete an untracked mail.
 			msg = queueHistoryMessage(rec)
 			if err := q.store.Save(msg); err != nil {
+				q.mu.Unlock()
 				return fmt.Errorf("cannot reconstruct queued scan history: %w", err)
 			}
 		}
@@ -475,9 +482,19 @@ func (q *DeliveryQueue) ProcessDue(ctx context.Context) error {
 				Detail: "History envelope differed from durable spool; original sender and recipients restored before delivery",
 			})
 			if err := q.store.Save(msg); err != nil {
+				q.mu.Unlock()
 				return fmt.Errorf("cannot persist authoritative queue envelope for %s: %w", rec.ID, err)
 			}
 		}
+		rec.State = "delivering"
+		rec.Updated = q.now()
+		rec.NextAttempt = q.now().Add(2 * time.Minute)
+		rec.Attempts++
+		if err = q.put(rec); err != nil {
+			q.mu.Unlock()
+			return err
+		}
+		q.mu.Unlock()
 		// Never pass an envelope from history to a relay implementation.
 		msg.Sender = rec.Sender
 		msg.Recipients = append([]string(nil), rec.Recipients...)
