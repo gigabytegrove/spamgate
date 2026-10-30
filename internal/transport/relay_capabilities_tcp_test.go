@@ -47,6 +47,9 @@ func TestRelayCapabilityPreflightOverTCP(t *testing.T) {
 		{"invalid UTF8 header cannot be sent", []string{"8BITMIME", "SMTPUTF8"}, "sender@example.invalid", "recipient@example.invalid", "Subject: \xff\r\n\r\nplain\r\n", "invalid UTF-8", false},
 		{"unsafe recipient cannot reach MAIL", []string{"8BITMIME"}, "sender@example.invalid", "to@example.invalid\r\nRCPT TO:<evil@example.invalid>", "Subject: plain\r\n\r\nplain\r\n", "invalid SMTP recipient", false},
 		{"null sender DSN accepted", []string{"8BITMIME"}, "<>", "recipient@example.invalid", "Subject: DSN\r\n\r\nplain\r\n", "", true},
+		{"NUL body refused before MAIL", []string{"8BITMIME"}, "sender@example.invalid", "recipient@example.invalid", "Subject: test\r\n\r\na\x00b\r\n", "NUL", false},
+		{"bare CR refused before MAIL", nil, "sender@example.invalid", "recipient@example.invalid", "Subject: test\r\n\r\na\rb\r\n", "bare CR", false},
+		{"overlong dot line refused before MAIL", nil, "sender@example.invalid", "recipient@example.invalid", "Subject: test\r\n\r\n." + strings.Repeat("a", 997) + "\r\n", "overlong", false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			ln, err := net.Listen("tcp", "127.0.0.1:0")
