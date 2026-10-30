@@ -19,8 +19,10 @@ func acquireOfflineLock(source string) (func(), error) {
   return nil, errors.New("worker lock is not a regular file")
  }
  if err != nil && !errors.Is(err, os.ErrNotExist) { return nil, err }
- f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0600)
+ // O_NOFOLLOW closes the symlink-swap race between Lstat and open.
+ fd, err := syscall.Open(path, syscall.O_RDWR|syscall.O_CREAT|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0600)
  if err != nil { return nil, err }
+ f := os.NewFile(uintptr(fd), path)
  opened, err := f.Stat()
  if err != nil { f.Close(); return nil, err }
  if !opened.Mode().IsRegular() || (info != nil && !os.SameFile(info, opened)) {
