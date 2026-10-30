@@ -36,10 +36,33 @@ func decodeMIMETextTransfer(body []byte, transfer string) ([]byte, error) {
 		if err != nil { return nil, errInvalidBase64Text }
 		return out[:n], nil
 	case "quoted-printable":
+		// Go's quotedprintable.Reader is intentionally permissive: it leaves
+		// invalid =XX sequences untouched. Validate the transfer syntax
+		// first so a malformed payload cannot be reported as fully scanned.
+		for i := 0; i < len(body); i++ {
+			if body[i] != '=' { continue }
+			if i+2 < len(body) && body[i+1] == '\r' && body[i+2] == '\n' {
+				i += 2
+				continue
+			}
+			if i+1 < len(body) && body[i+1] == '\n' {
+				i++
+				continue
+			}
+			if i+2 < len(body) && mimeHex(body[i+1]) && mimeHex(body[i+2]) {
+				i += 2
+				continue
+			}
+			return nil, errInvalidQuotedPrintableText
+		}
 		out, err := io.ReadAll(io.LimitReader(quotedPrintableReader(bytes.NewReader(body)), (2<<20)+1))
 		if err != nil { return nil, errInvalidQuotedPrintableText }
 		return out, nil
 	default:
 		return nil, errUnsupportedTextTransfer
 	}
+}
+
+func mimeHex(b byte) bool {
+	return b >= '0' && b <= '9' || b >= 'a' && b <= 'f' || b >= 'A' && b <= 'F'
 }
