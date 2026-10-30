@@ -488,7 +488,7 @@ func (s *SMTP) handle(conn net.Conn) {
 			if e != nil {
 				// Malformed originals are permanent errors; unavailable AV, DNS,
 				// timeouts and internal scanner errors must remain retryable.
-				s.log.Error("SMTP content scan failed", "error", e)
+				slog.Error("SMTP content scan failed", "error", e)
 				if errors.Is(e, core.ErrInvalidMessage) {
 					reply(550, "5.6.0 Invalid RFC 5322 message")
 				} else {
@@ -499,7 +499,7 @@ func (s *SMTP) handle(conn net.Conn) {
 			}
 			if m.Action == "quarantine" {
 				if e = s.Store.Quarantine(m.ID, raw.Bytes()); e != nil {
-					s.log.Error("SMTP quarantine persistence failed", "error", e)
+					slog.Error("SMTP quarantine persistence failed", "error", e)
 					reply(451, "4.3.0 Could not save quarantine")
 					resetEnvelope()
 					continue
