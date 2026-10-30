@@ -38,6 +38,8 @@ type monitorSample struct {
 	QueueDelivering int       `json:"queue_delivering"`
 	QueueDead       int       `json:"queue_dead"`
 	QueueBytes      int64     `json:"queue_bytes"`
+	QueuePendingTemps int     `json:"queue_pending_temps"`
+	QueuePendingTempBytes int64 `json:"queue_pending_temp_bytes"`
 	QueueError      string    `json:"queue_error,omitempty"`
 }
 
@@ -221,6 +223,9 @@ func (m *operationsMonitor) record(s monitorSample) error {
 	if s.QueueEnabled && !s.QueueAvailable {
 		signals["queue_unreadable"] = struct{ severity, summary string }{"critical", "Durable SMTP queue inventory cannot be read"}
 	}
+	if s.QueueAvailable && s.QueuePendingTemps > 0 {
+		signals["queue_unpublished_spool"] = struct{ severity, summary string }{"critical", fmt.Sprintf("%d unpublished SMTP spool files (%d bytes) require investigation; no automatic deletion", s.QueuePendingTemps, s.QueuePendingTempBytes)}
+	}
 	if s.QueueAvailable && s.QueueDead > 0 {
 		signals["queue_dead"] = struct{ severity, summary string }{"critical", fmt.Sprintf("%d dead-letter SMTP jobs require investigation", s.QueueDead)}
 	}
@@ -331,6 +336,8 @@ func (s *Server) monitorCapture() error {
 			sample.QueueDelivering = q.Delivering
 			sample.QueueDead = q.Dead
 			sample.QueueBytes = q.Bytes
+			sample.QueuePendingTemps = q.PendingTemps
+			sample.QueuePendingTempBytes = q.PendingTempBytes
 		}
 	}
 	return s.monitor.record(sample)
