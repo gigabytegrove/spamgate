@@ -69,6 +69,12 @@ func Create(source, archive string) (err error) {
 	if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	// Keep the worker's existing single-writer lock held throughout the
+	// snapshot. A live worker must never produce a purportedly consistent
+	// offline backup. On Linux this is the same advisory flock primitive.
+	release, lockErr := acquireOfflineLock(source)
+	if lockErr != nil { return fmt.Errorf("offline backup refused: %w", lockErr) }
+	defer release()
 	if err = os.MkdirAll(filepath.Dir(archive), 0700); err != nil {
 		return err
 	}
@@ -88,6 +94,10 @@ func Create(source, archive string) (err error) {
 			return walkError
 		}
 		if path == source {
+			return nil
+		}
+		// Runtime lock state must never be copied into a restored instance.
+		if path == filepath.Join(source, ".worker.lock") {
 			return nil
 		}
 		info, e := os.Lstat(path)
@@ -118,13 +128,23 @@ func Create(source, archive string) (err error) {
 		if e != nil {
 			return e
 		}
-		w, e := zw.Create(relative)
-		if e != nil {
-			return e
+		opened, e := f.Stat()
+		if e != nil { f.Close(); return e }
+		if !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
+			f.Close()
+			return fmt.Errorf("source file changed identity during open: %s", relative)
 		}
+		w, e := zw.Create(relative)
+		if e != nil { f.Close(); return e }
 		hash := sha256.New()
-		n, e := io.Copy(io.MultiWriter(w, hash), f)
+		// A growing file must not turn a bounded snapshot into an unbounded copy.
+		n, e := io.Copy(io.MultiWriter(w, hash), io.LimitReader(f, info.Size()+1))
+		finished, statErr := f.Stat()
 		closeErr := f.Close()
+		if e == nil { e = statErr }
+		if e == nil && (!os.SameFile(info, finished) || finished.Size() != info.Size() || !finished.ModTime().Equal(info.ModTime())) {
+			e = fmt.Errorf("source file changed during backup: %s", relative)
+		}
 		if e == nil {
 			e = closeErr
 		}
@@ -182,9 +202,18 @@ func Create(source, archive string) (err error) {
 }
 
 func inspect(path string) (Manifest, *zip.ReadCloser, error) {
+	// Do not follow a forged backup archive symlink into unrelated host data.
+	before, e := os.Lstat(path)
+	if e != nil { return Manifest{}, nil, e }
+	if !before.Mode().IsRegular() { return Manifest{}, nil, errors.New("backup archive must be a regular file, not a symlink") }
 	z, e := zip.OpenReader(path)
 	if e != nil {
 		return Manifest{}, nil, e
+	}
+	after, e := os.Lstat(path)
+	if e != nil || !os.SameFile(before, after) {
+		z.Close()
+		return Manifest{}, nil, errors.New("backup archive changed during open")
 	}
 	fail := func(err error) (Manifest, *zip.ReadCloser, error) { z.Close(); return Manifest{}, nil, err }
 	if len(z.File) > maxFiles+1 {
@@ -223,7 +252,7 @@ func inspect(path string) (Manifest, *zip.ReadCloser, error) {
 	if e = json.Unmarshal(data, &manifest); e != nil {
 		return fail(e)
 	}
-	if manifest.Format != 1 || manifest.Product != "SpamGate" || len(manifest.Entries) != len(files)-1 {
+	if manifest.Format != 1 || manifest.Product != "SpamGate" || len(manifest.Entries) == 0 || len(manifest.Entries) != len(files)-1 {
 		return fail(errors.New("unrecognized or incomplete backup manifest"))
 	}
 	var total uint64
