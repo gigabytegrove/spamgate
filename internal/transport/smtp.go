@@ -246,6 +246,7 @@ func (s *SMTP) handle(conn net.Conn) {
 	var sender string
 	var recipients []string
 	greeted := false
+	heloName := ""
 	mailIssued := false
 	forwardedIP := ""
 	for commands := 0; commands < 500; commands++ {
@@ -266,6 +267,11 @@ func (s *SMTP) handle(conn net.Conn) {
 		upper := strings.ToUpper(line)
 		switch {
 		case strings.HasPrefix(upper, "EHLO "):
+			if strings.TrimSpace(line[5:]) == "" {
+				reply(501, "5.5.2 EHLO requires a client identity")
+				continue
+			}
+			heloName = strings.TrimSpace(line[5:])
 			greeted = true
 			forwardedIP = ""
 			mailIssued = false
@@ -274,6 +280,11 @@ func (s *SMTP) handle(conn net.Conn) {
 			_, _ = io.WriteString(writer, "250-SpamGate\r\n250-XFORWARD ADDR\r\n250-8BITMIME\r\n250 SIZE 10485760\r\n")
 			_ = writer.Flush()
 		case strings.HasPrefix(upper, "HELO "):
+			if strings.TrimSpace(line[5:]) == "" {
+				reply(501, "5.5.2 HELO requires a client identity")
+				continue
+			}
+			heloName = strings.TrimSpace(line[5:])
 			greeted = true
 			forwardedIP = ""
 			mailIssued = false
@@ -402,7 +413,7 @@ func (s *SMTP) handle(conn net.Conn) {
 				originIP = forwardedIP
 			}
 			scanCtx, cancelScan := context.WithTimeout(context.Background(), 45*time.Second)
-   m, e := s.Scanner.Scan(scanCtx, core.Input{Raw: raw.Bytes(), Sender: sender, Recipients: recipients, ClientIP: originIP, Connector: "smtp"})
+   m, e := s.Scanner.Scan(scanCtx, core.Input{Raw: raw.Bytes(), Sender: sender, Recipients: recipients, ClientIP: originIP, Helo: heloName, Connector: "smtp"})
    cancelScan()
 			if e == nil {
 				m.IngestIP = clientIP

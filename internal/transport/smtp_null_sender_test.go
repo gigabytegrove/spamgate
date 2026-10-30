@@ -47,7 +47,7 @@ func TestSMTPNullReversePathSurvivesDurableHandoff(t *testing.T) {
 	defer listener.Close()
 	_, trusted, _ := net.ParseCIDR("127.0.0.1/32")
 	srv := &SMTP{
-		Store: store, Scanner: &core.Scanner{Store: store, Resolver: milterStubDNS{}},
+		Store: store, Scanner: &core.Scanner{Store: store, Resolver: smtpNullSenderResolver{}},
 		CIDRs: []*net.IPNet{trusted}, Domains: []string{"localhost"}, Queue: queue,
 	}
 	done := make(chan struct{})
@@ -79,7 +79,7 @@ func TestSMTPNullReversePathSurvivesDurableHandoff(t *testing.T) {
 		read(prefix)
 	}
 	read("220 ")
-	send("HELO localhost", "250 ")
+	send("HELO mx.example.org", "250 ")
 	send("MAIL FROM:<>", "250 ")
 	send("RCPT TO:<recipient@localhost>", "250 ")
 	send("DATA", "354 ")
@@ -96,10 +96,41 @@ func TestSMTPNullReversePathSurvivesDurableHandoff(t *testing.T) {
 	if sends != 0 {
 		t.Fatal("delivery occurred before worker handoff")
 	}
+	// RFC 7208 uses HELO as the SPF identity when MAIL FROM is null.
+	// A missing HELO propagation would silently report SPF none.
+	entries := store.List(10, "")
+	if len(entries) != 1 || entries[0].Sender != "" {
+		t.Fatalf("null sender not preserved in scan history: %+v", entries)
+	}
+	spfPass := false
+	for _, finding := range entries[0].Findings {
+		if finding.Symbol == "R_SPF_ALLOW" {
+			spfPass = true
+		}
+	}
+	if !spfPass {
+		t.Fatalf("null-sender SPF did not use HELO identity: %+v", entries[0].Findings)
+	}
 	if err := queue.ProcessDue(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if sends != 1 {
 		t.Fatalf("expected one downstream delivery, got %d", sends)
 	}
+}
+
+
+type smtpNullSenderResolver struct{}
+
+func (smtpNullSenderResolver) LookupTXT(_ context.Context, name string) ([]string, error) {
+	if name == "mx.example.org" {
+		return []string{"v=spf1 ip4:127.0.0.1 -all"}, nil
+	}
+	return nil, &net.DNSError{IsNotFound: true, Name: name}
+}
+func (smtpNullSenderResolver) LookupIPAddr(_ context.Context, name string) ([]net.IPAddr, error) {
+	return nil, &net.DNSError{IsNotFound: true, Name: name}
+}
+func (smtpNullSenderResolver) LookupMX(_ context.Context, name string) ([]*net.MX, error) {
+	return nil, &net.DNSError{IsNotFound: true, Name: name}
 }
