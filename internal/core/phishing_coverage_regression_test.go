@@ -24,7 +24,7 @@ func TestPhishingStrictTransferAndAttachmentIsolation(t *testing.T) {
     cases:=[]struct{name,encoding,disposition,body string; want int; incomplete bool}{
         {"plain", "", "", phishingMismatch, 1, false},
         {"valid_base64", "base64", "", base64.StdEncoding.EncodeToString([]byte(phishingMismatch)), 1, false},
-        {"valid_qp", "quoted-printable", "", strings.ReplaceAll(phishingMismatch, "https", "ht=74ps"), 1, false},
+        {"valid_qp", "quoted-printable", "", strings.ReplaceAll(phishingMismatch, "=", "=3D"), 1, false},
         {"invalid_base64", "base64", "", "%%%%"+phishingMismatch, 0, true},
         {"invalid_qp", "quoted-printable", "", "=XX"+phishingMismatch, 0, true},
         {"unsupported_transfer", "x-custom", "", phishingMismatch, 0, true},
@@ -52,7 +52,7 @@ func TestPhishingSharedPartBudgetAndMalformedMIME(t *testing.T) {
     }
     _,coverage=detectPhishingLinksWithCoverage(phishingFixture("multipart/mixed","","","not multipart"))
     if !coverage.Incomplete {t.Fatal("missing boundary not reported")}
-    _,coverage=detectPhishingLinksWithCoverage(phishingFixture("text/html","base64","",strings.Repeat("A",(2<<20)+4)))
+    _,coverage=detectPhishingLinksWithCoverage(phishingFixture("text/html","base64","",strings.Repeat("A",(3<<20)+4)))
     if !coverage.Incomplete {t.Fatal("oversized decoded HTML not reported")}
 }
 
