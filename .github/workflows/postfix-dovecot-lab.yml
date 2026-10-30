@@ -51,9 +51,12 @@ jobs:
           sudo postconf -e 'milter_default_action = tempfail'
           sudo postconf -e 'milter_protocol = 6'
           sudo postconf -e 'smtpd_recipient_restrictions = permit_mynetworks,reject_unauth_destination'
-          sudo postconf check
-          sudo postfix stop || true
-          sudo postfix start
+          sudo postfix check
+          if sudo postfix status; then
+            sudo postfix reload
+          else
+            sudo postfix start
+          fi
           # This runner is disposable; Dovecot reads Maildir from the local test user's home.
           sudo sed -i -E 's|^[# ]*mail_location[[:space:]]*=.*|mail_location = maildir:~/Maildir|' /etc/dovecot/conf.d/10-mail.conf
           sudo doveconf -n
