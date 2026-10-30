@@ -1,0 +1,90 @@
+name: SpamGate real Postfix and Dovecot lab — isolated VM
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'internal/transport/postfix_real_lab_linux_test.go'
+      - '.github/workflows/postfix-dovecot-lab.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spamgate-postfix-real-lab-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  real-postfix-milter:
+    if: github.repository == 'gigabytegrove/spamgate'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.3'
+          cache: false
+      - name: Install isolated Postfix and Dovecot test components
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          printf 'postfix postfix/mailname string localhost\npostfix postfix/main_mailer_type select Local only\n' | sudo debconf-set-selections
+          sudo -E apt-get update -qq
+          sudo -E apt-get install -y -qq postfix dovecot-core dovecot-imapd
+          if ! id spamgatebeta >/dev/null 2>&1; then
+            sudo useradd -m -s /bin/bash spamgatebeta
+          fi
+          sudo postconf -e 'inet_interfaces = loopback-only'
+          sudo postconf -e 'inet_protocols = ipv4'
+          sudo postconf -e 'mydestination = localhost, localhost.localdomain'
+          sudo postconf -e 'mynetworks = 127.0.0.0/8'
+          sudo postconf -e 'home_mailbox = Maildir/'
+          sudo postconf -e 'mailbox_command ='
+          sudo postconf -e 'smtpd_milters = inet:127.0.0.1:38472'
+          sudo postconf -e 'non_smtpd_milters ='
+          sudo postconf -e 'milter_default_action = tempfail'
+          sudo postconf -e 'milter_protocol = 6'
+          sudo postconf -e 'smtpd_recipient_restrictions = permit_mynetworks,reject_unauth_destination'
+          sudo postconf check
+          sudo postfix stop || true
+          sudo postfix start
+          # This runner is disposable; Dovecot reads Maildir from the local test user's home.
+          sudo sed -i -E 's|^[# ]*mail_location[[:space:]]*=.*|mail_location = maildir:~/Maildir|' /etc/dovecot/conf.d/10-mail.conf
+          sudo doveconf -n
+          sudo postfix status
+          sudo postconf -n | grep -E 'milter|mydestination|home_mailbox|inet_interfaces'
+          ss -ltn | grep -E ':25[[:space:]]'
+
+      - name: Real Postfix accept, synthetic reject and storage tempfail
+        env:
+          CI: 'true'
+          SPAMGATE_POSTFIX_LAB: '1'
+          CGO_ENABLED: '1'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          go test -count=1 -v -run '^TestRealPostfixMilterLocalDeliveryAndTempfail$' ./internal/transport
+
+      - name: Dovecot verifies real mailbox visibility
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Only a test-only user, inside an ephemeral GitHub runner.
+          RESULTS="$(sudo doveadm search -u spamgatebeta mailbox INBOX ALL)"
+          printf '%s\n' "$RESULTS"
+          test -n "$RESULTS" || { echo 'Dovecot cannot see accepted Maildir message'; exit 1; }
+
+      - name: Postfix queue and delivery diagnostics
+        if: always()
+        shell: bash
+        run: |
+          sudo postqueue -p || true
+          sudo postfix status || true
+          sudo ls -la /home/spamgatebeta/Maildir/new || true
+          sudo ls -la /home/spamgatebeta/Maildir/cur || true
