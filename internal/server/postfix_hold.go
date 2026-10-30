@@ -254,7 +254,7 @@ func (s *Server) postfixReleaseMessage(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		matched = true
-		break
+		// Continue scanning: a second record with the same queue ID is ambiguous.
 	}
 	if !matched {
 		fail(w, 409, "The exact message is not currently present in Postfix's hold queue; nothing was released")
