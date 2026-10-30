@@ -359,9 +359,23 @@ func (s *Store) compactLocked() error {
  return nil
 }
 func (s *Store) Quarantine(id string, raw []byte) error {
+	if !validID(id) {
+		return errors.New("invalid scan ID for quarantine persistence")
+	}
 	dir := filepath.Join(s.dir, "quarantine")
 	if e := os.MkdirAll(dir, 0700); e != nil {
 		return e
+	}
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("quarantine path must be a real directory, not a symlink")
+	}
+	// Persist directory creation before acknowledging an SMTP quarantine.
+	if err := syncAtomicParent(dir); err != nil {
+		return err
 	}
 	return atomicBytes(filepath.Join(dir, id+".eml"), raw)
 }
@@ -387,8 +401,26 @@ func atomicBytes(path string, b []byte) error {
 	if e = f.Close(); e != nil {
 		return e
 	}
-	return os.Rename(name, path)
+	if e = os.Rename(name, path); e != nil {
+		return e
+	}
+	return syncAtomicParent(path)
 }
+
+// The file fsync alone does not make a newly renamed directory entry
+// crash-durable on native Unix filesystems.
+func syncAtomicParent(path string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	dir, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
+}
+
 func (s *Store) Quarantined(id string) ([]byte, error) {
 	if !validID(id) {
 		return nil, errors.New("bad ID")
