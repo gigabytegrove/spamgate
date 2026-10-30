@@ -13,7 +13,25 @@ import (
 const evidenceTailLimit int64 = 4 << 20
 const evidenceMaxEvents = 100
 
-var postfixEvidenceLine = regexp.MustCompile(`\bpostfix/[a-zA-Z0-9_-]+\[[0-9]+\]: ([A-Za-z0-9]+): (.*)$`)
+// Require a real syslog/journal prefix and a Postfix process at the expected
+// position. An attacker-controlled warning string containing "postfix/smtp"
+// must not be mistaken for independent delivery evidence.
+var postfixEvidenceLine = regexp.MustCompile(`^(?:[A-Z][a-z]{2} +[0-9]{1,2}(?: +[0-9]{2}:[0-9]{2}:[0-9]{2})?|[0-9]{4}-[0-9]{2}-[0-9]{2}T[^ ]+) +[^ ]+ +postfix/([a-zA-Z0-9_-]+)\[[0-9]+\]: ([A-Za-z0-9]{1,32}): (.*)package server
+
+import (
+	"bufio"
+	"errors"
+	"io"
+	"net/http"
+	"os"
+	"regexp"
+	"strings"
+)
+
+const evidenceTailLimit int64 = 4 << 20
+const evidenceMaxEvents = 100
+
+)
 var postfixStatus = regexp.MustCompile(`\bstatus=(sent|deferred|bounced|expired|hold)\b`)
 
 type deliveryEvidenceEvent struct {
@@ -53,7 +71,7 @@ func (s *Server) postfixDeliveryEvidence(w http.ResponseWriter, r *http.Request)
 		fail(w, http.StatusServiceUnavailable, "Postfix log unavailable or unsafe; verify configured path and file permissions")
 		return
 	}
-	jsonReply(w, http.StatusOK, map[string]any{"enabled": true, "queue_id": m.MTAQueueID, "events": events, "truncated": truncated, "detail": "Matching Postfix log entries, not an independent mailbox receipt. Log rotation and tail limits can omit earlier events; status=sent indicates acceptance by the next hop, not final inbox placement."})
+	jsonReply(w, http.StatusOK, map[string]any{"enabled": true, "queue_id": m.MTAQueueID, "events": events, "truncated": truncated, "detail": "Matching Postfix log entries, not an independent mailbox receipt. The current log and one plain-text .1 rotation are inspected with bounded reads; older or compressed logs may be omitted. status=sent indicates acceptance by the next hop, not final inbox placement."})
 }
 
 func validPostfixEvidenceID(id string) bool {
@@ -72,6 +90,33 @@ func readDeliveryEvidence(path, queueID string) ([]deliveryEvidenceEvent, bool, 
 	if !validPostfixEvidenceID(queueID) {
 		return nil, false, errors.New("invalid queue ID")
 	}
+	// Read one rotated plain-text sibling first, then the active file. Each
+	// file has an independent 4 MiB read budget and descriptor safety check.
+	// Compressed archives and arbitrary glob expansion are intentionally out.
+	var combined []deliveryEvidenceEvent
+	truncated := false
+	for _, candidate := range []struct { name string; optional bool }{{path + ".1", true}, {path, false}} {
+		items, clipped, err := readDeliveryEvidenceFile(candidate.name, queueID)
+		if candidate.optional && errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, false, err
+		}
+		truncated = truncated || clipped
+		for _, item := range items {
+			if len(combined) == evidenceMaxEvents {
+				combined = combined[1:]
+				truncated = true
+			}
+			combined = append(combined, item)
+		}
+	}
+	if combined == nil { combined = []deliveryEvidenceEvent{} }
+	return combined, truncated, nil
+}
+
+func readDeliveryEvidenceFile(path, queueID string) ([]deliveryEvidenceEvent, bool, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, false, err
@@ -110,10 +155,16 @@ func readDeliveryEvidence(path, queueID string) ([]deliveryEvidenceEvent, bool, 
 			line = line[:16384]
 		}
 		line = strings.TrimRight(line, "\r\n")
-		if match := postfixEvidenceLine.FindStringSubmatch(line); match != nil && match[1] == queueID {
+		if match := postfixEvidenceLine.FindStringSubmatch(line); match != nil && match[2] == queueID {
 			event := deliveryEvidenceEvent{Line: line}
-			if status := postfixStatus.FindStringSubmatch(match[2]); status != nil {
-				event.Status = status[1]
+			// Only a delivery-agent process can provide a status field.
+			// Queue manager, cleanup, and SMTP listener log text may contain
+			// untrusted values that look like status=sent.
+			switch match[1] {
+			case "smtp", "lmtp", "local", "virtual", "pipe", "error", "discard":
+				if status := postfixStatus.FindStringSubmatch(match[3]); status != nil {
+					event.Status = status[1]
+				}
 			}
 			if len(events) == evidenceMaxEvents {
 				events = events[1:]

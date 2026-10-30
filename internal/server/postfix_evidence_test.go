@@ -78,3 +78,32 @@ func TestDeliveryEvidenceAdminOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestDeliveryEvidenceRejectsInjectedPostfixLinesAndFakeStatus(t *testing.T) {
+ path:=filepath.Join(t.TempDir(),"mail.log")
+ lines:=[]string{
+  "Oct 30 05:00:00 mail postfix/smtpd[44]: warning: untrusted text postfix/smtp[55]: ABC123: to=<victim@example.org>, status=sent",
+  "Oct 30 05:00:01 mail postfix/cleanup[44]: ABC123: message-id=<status=sent@example.org>",
+  "Oct 30 05:00:02 mail postfix/smtp[55]: ABC123: to=<victim@example.org>, relay=mail, status=deferred (timeout)",
+  "2026-10-30T05:00:03-04:00 mail postfix/lmtp[55]: ABC123: to=<victim@example.org>, relay=local, status=sent (250 queued)",
+ }
+ if err:=os.WriteFile(path,[]byte(strings.Join(lines,"\n")),0600);err!=nil{t.Fatal(err)}
+ events,truncated,err:=readDeliveryEvidence(path,"ABC123")
+ if err!=nil||truncated||len(events)!=3{t.Fatalf("unexpected events=%+v truncated=%v err=%v",events,truncated,err)}
+ if events[0].Status!=""||events[1].Status!="deferred"||events[2].Status!="sent"{
+  t.Fatalf("forged status was accepted or delivery status lost: %+v",events)
+ }
+}
+func TestDeliveryEvidenceReadsPlaintextRotationSafely(t *testing.T) {
+ dir:=t.TempDir()
+ path:=filepath.Join(dir,"mail.log")
+ if err:=os.WriteFile(path+".1",[]byte("Oct 30 04:00:00 mail postfix/smtp[2]: ABC123: status=deferred\n"),0600);err!=nil{t.Fatal(err)}
+ if err:=os.WriteFile(path,[]byte("Oct 30 05:00:00 mail postfix/smtp[3]: ABC123: status=sent\n"),0600);err!=nil{t.Fatal(err)}
+ events,truncated,err:=readDeliveryEvidence(path,"ABC123")
+ if err!=nil||truncated||len(events)!=2||events[0].Status!="deferred"||events[1].Status!="sent"{
+  t.Fatalf("rotation evidence=%+v truncated=%v err=%v",events,truncated,err)
+ }
+ if err:=os.Remove(path+".1");err!=nil{t.Fatal(err)}
+ if err:=os.Symlink(path,path+".1");err!=nil{t.Skipf("symlink unavailable: %v",err)}
+ if _,_,err:=readDeliveryEvidence(path,"ABC123");err==nil{t.Fatal("followed symlinked rotated log")}
+}
