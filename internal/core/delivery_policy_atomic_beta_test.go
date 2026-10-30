@@ -18,7 +18,7 @@ func TestDeliveryPolicyFailurePreservesInMemoryState(t *testing.T) {
 		c.Settings.GreylistEnabled = true
 		c.Settings.GreylistWaitMinutes = 5
 		c.Settings.RateLimitEnabled = true
-		c.Settings.RateLimitPerHour = 100
+		c.Settings.RateLimitPerHour = 10
 		return nil
 	}); err != nil { t.Fatal(err) }
 	now := time.Date(2026, 10, 30, 3, 0, 0, 0, time.UTC)
@@ -59,7 +59,7 @@ func TestDeliveryPolicyPersistenceFailureDoesNotConsumeAllowance(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	if err := store.UpdateConfig(func(c *Config) error {
 		c.Settings.RateLimitEnabled = true
-		c.Settings.RateLimitPerHour = 1
+		c.Settings.RateLimitPerHour = 10
 		return nil
 	}); err != nil { t.Fatal(err) }
 	now := time.Date(2026, 10, 30, 3, 0, 0, 0, time.UTC)
