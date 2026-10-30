@@ -532,6 +532,10 @@ func (q *DeliveryQueue) ProcessDue(ctx context.Context) error {
 					detail := "SMTP delivery attempts exhausted; original retained for operator review"
 					if permanent {
 						detail = "Upstream SMTP permanently rejected MAIL, RCPT or DATA; original retained for operator review"
+						var invalid *invalidRelayOriginalError
+						if errors.As(sendErr, &invalid) {
+							detail = "SMTP relay refused deterministically invalid original; immutable bytes retained for operator review"
+						}
 					}
 					msg.Findings = append(msg.Findings, core.Finding{
 						Symbol: "QUEUE_DELIVERY_DEAD", Source: "smtp/relay", Detail: detail,
