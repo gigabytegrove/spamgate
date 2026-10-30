@@ -88,25 +88,25 @@ func (r *Relay) Send(ctx context.Context, m core.Message, raw []byte) error {
 	}
 	sender = strings.Trim(sender, "<>")
 	if e = client.Mail(sender); e != nil {
-		return fmt.Errorf("relay MAIL: %w", e)
+		return wrapRelayStage("MAIL", e)
 	}
 	if len(m.Recipients) == 0 {
 		return errors.New("no recipients")
 	}
 	for _, recipient := range m.Recipients {
 		if e = client.Rcpt(recipient); e != nil {
-			return fmt.Errorf("relay RCPT: %w", e)
+			return wrapRelayStage("RCPT", e)
 		}
 	}
 	writer, e := client.Data()
 	if e != nil {
-		return e
+		return wrapRelayStage("DATA", e)
 	}
 	if _, e = writer.Write(raw); e != nil {
-		return e
+		return wrapRelayStage("DATA", e)
 	}
 	if e = writer.Close(); e != nil {
-		return fmt.Errorf("relay DATA: %w", e)
+		return wrapRelayStage("DATA", e)
 	}
 	_ = client.Quit()
 	return nil
