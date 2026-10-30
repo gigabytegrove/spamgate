@@ -252,6 +252,17 @@ func (s *SMTP) handle(conn net.Conn) {
 	forwardedHelo := ""
 	seenForwardedIP := false
 	seenForwardedHelo := false
+	// DATA completion (including errors) ends the transaction. Never let
+	// a client reuse its sender, recipients, or XFORWARD identity.
+	resetEnvelope := func() {
+		sender = ""
+		recipients = nil
+		mailIssued = false
+		forwardedIP = ""
+		forwardedHelo = ""
+		seenForwardedIP = false
+		seenForwardedHelo = false
+	}
 	for commands := 0; commands < 500; commands++ {
 		lineBytes, e := readLineLimited(reader, 4096)
 		line := string(lineBytes)
@@ -475,19 +486,22 @@ func (s *SMTP) handle(conn net.Conn) {
 				m.IngestIP = clientIP
 			}
 			if e != nil {
-				reply(550, "5.6.0 Invalid message")
-				sender = ""
-				mailIssued = false
-				forwardedIP = ""
-			seenForwardedIP = false
-			seenForwardedHelo = false
-				forwardedHelo = ""
-				recipients = nil
+				// Malformed originals are permanent errors; unavailable AV, DNS,
+				// timeouts and internal scanner errors must remain retryable.
+				s.log.Error("SMTP content scan failed", "error", e)
+				if errors.Is(e, core.ErrInvalidMessage) {
+					reply(550, "5.6.0 Invalid RFC 5322 message")
+				} else {
+					reply(451, "4.3.0 Content scanner temporarily unavailable")
+				}
+				resetEnvelope()
 				continue
 			}
 			if m.Action == "quarantine" {
 				if e = s.Store.Quarantine(m.ID, raw.Bytes()); e != nil {
+					s.log.Error("SMTP quarantine persistence failed", "error", e)
 					reply(451, "4.3.0 Could not save quarantine")
+					resetEnvelope()
 					continue
 				}
 			}
@@ -583,8 +597,7 @@ func (s *SMTP) handle(conn net.Conn) {
 				}
 				reply(250, "2.0.0 Accepted id="+m.ID)
 			}
-			sender = ""
-			recipients = nil
+			resetEnvelope()
 		default:
 			reply(502, "5.5.1 Command not supported")
 		}

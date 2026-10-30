@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -148,6 +149,10 @@ func decodeQP(b []byte) []byte {
 	return out
 }
 
+// ErrInvalidMessage marks a permanently malformed RFC 5322 original.
+// Infrastructure failures must remain retryable SMTP 451 responses.
+var ErrInvalidMessage = errors.New("invalid RFC 5322 message")
+
 // Decoding functions are in codec.go to isolate MIME transfer handling.
 func (s *Scanner) Scan(ctx context.Context, in Input) (out Message, scanErr error) {
 	started := time.Now()
@@ -156,7 +161,7 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (out Message, scanErr erro
         if scanErr == nil { observeDetectionFindings(out.Findings) }
     }()
 	if len(in.Raw) == 0 || len(in.Raw) > 10<<20 {
-		return Message{}, fmt.Errorf("message size must be 1–10485760 bytes")
+		return Message{}, fmt.Errorf("%w: size must be 1–10485760 bytes", ErrInvalidMessage)
 	}
 	cfg := s.Store.Config()
 	policyDetail := "Global policy"
@@ -181,7 +186,7 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (out Message, scanErr erro
 	m := Message{ID: ID(), Timestamp: time.Now().UTC(), Sender: strings.TrimSpace(in.Sender), Recipients: append([]string(nil), in.Recipients...), ClientIP: in.ClientIP, Connector: in.Connector, Size: len(in.Raw), Action: "accept"}
 	parsed, e := mail.ReadMessage(bytes.NewReader(in.Raw))
 	if e != nil {
-		return Message{}, fmt.Errorf("invalid RFC 5322 message: %w", e)
+		return Message{}, fmt.Errorf("%w: %v", ErrInvalidMessage, e)
 	}
 	m.HeaderSnapshot, m.HeaderTruncated = CaptureHeaders(in.Raw)
 	m.MessageID = parsed.Header.Get("Message-Id")
