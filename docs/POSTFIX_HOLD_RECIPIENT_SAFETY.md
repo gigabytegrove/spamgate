@@ -18,3 +18,14 @@ result is **command submitted**, not verified final mailbox placement.
 Unit tests exercise 55-recipient truncation, malformed IDs, incomplete
 inventory and duplicate queue IDs without invoking Postfix. Real host
 qualification and a least-privilege queue helper remain outstanding.
+
+## Null-reverse-path held delivery status notifications
+
+A genuine SMTP `MAIL FROM:<>` is a valid sender identity, including for
+delivery status notifications. The release endpoint now allows a held
+null-sender message **only** when the scanned envelope and live Postfix
+queue inventory both have a null sender. A non-null/null mismatch still
+fails closed. Existing queue ID, arrival-time, complete-recipient,
+single-record and durable pre-command audit checks remain mandatory.
+A regression verifies mismatch refusal, one permitted release and
+duplicate-release refusal without invoking a real production `postsuper`.

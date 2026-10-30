@@ -232,7 +232,10 @@ func (s *Server) postfixReleaseMessage(w http.ResponseWriter, r *http.Request) {
 		// Postfix queue identifiers can be reused. Demand a matching envelope
 		// sender and ensure every queued recipient belongs to this scan. A
 		// message with no reliable sender/recipient evidence fails closed.
-		if m.Sender == "" || h.Sender == "" || !strings.EqualFold(strings.Trim(m.Sender, "<>"), strings.Trim(h.Sender, "<>")) {
+		// The SMTP null reverse path is a valid envelope identity for DSNs.
+		// Require both sides to agree exactly after angle-bracket normalization;
+		// never reject an otherwise correlated held DSN merely for being null.
+		if !strings.EqualFold(strings.Trim(m.Sender, "<>"), strings.Trim(h.Sender, "<>")) {
 			fail(w, 409, "Postfix envelope sender does not match the scanned sender; nothing was released")
 			return
 		}
