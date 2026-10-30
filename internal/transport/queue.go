@@ -48,6 +48,7 @@ type spoolRecord struct {
 	QueuedMessage
 	RawRFC822 []byte `json:"raw"`
 	IntegritySHA256 string `json:"integrity_sha256,omitempty"` // SHA-256 of immutable ID, envelope and original bytes
+	StateSHA256 string `json:"state_sha256,omitempty"` // SHA-256 of mutable delivery state
 	Scan *core.Message `json:"scan,omitempty"` // persisted metadata survives crash before events.jsonl mirror
 }
 
@@ -110,6 +111,26 @@ func spoolDigest(rec spoolRecord) string {
  sum := sha256.Sum256(payload)
  return hex.EncodeToString(sum[:])
 }
+// A changed "delivered" bit must never silently bypass a relay attempt.
+// This detects accidental corruption; it is not a keyed authentication MAC.
+func spoolStateDigest(rec spoolRecord) string {
+ payload, _ := json.Marshal(struct {
+  ID string `json:"id"`
+  Immutable string `json:"immutable"`
+  Subject string `json:"subject"`
+  Created time.Time `json:"created"`
+  Updated time.Time `json:"updated"`
+  NextAttempt time.Time `json:"next_attempt"`
+  Attempts int `json:"attempts"`
+  State string `json:"state"`
+  LastError string `json:"last_error"`
+  DeliveredAt time.Time `json:"delivered_at"`
+  Size int `json:"size"`
+ }{rec.ID, rec.IntegritySHA256, rec.Subject, rec.Created, rec.Updated,
+   rec.NextAttempt, rec.Attempts, rec.State, rec.LastError, rec.DeliveredAt, rec.Size})
+ sum := sha256.Sum256(payload)
+ return hex.EncodeToString(sum[:])
+}
 func (q *DeliveryQueue) path(id string) string { return filepath.Join(q.dir, id+".json") }
 func (q *DeliveryQueue) syncDirectory() error {
 	if runtime.GOOS == "windows" {
@@ -124,6 +145,7 @@ func (q *DeliveryQueue) syncDirectory() error {
 }
 func (q *DeliveryQueue) put(rec spoolRecord) error {
 	if !validQueueID(rec.ID) { return errors.New("invalid queue record ID") }
+	rec.StateSHA256 = spoolStateDigest(rec)
 	b, e := json.Marshal(rec)
 	if e != nil {
 		return e
@@ -183,6 +205,9 @@ func (q *DeliveryQueue) get(id string) (spoolRecord, error) {
 	if rec.IntegritySHA256 != "" && rec.IntegritySHA256 != spoolDigest(rec) {
 		return spoolRecord{}, fmt.Errorf("queue job %s failed immutable envelope/original integrity check", id)
 	}
+	if rec.StateSHA256 != "" && rec.StateSHA256 != spoolStateDigest(rec) {
+		return spoolRecord{}, fmt.Errorf("queue job %s failed mutable delivery-state integrity check", id)
+	}
 	return rec, nil
 }
 func (q *DeliveryQueue) snapshotLocked() (QueueSummary, error) {
@@ -192,10 +217,10 @@ func (q *DeliveryQueue) snapshotLocked() (QueueSummary, error) {
 	}
 	var info QueueSummary
 	for _, entry := range names {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
-			continue
-		}
+		if filepath.Ext(entry.Name()) != ".json" { continue }
+		if entry.IsDir() { return QueueSummary{}, fmt.Errorf("directory masquerading as queue job: %s", entry.Name()) }
 		id := entry.Name()[:len(entry.Name())-5]
+		if !validQueueID(id) { return QueueSummary{}, fmt.Errorf("invalid queue filename: %s", entry.Name()) }
 		rec, err := q.get(id)
 		if err != nil {
 			return QueueSummary{}, err
@@ -367,8 +392,9 @@ func (q *DeliveryQueue) ProcessDue(ctx context.Context) error {
 			return err
 		}
 		if rec.State == "delivered" {
-			q.finalizeLocked(rec)
+			err = q.finalizeLocked(rec)
 			q.mu.Unlock()
+			if err != nil { return err }
 			continue
 		}
 		if rec.State == "dead" {
@@ -428,9 +454,7 @@ func (q *DeliveryQueue) ProcessDue(ctx context.Context) error {
 		rec.Updated = q.now()
 		rec.LastError = ""
 		err = q.put(rec)
-		if err == nil {
-			q.finalizeLocked(rec)
-		}
+		if err == nil { err = q.finalizeLocked(rec) }
 		q.mu.Unlock()
 		if err != nil {
 			return err
@@ -456,7 +480,7 @@ func queueHistoryMessage(rec spoolRecord) core.Message {
 		Findings: []core.Finding{{Symbol:"QUEUE_HISTORY_RECOVERED",Source:"recovery/spool",Detail:"Recreated envelope from legacy queue record; original scan evidence unavailable"}},
 	}
 }
-func (q *DeliveryQueue) finalizeLocked(rec spoolRecord) {
+func (q *DeliveryQueue) finalizeLocked(rec spoolRecord) error {
 	msg, ok := q.store.Get(rec.ID)
 	if !ok {
 		msg = queueHistoryMessage(rec)
@@ -465,12 +489,11 @@ func (q *DeliveryQueue) finalizeLocked(rec spoolRecord) {
 	msg.Delivery = "relayed"
 	if err := q.store.Save(msg); err != nil {
 		slog.Error("delivered mail history persistence failed; retaining durable spool", "id", rec.ID, "error", err)
-		return
+		return fmt.Errorf("cannot persist delivered history for %s: %w", rec.ID, err)
 	}
-	if err := os.Remove(q.path(rec.ID)); err != nil {
-		return
-	}
-	_ = q.syncDirectory()
+	if err := os.Remove(q.path(rec.ID)); err != nil { return fmt.Errorf("cannot remove delivered spool %s: %w", rec.ID, err) }
+	if err := q.syncDirectory(); err != nil { return fmt.Errorf("cannot sync delivered spool directory: %w", err) }
+	return nil
 }
 func (q *DeliveryQueue) Run(ctx context.Context) {
 	timer := time.NewTicker(15 * time.Second)
