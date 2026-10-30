@@ -23,6 +23,8 @@ type PostfixHeld struct {
 	QueueID        string   `json:"queue_id"`
 	Sender         string   `json:"sender"`
 	Recipients     []string `json:"recipients"`
+	RecipientCount int `json:"recipient_count"`
+	RecipientsTruncated bool `json:"recipients_truncated,omitempty"`
 	ArrivalTime    int64    `json:"arrival_time"`
 	MessageSize    int64    `json:"message_size"`
 }
@@ -79,10 +81,10 @@ func parsePostfixHold(payload []byte) ([]PostfixHeld, error) {
 		if len(held) >= 1000 {
 			return nil, errors.New("too many held messages for this safe inventory; use postqueue on host")
 		}
-		if record.QueueID == "" || len(record.QueueID) > 32 || strings.ContainsAny(record.QueueID, " \t\r\n/") {
+		if !validPostfixEvidenceID(record.QueueID) {
 			return nil, errors.New("invalid Postfix queue identifier")
 		}
-		item := PostfixHeld{QueueID: record.QueueID, Sender: record.Sender, ArrivalTime: record.ArrivalTime, MessageSize: record.MessageSize}
+		item := PostfixHeld{QueueID: record.QueueID, Sender: record.Sender, ArrivalTime: record.ArrivalTime, MessageSize: record.MessageSize, RecipientCount: len(record.Recipients), RecipientsTruncated: len(record.Recipients) > 50}
 		for _, r := range record.Recipients {
 			if len(item.Recipients) < 50 {
 				item.Recipients = append(item.Recipients, r.Address)
@@ -121,7 +123,12 @@ func (s *Server) postfixHoldQueue(w http.ResponseWriter, r *http.Request) {
 	byQueue := map[string]string{}
 	for _, scan := range scans {
 		if scan.MTAQueueID != "" && scan.MTAAction == "postfix_hold_requested" {
-			byQueue[scan.MTAQueueID] = scan.ID
+			if previous, exists := byQueue[scan.MTAQueueID]; !exists {
+    byQueue[scan.MTAQueueID] = scan.ID
+   } else if previous != scan.ID {
+    // A reused queue ID with multiple candidate scans is ambiguous.
+    byQueue[scan.MTAQueueID] = ""
+   }
 		}
 	}
 	for i := range messages {
@@ -209,10 +216,16 @@ func (s *Server) postfixReleaseMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	matched := false
 	for _, h := range held {
-		if h.QueueID != req.QueueID {
-			continue
-		}
-		if h.ArrivalTime <= 0 || absDuration(m.Timestamp.Sub(time.Unix(h.ArrivalTime, 0))) > 15*time.Minute {
+		if h.QueueID != req.QueueID { continue }
+  if matched {
+   fail(w, 409, "Multiple Postfix queue records share this ID; release refused")
+   return
+  }
+  if h.RecipientsTruncated || (h.RecipientCount > 0 && h.RecipientCount != len(h.Recipients)) {
+   fail(w, 409, "Postfix recipient inventory is incomplete; cannot authorize release")
+   return
+  }
+  if h.ArrivalTime <= 0 || absDuration(m.Timestamp.Sub(time.Unix(h.ArrivalTime, 0))) > 15*time.Minute {
 			fail(w, 409, "Queue ID was reused or the queue arrival time cannot be correlated with this scan; nothing was released")
 			return
 		}
