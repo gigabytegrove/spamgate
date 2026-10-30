@@ -41,7 +41,7 @@ type Manifest struct {
 
 func safeName(path string) bool {
 	return path != "" && path != manifestPath && !strings.HasPrefix(path, "/") && !strings.Contains(path, "\\") && path == filepath.ToSlash(filepath.Clean(path)) &&
-		path != "." && path != ".." && !strings.HasPrefix(path, "../") && !strings.Contains(path, "/../")
+		path != "." && path != ".." && !strings.HasPrefix(path, "../") && !strings.Contains(path, "/../") && strings.IndexFunc(path, func(r rune) bool { return r < 0x20 || r == 0x7f }) == -1
 }
 
 func Create(source, archive string) (err error) {
@@ -232,6 +232,16 @@ func inspect(path string) (Manifest, *zip.ReadCloser, error) {
 		}
 		files[f.Name] = f
 	}
+	// A ZIP may contain both "mail" and "mail/message.eml". Such an
+	// archive cannot represent a valid directory tree, even if each hash
+	// is correct. Reject the topology before extracting any bytes.
+	for name := range files {
+		for i := strings.LastIndexByte(name, '/'); i >= 0; i = strings.LastIndexByte(name[:i], '/') {
+			if _, conflict := files[name[:i]]; conflict {
+				return fail(fmt.Errorf("conflicting archive file/directory paths: %q and %q", name[:i], name))
+			}
+		}
+	}
 	mf, ok := files[manifestPath]
 	if !ok {
 		return fail(errors.New("missing backup manifest"))
@@ -263,10 +273,8 @@ func inspect(path string) (Manifest, *zip.ReadCloser, error) {
 			return fail(fmt.Errorf("invalid manifest entry %q", entry.Path))
 		}
 		observed[entry.Path] = true
-		total += f.UncompressedSize64
-		if total > uint64(maxBytes) {
-			return fail(errors.New("backup exceeds size limit"))
-		}
+		total, e = addBoundedArchiveBytes(total, f.UncompressedSize64)
+		if e != nil { return fail(e) }
 		r, e := f.Open()
 		if e != nil {
 			return fail(e)
@@ -283,6 +291,15 @@ func inspect(path string) (Manifest, *zip.ReadCloser, error) {
 	}
 	return manifest, z, nil
 }
+// addBoundedArchiveBytes checks before adding, so a forged ZIP size cannot
+// overflow uint64 and bypass the aggregate 16 GiB restore limit.
+func addBoundedArchiveBytes(total, size uint64) (uint64, error) {
+	if size > uint64(maxBytes) || total > uint64(maxBytes)-size {
+		return total, errors.New("backup exceeds size limit")
+	}
+	return total + size, nil
+}
+
 func Verify(archive string) (Manifest, error) {
 	manifest, z, e := inspect(archive)
 	if e != nil {
@@ -351,6 +368,7 @@ func Restore(archive, destination string) error {
 		if copyErr != nil { return copyErr }
 		if closeErr != nil { return closeErr }
 	}
+	if err := syncRestoredTree(stage); err != nil { return fmt.Errorf("restore directory durability: %w", err) }
 	return publishRestoredDirectory(stage, dest)
 }
 
