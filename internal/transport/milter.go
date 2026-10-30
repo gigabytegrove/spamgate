@@ -236,6 +236,7 @@ func milterTagHeaders(msg core.Message) [][2]string {
 func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 	type transaction struct {
 		sender       string
+		mailSeen     bool // distinguishes a null MAIL FROM from no MAIL callback
 		recipients   []string
 		headers      bytes.Buffer
 		body         bytes.Buffer
@@ -290,7 +291,7 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 		case 'D': // Macro definition does not expect a response.
 			// Only a new queue ID after MAIL FROM is associated with the
 			// current transaction, preventing reuse from a previous email.
-			if id := milterQueueID(data); id != "" && msg.sender != "" {
+			if id := milterQueueID(data); id != "" && msg.mailSeen {
 				msg.queueID = id
 			}
 			continue
@@ -300,6 +301,7 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 			helo = firstMilterString(data)
 		case 'M':
 			reset()
+			msg.mailSeen = true
 			msg.sender = firstMilterString(data)
 		case 'R':
 			if v := firstMilterString(data); v != "" {
