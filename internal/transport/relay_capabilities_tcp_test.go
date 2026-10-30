@@ -35,6 +35,7 @@ func TestRelayCapabilityPreflightOverTCP(t *testing.T) {
 		{"eight bit without 8BITMIME", nil, "sender@example.invalid", "recipient@example.invalid", "Subject: test\r\n\r\ncaf\xc3\xa9\r\n", "8BITMIME", false},
 		{"eight bit with 8BITMIME", []string{"8BITMIME"}, "sender@example.invalid", "recipient@example.invalid", "Subject: test\r\n\r\ncaf\xc3\xa9\r\n", "", true},
 		{"UTF8 recipient without SMTPUTF8", []string{"8BITMIME"}, "sender@example.invalid", "b\xc3\xbcro@example.invalid", "Subject: test\r\n\r\nplain\r\n", "SMTPUTF8", false},
+		{"nonconformant SMTPUTF8 without 8BITMIME", []string{"SMTPUTF8"}, "sender@example.invalid", "b\xc3\xbcro@example.invalid", "Subject: test\r\n\r\nplain\r\n", "required 8BITMIME", false},
 		{"UTF8 recipient with SMTPUTF8", []string{"8BITMIME", "SMTPUTF8"}, "sender@example.invalid", "b\xc3\xbcro@example.invalid", "Subject: test\r\n\r\nplain\r\n", "", true},
 		{"upstream SIZE too small", []string{"SIZE 20"}, "sender@example.invalid", "recipient@example.invalid", "Subject: test\r\n\r\nbody longer than twenty bytes\r\n", "SIZE", false},
 		{"upstream SIZE adequate", []string{"SIZE 4096"}, "sender@example.invalid", "recipient@example.invalid", "Subject: test\r\n\r\nplain\r\n", "", true},
