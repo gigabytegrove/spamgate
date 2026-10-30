@@ -2,6 +2,8 @@ package transport
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -44,6 +47,7 @@ type QueuedMessage struct {
 type spoolRecord struct {
 	QueuedMessage
 	RawRFC822 []byte `json:"raw"`
+	IntegritySHA256 string `json:"integrity_sha256,omitempty"` // SHA-256 of immutable ID, envelope and original bytes
 	Scan *core.Message `json:"scan,omitempty"` // persisted metadata survives crash before events.jsonl mirror
 }
 
@@ -73,11 +77,37 @@ func NewDeliveryQueue(dataDir string, store *core.Store, deliver func(context.Co
 	if err := os.MkdirAll(path, 0700); err != nil {
 		return nil, err
 	}
+	info, err := os.Lstat(path)
+	if err != nil { return nil, err }
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0022 != 0 {
+		return nil, errors.New("delivery queue must be a real directory without group/world write access")
+	}
 	q := &DeliveryQueue{dir: path, store: store, send: deliver, now: func() time.Time { return time.Now().UTC() }}
 	if _, err := q.snapshotLocked(); err != nil {
 		return nil, fmt.Errorf("existing spool is not readable: %w", err)
 	}
 	return q, nil
+}
+// A queue ID must never become an arbitrary filesystem path.
+func validQueueID(id string) bool {
+ if len(id) != 32 { return false }
+ for _, r := range id {
+  if (r < '0' || r > '9') && (r < 'a' || r > 'f') { return false }
+ }
+ return true
+}
+
+// The digest covers the immutable delivery contract, not mutable retry state.
+// Older spool records without a digest remain readable for in-place upgrades.
+func spoolDigest(rec spoolRecord) string {
+ payload, _ := json.Marshal(struct {
+  ID string `json:"id"`
+  Sender string `json:"sender"`
+  Recipients []string `json:"recipients"`
+  Raw []byte `json:"raw"`
+ }{rec.ID, rec.Sender, rec.Recipients, rec.RawRFC822})
+ sum := sha256.Sum256(payload)
+ return hex.EncodeToString(sum[:])
 }
 func (q *DeliveryQueue) path(id string) string { return filepath.Join(q.dir, id+".json") }
 func (q *DeliveryQueue) syncDirectory() error {
@@ -92,6 +122,7 @@ func (q *DeliveryQueue) syncDirectory() error {
 	return d.Sync()
 }
 func (q *DeliveryQueue) put(rec spoolRecord) error {
+	if !validQueueID(rec.ID) { return errors.New("invalid queue record ID") }
 	b, e := json.Marshal(rec)
 	if e != nil {
 		return e
@@ -123,16 +154,7 @@ func (q *DeliveryQueue) put(rec spoolRecord) error {
 	return q.syncDirectory()
 }
 func (q *DeliveryQueue) get(id string) (spoolRecord, error) {
-	if len(id) != 32 {
-		return spoolRecord{}, os.ErrNotExist
-	}
-	for _, r := range id {
-		if r < '0' || r > '9' {
-			if r < 'a' || r > 'f' {
-				return spoolRecord{}, os.ErrNotExist
-			}
-		}
-	}
+	if !validQueueID(id) { return spoolRecord{}, os.ErrNotExist }
 	// Never follow a symlink or load an unbounded, attacker-replaced spool file.
 	path := q.path(id)
 	meta, e := os.Lstat(path)
@@ -156,6 +178,9 @@ func (q *DeliveryQueue) get(id string) (spoolRecord, error) {
 	case "queued", "delivering", "delivered", "dead":
 	default:
 		return spoolRecord{}, fmt.Errorf("invalid queue state %s", id)
+	}
+	if rec.IntegritySHA256 != "" && rec.IntegritySHA256 != spoolDigest(rec) {
+		return spoolRecord{}, fmt.Errorf("queue job %s failed immutable envelope/original integrity check", id)
 	}
 	return rec, nil
 }
@@ -199,7 +224,7 @@ func (q *DeliveryQueue) Snapshot() (QueueSummary, error) {
 // Enqueue preserves a complete original and envelope before SMTP acknowledges
 // acceptance. A failed spool operation MUST cause SMTP 451, never 250.
 func (q *DeliveryQueue) Enqueue(m core.Message, raw []byte) error {
-	if m.ID == "" || len(raw) == 0 || len(raw) > 10<<20 {
+	if !validQueueID(m.ID) || len(raw) == 0 || len(raw) > 10<<20 || len(m.Recipients) == 0 || len(m.Recipients) > 1000 {
 		return errors.New("invalid queued message")
 	}
 	q.mu.Lock()
@@ -224,7 +249,9 @@ func (q *DeliveryQueue) Enqueue(m core.Message, raw []byte) error {
 	saved := m
 	saved.HeaderSnapshot = nil
 	saved.HeaderTruncated = false
-	return q.put(spoolRecord{QueuedMessage: job, RawRFC822: raw, Scan: &saved})
+	rec := spoolRecord{QueuedMessage: job, RawRFC822: append([]byte(nil), raw...), Scan: &saved}
+	rec.IntegritySHA256 = spoolDigest(rec)
+	return q.put(rec)
 }
 func (q *DeliveryQueue) Retry(id string) error {
 	q.mu.Lock()
@@ -258,6 +285,46 @@ func (q *DeliveryQueue) Discard(id string) error {
 	}
 	return q.syncDirectory()
 }
+// DiscardWithAudit durably journals intent before deleting the only original.
+// If journal persistence fails, the queued original must remain untouched.
+func (q *DeliveryQueue) DiscardWithAudit(id, actor string) error {
+ actor = strings.TrimSpace(actor)
+ if actor == "" || len(actor) > 128 || strings.ContainsAny(actor, "\r\n") {
+  return errors.New("valid audit actor required")
+ }
+ q.mu.Lock()
+ defer q.mu.Unlock()
+ rec, err := q.get(id)
+ if err != nil { return err }
+ if rec.State == "delivering" || rec.State == "delivered" {
+  return errors.New("cannot discard an in-flight or delivered message")
+ }
+ msg, ok := q.store.Get(id)
+ if !ok { msg = queueHistoryMessage(rec) }
+ msg.Delivery = "discard_requested"
+ msg.OverrideBy = actor
+ msg.OverrideReason = "Operator requested permanent deletion of undelivered SMTP original"
+ msg.Findings = append(msg.Findings, core.Finding{
+  Symbol: "QUEUE_DISCARD_REQUESTED", Source: "manual/" + actor, Detail: msg.OverrideReason,
+ })
+ if err := q.store.Save(msg); err != nil {
+  return fmt.Errorf("refusing unaudited queue discard: %w", err)
+ }
+ if err := os.Remove(q.path(id)); err != nil { return err }
+ if err := q.syncDirectory(); err != nil {
+  return fmt.Errorf("queue original removed but directory durability is unconfirmed: %w", err)
+ }
+ msg.Delivery = "discarded"
+ msg.Findings = append(msg.Findings, core.Finding{
+  Symbol: "QUEUE_DISCARDED", Source: "manual/" + actor,
+  Detail: "Operator permanently deleted undelivered SMTP original",
+ })
+ if err := q.store.Save(msg); err != nil {
+  return fmt.Errorf("queue original removed but final audit failed; discard request remains journaled: %w", err)
+ }
+ return nil
+}
+
 func retryDelay(attempt int) time.Duration {
 	delay := 30 * time.Second
 	for i := 1; i < attempt && delay < 4*time.Hour; i++ {

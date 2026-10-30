@@ -15,6 +15,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -164,8 +165,18 @@ func Create(source, archive string) (err error) {
 	if e = tmp.Close(); e != nil {
 		return e
 	}
-	if e = os.Rename(tmp.Name(), archive); e != nil {
-		return e
+	// Same-filesystem hard-link publication is atomic and NOREPLACE:
+	// a destination created after the initial Lstat must not be overwritten.
+	if e = os.Link(tmp.Name(), archive); e != nil {
+		return fmt.Errorf("cannot publish backup without overwriting destination: %w", e)
+	}
+	if runtime.GOOS != "windows" {
+		d, openErr := os.Open(filepath.Dir(archive))
+		if openErr != nil { return fmt.Errorf("backup published but directory sync failed: %w", openErr) }
+		syncErr := d.Sync()
+		closeErr := d.Close()
+		if syncErr != nil { return fmt.Errorf("backup published but directory sync failed: %w", syncErr) }
+		if closeErr != nil { return closeErr }
 	}
 	return nil
 }

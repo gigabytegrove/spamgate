@@ -2,7 +2,6 @@ package server
 
 import (
 	"errors"
-	"github.com/gigabytegrove/spamgate/internal/core"
 	"net/http"
 	"os"
 )
@@ -53,23 +52,14 @@ func (s *Server) discardDelivery(w http.ResponseWriter, r *http.Request) {
 		fail(w, 409, "Durable delivery queue is disabled")
 		return
 	}
-	if err := s.Queue.Discard(r.PathValue("id")); err != nil {
+	if err := s.Queue.DiscardWithAudit(r.PathValue("id"), identity.Name); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			fail(w, 404, "Queue entry not found")
 		} else {
+			s.log.Error("queue discard failed or requires audit reconciliation", "id", r.PathValue("id"), "actor", identity.Name, "error", err)
 			fail(w, 409, err.Error())
 		}
 		return
-	}
-	// Record destructive queue operations in the decision journal.
-	if m, ok := s.Store.Get(r.PathValue("id")); ok {
-		m.Delivery = "discarded"
-		m.OverrideBy = identity.Name
-		m.OverrideReason = "Manually discarded undelivered SMTP original"
-		m.Findings = append(m.Findings, core.Finding{Symbol: "QUEUE_DISCARDED", Source: "manual/" + identity.Name, Detail: m.OverrideReason})
-		if err := s.Store.Save(m); err != nil {
-			s.log.Error("queue discard audit persistence failed", "id", m.ID, "error", err)
-		}
 	}
 	s.log.Warn("queue original permanently discarded", "id", r.PathValue("id"), "actor", identity.Name)
 	jsonReply(w, 200, map[string]bool{"discarded": true})

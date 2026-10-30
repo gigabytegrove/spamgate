@@ -36,3 +36,24 @@ Perform only on a **designated test mailbox** under an administrator's supervisi
 7. Capture test case, UTC timestamp, queue ID, Postfix log evidence, SpamGate scan ID, disposition, mailbox receipt and observed outcome in a release acceptance report.
 
 **Beta decision:** GitHub CI passing is development qualification. Long-term beta should begin with **supervised, rollback-capable pilot traffic**, not sole production enforcement, until the above real-host outcomes are recorded and reviewed. False-positive corpus certification, ARC interoperability, full SMTP semantics, customer-domain production scale, and all major #1–#9 issues cannot be asserted from unit tests alone.
+
+## Further durability hardening (October 30 engineering)
+
+- New spool records carry SHA-256 over the immutable scan ID, envelope sender,
+  ordered recipients and exact RFC 5322 original. Startup, snapshots and
+  delivery reject modified records before forwarding. Existing pre-digest jobs
+  remain readable for upgrade compatibility; **the digest is a corruption
+  detector, not a keyed signature against a malicious privileged operator**.
+- Queue intake and internal persistence reject noncanonical IDs rather than
+  allowing IDs to become filesystem paths. The spool directory must be real
+  and not group/world writable.
+- Admin discard now fsyncs a `discard_requested` history event before deleting
+  an original, then records `discarded`. If the history journal cannot be
+  written, deletion is refused. If final audit fails after deletion, the
+  initial request event remains for forensic reconciliation.
+- Offline backup publication uses same-filesystem hard-link creation to
+  refuse destination replacement even if another process creates the target
+  after the initial check. The parent directory is synced on Unix.
+- These controls do not establish final mailbox delivery, prevent upstream
+  SMTP 250/crash duplicate ambiguity, or substitute for actual Postfix and
+  Dovecot host qualification.
