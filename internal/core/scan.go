@@ -393,6 +393,7 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (out Message, scanErr erro
 	}
 	rulesStart := len(findings)
 	eligibleRules := 0
+	mixedRecipientRuleSkips := 0
 	rules := append([]Rule(nil), cfg.Rules...)
 	sort.SliceStable(rules, func(i, j int) bool { return rules[i].Priority > rules[j].Priority })
 	for _, rule := range rules {
@@ -423,10 +424,22 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (out Message, scanErr erro
 		case "sender_domain":
 			matched = senderDomain == val || strings.HasSuffix(senderDomain, "."+val)
 		case "recipient_email":
+			// The Milter returns one disposition for the entire SMTP
+			// transaction. A rule targeting one mailbox must not reject,
+			// quarantine, accept or score unrelated co-recipients.
+			// A recipient-specific rule applies only if EVERY envelope
+			// recipient matches the same mailbox (duplicates are safe).
+			matched = len(m.Recipients) > 0
+			anyTargeted := false
 			for _, r := range m.Recipients {
-				if strings.EqualFold(r, rule.Value) {
-					matched = true
+				if equalEmail(r, rule.Value) {
+					anyTargeted = true
+				} else {
+					matched = false
 				}
+			}
+			if anyTargeted && !matched {
+				mixedRecipientRuleSkips++
 			}
 		case "client_ip":
 			matched = m.ClientIP == rule.Value
@@ -458,7 +471,11 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (out Message, scanErr erro
 			}
 		}
 	}
-	note("Custom filtering rules", matchedSince(rulesStart), fmt.Sprintf("Checked %d enabled, non-expired rule(s) for matching conditions", eligibleRules))
+	ruleDetail := fmt.Sprintf("Checked %d enabled, non-expired rule(s) for matching conditions", eligibleRules)
+	if mixedRecipientRuleSkips > 0 {
+		ruleDetail += fmt.Sprintf("; skipped %d recipient-specific rule(s) for mixed envelope recipients (one Milter verdict per transaction)", mixedRecipientRuleSkips)
+	}
+	note("Custom filtering rules", matchedSince(rulesStart), ruleDetail)
 	dnsStart := len(findings)
 	dnsEnabled := 0
 	for _, z := range cfg.DNSLists {
