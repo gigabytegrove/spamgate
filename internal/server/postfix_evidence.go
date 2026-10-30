@@ -16,22 +16,7 @@ const evidenceMaxEvents = 100
 // Require a real syslog/journal prefix and a Postfix process at the expected
 // position. An attacker-controlled warning string containing "postfix/smtp"
 // must not be mistaken for independent delivery evidence.
-var postfixEvidenceLine = regexp.MustCompile(`^(?:[A-Z][a-z]{2} +[0-9]{1,2}(?: +[0-9]{2}:[0-9]{2}:[0-9]{2})?|[0-9]{4}-[0-9]{2}-[0-9]{2}T[^ ]+) +[^ ]+ +postfix/([a-zA-Z0-9_-]+)\[[0-9]+\]: ([A-Za-z0-9]{1,32}): (.*)package server
-
-import (
-	"bufio"
-	"errors"
-	"io"
-	"net/http"
-	"os"
-	"regexp"
-	"strings"
-)
-
-const evidenceTailLimit int64 = 4 << 20
-const evidenceMaxEvents = 100
-
-)
+var postfixEvidenceLine = regexp.MustCompile(`^(?:[A-Z][a-z]{2} +[0-9]{1,2}(?: +[0-9]{2}:[0-9]{2}:[0-9]{2})?|[0-9]{4}-[0-9]{2}-[0-9]{2}T[^ ]+) +[^ ]+ +postfix/([a-zA-Z0-9_-]+)\[[0-9]+\]: ([A-Za-z0-9]{1,32}): (.*)$`)
 var postfixStatus = regexp.MustCompile(`\bstatus=(sent|deferred|bounced|expired|hold)\b`)
 
 type deliveryEvidenceEvent struct {
@@ -90,9 +75,7 @@ func readDeliveryEvidence(path, queueID string) ([]deliveryEvidenceEvent, bool, 
 	if !validPostfixEvidenceID(queueID) {
 		return nil, false, errors.New("invalid queue ID")
 	}
-	// Read one rotated plain-text sibling first, then the active file. Each
-	// file has an independent 4 MiB read budget and descriptor safety check.
-	// Compressed archives and arbitrary glob expansion are intentionally out.
+	// Inspect one bounded plain-text rotation and the active log, in order.
 	var combined []deliveryEvidenceEvent
 	truncated := false
 	for _, candidate := range []struct { name string; optional bool }{{path + ".1", true}, {path, false}} {
@@ -157,9 +140,7 @@ func readDeliveryEvidenceFile(path, queueID string) ([]deliveryEvidenceEvent, bo
 		line = strings.TrimRight(line, "\r\n")
 		if match := postfixEvidenceLine.FindStringSubmatch(line); match != nil && match[2] == queueID {
 			event := deliveryEvidenceEvent{Line: line}
-			// Only a delivery-agent process can provide a status field.
-			// Queue manager, cleanup, and SMTP listener log text may contain
-			// untrusted values that look like status=sent.
+			// Only actual delivery agents can supply a parsed status field.
 			switch match[1] {
 			case "smtp", "lmtp", "local", "virtual", "pipe", "error", "discard":
 				if status := postfixStatus.FindStringSubmatch(match[3]); status != nil {
