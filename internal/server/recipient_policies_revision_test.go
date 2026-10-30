@@ -5,6 +5,7 @@ import (
  "encoding/json"
  "net/http"
  "net/http/httptest"
+ "strings"
  "testing"
  "time"
  "github.com/gigabytegrove/spamgate/internal/core"
@@ -29,6 +30,9 @@ func TestRecipientPoliciesRevisionRejectsStaleAdminEdits(t *testing.T){
  alice:=core.RecipientPolicy{Mailbox:"alice@example.org",TagThreshold:2,QuarantineThreshold:5,RejectThreshold:10}
  bob:=core.RecipientPolicy{Mailbox:"bob@example.org",TagThreshold:3,QuarantineThreshold:6,RejectThreshold:12}
  if w:=call("PUT","/api/v1/recipient-policies",map[string]any{"policies":[]core.RecipientPolicy{alice}});w.Code!=400{t.Fatalf("missing revision accepted: %d",w.Code)}
+ if w:=call("PUT","/api/v1/recipient-policies",map[string]any{"expected_revision":initial.Revision});w.Code!=400{t.Fatalf("missing array accepted: %d",w.Code)}
+ if w:=call("PUT","/api/v1/recipient-policies",map[string]any{"expected_revision":initial.Revision,"policies":nil});w.Code!=400{t.Fatalf("null array accepted: %d",w.Code)}
+ if w:=call("PUT","/api/v1/recipient-policies",map[string]any{"expected_revision":strings.Repeat("z",64),"policies":[]core.RecipientPolicy{alice}});w.Code!=400{t.Fatalf("invalid digest accepted: %d",w.Code)}
  if w:=call("PUT","/api/v1/recipient-policies",map[string]any{"expected_revision":initial.Revision,"policies":[]core.RecipientPolicy{alice}});w.Code!=200{t.Fatalf("first write %d: %s",w.Code,w.Body.String())}
  if w:=call("PUT","/api/v1/recipient-policies",map[string]any{"expected_revision":initial.Revision,"policies":[]core.RecipientPolicy{bob}});w.Code!=http.StatusConflict{t.Fatalf("stale write %d: %s",w.Code,w.Body.String())}
  if p:=st.Config().RecipientPolicies;len(p)!=1||p[0].Mailbox!=alice.Mailbox{t.Fatalf("lost update: %+v",p)}
@@ -39,4 +43,32 @@ func TestRecipientPoliciesRevisionRejectsStaleAdminEdits(t *testing.T){
  if w:=call("PUT","/api/v1/recipient-policies",map[string]any{"expected_revision":refreshed.Revision,"policies":[]core.RecipientPolicy{alice,bob}});w.Code!=200{t.Fatalf("refreshed write %d: %s",w.Code,w.Body.String())}
  if len(st.Config().RecipientPolicies)!=2{t.Fatal("refreshed policies not persisted")}
  if recipientPoliciesRevision([]core.RecipientPolicy{bob,alice})!=recipientPoliciesRevision([]core.RecipientPolicy{alice,bob}){t.Fatal("display order changed revision")}
+}
+
+func TestRecipientPolicyConcurrentFullSetWritesDoNotLoseUpdates(t *testing.T){
+ st,err:=core.Open(t.TempDir());if err!=nil{t.Fatal(err)}
+ token,hash,err:=core.MakeToken();if err!=nil{t.Fatal(err)}
+ if err:=st.UpdateConfig(func(c *core.Config)error{
+  c.SetupComplete=true;c.Tokens=[]core.Token{{Name:"admin",Hash:hash,Scope:"admin",Created:time.Now()}};return nil
+ });err!=nil{t.Fatal(err)}
+ router:=New(st,nil).Router()
+ initial:=recipientPoliciesRevision(nil)
+ start:=make(chan struct{})
+ statuses:=make(chan int,2)
+ for _,mailbox:=range []string{"one@example.org","two@example.org"}{
+  mailbox:=mailbox
+  go func(){
+   <-start
+   body,_:=json.Marshal(map[string]any{"expected_revision":initial,"policies":[]core.RecipientPolicy{{Mailbox:mailbox,TagThreshold:2,QuarantineThreshold:5,RejectThreshold:10}}})
+   req:=httptest.NewRequest(http.MethodPut,"/api/v1/recipient-policies",bytes.NewReader(body))
+   req.Header.Set("Authorization","Bearer "+token)
+   w:=httptest.NewRecorder();router.ServeHTTP(w,req)
+   statuses<-w.Code
+  }()
+ }
+ close(start)
+ a,b:=<-statuses,<-statuses
+ if !((a==200&&b==409)||(a==409&&b==200)){t.Fatalf("concurrent status: %d, %d",a,b)}
+ saved:=st.Config().RecipientPolicies
+ if len(saved)!=1{t.Fatalf("concurrent lost update: %+v",saved)}
 }

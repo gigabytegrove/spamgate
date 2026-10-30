@@ -27,14 +27,18 @@ var errRecipientPoliciesChanged=errors.New("recipient policies changed since the
 func (s *Server) updateRecipientPolicies(w http.ResponseWriter,r *http.Request){
  if _,ok:=s.authorized(w,r,true,true);!ok{return}
  var in struct{
-  Policies []core.RecipientPolicy `json:"policies"`
+  Policies *[]core.RecipientPolicy `json:"policies"`
   ExpectedRevision string `json:"expected_revision"`
  }
  if err:=decode(r,&in);err!=nil{fail(w,400,"Expected policies array and expected_revision");return}
- if len(in.ExpectedRevision)!=64{fail(w,400,"Policy revision required; refresh policies before saving");return}
+ if in.Policies==nil{fail(w,400,"An explicit policies array is required; use [] to remove all policies");return}
+ if len(in.ExpectedRevision)!=64||strings.ToLower(in.ExpectedRevision)!=in.ExpectedRevision{
+  fail(w,400,"Valid lowercase policy revision required; refresh policies before saving");return
+ }
+ if _,err:=hex.DecodeString(in.ExpectedRevision);err!=nil{fail(w,400,"Invalid policy revision");return}
  err:=s.Store.UpdateConfig(func(c *core.Config)error{
   if recipientPoliciesRevision(c.RecipientPolicies)!=in.ExpectedRevision{return errRecipientPoliciesChanged}
-  c.RecipientPolicies=in.Policies
+  c.RecipientPolicies=*in.Policies
   return nil
  })
  if errors.Is(err,errRecipientPoliciesChanged){fail(w,http.StatusConflict,err.Error());return}

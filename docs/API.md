@@ -1,4 +1,4 @@
-# SpamGate HTTP API — alpha v1
+# SpamGate HTTP API — beta v1
 
 API root: `/api/v1`. All responses except export and static assets are JSON. Authenticated session requests must include `X-CSRF-Token` on POST, PUT or DELETE. Bearer-key clients must use `Authorization: Bearer sg_…` and an HTTPS connection. Scan body size is limited to 10 MiB. JSON management bodies are limited to 1 MiB.
 
@@ -18,7 +18,7 @@ API root: `/api/v1`. All responses except export and static assets are JSON. Aut
 | DELETE | `/api/v1/messages/{id}/quarantine` | Admin | Permanently delete held original; journal a discarded verdict |
 | GET | `/api/v1/statistics` | Admin or mailbox | Counts and score averages |
 | GET | `/api/v1/export` | Admin | All retained history as newline-delimited JSON |
-| GET | `/api/v1/config` | Admin or mailbox | Settings, rules and redacted accounts/tokens |
+| GET | `/api/v1/config` | Admin or mailbox | Settings, rules and redacted accounts/tokens; admin receives `recipient_policies_revision` |
 | GET | `/api/v1/bayes/stats` | Admin | Training sample counts, vocabulary size and readiness |
 | POST | `/api/v1/bayes/train?label=spam` or `label=ham` | Admin | Raw RFC 5322 .eml file, max 10 MiB; persists a confirmed model sample |
 | GET | `/api/v1/fuzzy/stats` | Admin | Active local near-duplicate fingerprints by class |
@@ -30,7 +30,7 @@ API root: `/api/v1`. All responses except export and static assets are JSON. Aut
 | GET | `/api/v1/signals` | Authenticated | List every built-in detector with default and effective weights |
 | PUT | `/api/v1/signals/{symbol}` | Admin | JSON `score` (-100 to 100), `enabled` (boolean); future scans only |
 | PUT | `/api/v1/settings` | Admin | Update policy thresholds, retention and opt-in detection features |
-| PUT | `/api/v1/recipient-policies` | Admin | Atomically replace per-mailbox threshold policies; see `EXTERNAL_INTELLIGENCE.md` |
+| PUT | `/api/v1/recipient-policies` | Admin | Replace all per-mailbox policies with mandatory `expected_revision`; stale writes return 409 |
 | POST | `/api/v1/rules` | Admin or mailbox | Create scoring rule (mailbox users only sender policies) |
 | DELETE | `/api/v1/rules/{id}` | Admin or rule owner | Remove rule |
 | POST | `/api/v1/dns-lists` | Admin | Create DNSBL definition |
@@ -39,6 +39,10 @@ API root: `/api/v1`. All responses except export and static assets are JSON. Aut
 | DELETE | `/api/v1/users/{name}` | Admin | Remove non-admin account |
 | POST | `/api/v1/tokens` | Admin | Issue scan/admin API key; returned once |
 | DELETE | `/api/v1/tokens/{name}` | Admin | Revoke API key |
+
+## Mailbox policy replacement concurrency
+
+`GET /api/v1/config` includes `recipient_policies_revision` for administrators only. To replace the entire mailbox policy set, send `PUT /api/v1/recipient-policies` with `{"expected_revision":"<revision-from-config>","policies":[...]}`. The `policies` array must be explicit; `[]` intentionally clears all mailbox policies, whereas omitted or null arrays return 400. Stale revisions return 409 without any write. Reload the current configuration and review other administrators' changes before retrying. The revision is a conflict-detection digest, not an authentication secret. Existing API clients must add the revision; the browser does this automatically.
 
 ## Scan request
 
