@@ -50,76 +50,117 @@ func decodedHeader(s string) string {
 	}
 	return s
 }
+// mimeCoverage is a bounded, content-free record of gaps in the ordinary
+// text, URL and attachment-filename extraction path. It does not make a
+// disposition decision; incomplete inspection must be visible to operators.
+type mimeCoverage struct {
+	Parts int
+	Incomplete bool
+	Reasons []string
+}
+func (c *mimeCoverage) mark(reason string) {
+	if c == nil { return }
+	c.Incomplete = true
+	for _, existing := range c.Reasons {
+		if existing == reason { return }
+	}
+	if len(c.Reasons) < 6 { c.Reasons = append(c.Reasons, reason) }
+}
+
+// Preserve the existing helper API for callers that need extracted content
+// without the coverage report. Both paths use the same shared part budget.
 func bodyParts(h mail.Header, body []byte, depth int) (string, []string, []string, bool) {
+	return bodyPartsWithCoverage(h, body, depth, &mimeCoverage{})
+}
+func bodyPartsWithCoverage(h mail.Header, body []byte, depth int, coverage *mimeCoverage) (string, []string, []string, bool) {
 	if depth > 8 {
+		coverage.mark("MIME nesting exceeds 8 levels")
 		return "", nil, nil, false
 	}
-	media, params, e := mime.ParseMediaType(h.Get("Content-Type"))
+	contentType := h.Get("Content-Type")
+	media, params, e := mime.ParseMediaType(contentType)
 	if e != nil {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(contentType)), "multipart/") {
+			coverage.mark("Malformed multipart Content-Type")
+			return "", nil, nil, false
+		}
 		media = "text/plain"
 	}
 	if strings.HasPrefix(media, "multipart/") {
 		if params["boundary"] == "" {
+			coverage.mark("Multipart boundary missing")
 			return "", nil, nil, false
 		}
 		reader := multipart.NewReader(bytes.NewReader(body), params["boundary"])
 		var all strings.Builder
 		var attachments, urls []string
 		hasHTML := false
-		for count := 0; count < 75; count++ {
-			part, e := reader.NextPart()
-			if e != nil {
+		for {
+			// A single shared budget across nested multiparts prevents a
+			// malicious tree of 75 children per level from bypassing limits.
+			if coverage.Parts >= 75 {
+				part, nextErr := reader.NextPart()
+				if nextErr == nil {
+					_ = part.Close()
+					coverage.mark("More than 75 MIME parts; remainder not scanned")
+				} else if nextErr != io.EOF {
+					coverage.mark("Multipart termination could not be parsed")
+				}
 				break
 			}
-			p, e := io.ReadAll(io.LimitReader(part, 5<<20))
-			if e != nil {
-				part.Close()
+			part, nextErr := reader.NextPart()
+			if nextErr == io.EOF { break }
+			if nextErr != nil {
+				coverage.mark("Multipart section could not be parsed")
 				break
 			}
-			text, a, u, html := bodyParts(mail.Header(part.Header), p, depth+1)
+			coverage.Parts++
+			// Read one byte beyond the limit so an oversized part is never
+			// silently mistaken for a complete, inspected MIME section.
+			p, readErr := io.ReadAll(io.LimitReader(part, (5<<20)+1))
+			_ = part.Close()
+			if readErr != nil {
+				coverage.mark("MIME part could not be read")
+				continue
+			}
+			if len(p) > 5<<20 {
+				coverage.mark("MIME part exceeds 5 MiB extraction limit")
+				continue
+			}
+			text, a, u, html := bodyPartsWithCoverage(mail.Header(part.Header), p, depth+1, coverage)
 			all.WriteString(text)
 			all.WriteByte(' ')
 			attachments = append(attachments, a...)
 			urls = append(urls, u...)
 			hasHTML = hasHTML || html
-			part.Close()
 		}
 		return all.String(), attachments, urls, hasHTML
 	}
 	name := params["name"]
 	if disposition, ps, e := mime.ParseMediaType(h.Get("Content-Disposition")); e == nil {
-		if ps["filename"] != "" {
-			name = ps["filename"]
-		}
-		if disposition == "attachment" && name == "" {
-			name = "unnamed attachment"
-		}
+		if ps["filename"] != "" { name = ps["filename"] }
+		if disposition == "attachment" && name == "" { name = "unnamed attachment" }
 	}
-	if name != "" {
-		return "", []string{name}, nil, false
-	}
-	if media != "text/plain" && media != "text/html" {
-		return "", nil, nil, false
-	}
-	// Decode transfer encodings that commonly appear in mail bodies.
+	if name != "" { return "", []string{name}, nil, false }
+	if media != "text/plain" && media != "text/html" { return "", nil, nil, false }
 	encoding := strings.ToLower(strings.TrimSpace(h.Get("Content-Transfer-Encoding")))
 	var decoded []byte
 	switch encoding {
-	case "base64":
-		decoded = decodeBase64(body)
-	case "quoted-printable":
-		decoded = decodeQP(body)
-	default:
-		decoded = body
+	case "base64": decoded = decodeBase64(body)
+	case "quoted-printable": decoded = decodeQP(body)
+	default: decoded = body
 	}
 	if len(decoded) > 2<<20 {
+		coverage.mark("Decoded text exceeds 2 MiB extraction limit")
 		decoded = decoded[:2<<20]
 	}
 	text := string(decoded)
-	matches := urlPattern.FindAllString(text, 100)
-	if media == "text/html" {
-		text = htmlTag.ReplaceAllString(text, " ")
+	matches := urlPattern.FindAllString(text, 101)
+	if len(matches) > 100 {
+		coverage.mark("More than 100 URLs; remaining links not inspected")
+		matches = matches[:100]
 	}
+	if media == "text/html" { text = htmlTag.ReplaceAllString(text, " ") }
 	return text, nil, matches, media == "text/html"
 }
 func decodeBase64(b []byte) []byte {
@@ -202,7 +243,8 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (out Message, scanErr erro
 	if e != nil {
 		return Message{}, e
 	}
-	text, attachments, urls, hasHTML := bodyParts(parsed.Header, body, 0)
+	coverage := &mimeCoverage{}
+	text, attachments, urls, hasHTML := bodyPartsWithCoverage(parsed.Header, body, 0, coverage)
 	var findings []Finding
 	matchedSince := func(n int) string {
 		if len(findings) > n {
@@ -220,6 +262,16 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (out Message, scanErr erro
 			}
 		}
 		findings = append(findings, Finding{symbol, source, detail, weight})
+	}
+	// Report extraction blind spots as zero-score diagnostic evidence. A
+	// missing/oversized section is not by itself proof of spam and must not
+	// silently change a production SMTP action.
+	if coverage.Incomplete {
+		detail := strings.Join(coverage.Reasons, "; ")
+		findings = append(findings, Finding{Symbol: "MIME_COVERAGE_INCOMPLETE", Source: "diagnostic/mime", Detail: detail, Score: 0})
+		note("MIME text and filename coverage", "error", detail)
+	} else {
+		note("MIME text and filename coverage", "clear", fmt.Sprintf("Inspected %d MIME part(s) within extraction limits", coverage.Parts))
 	}
 	builtinStart := len(findings)
 	if parsed.Header.Get("From") == "" {
