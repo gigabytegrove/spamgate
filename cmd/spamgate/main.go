@@ -206,6 +206,9 @@ func runApp(ctx context.Context, opts options) error {
 			inbound.Queue = queue
 		}
 	}
+	if err := requireDurableSMTP(inbound, queue); err != nil {
+		return err
+	}
 	rspamdWorker, err := transport.RspamdFromEnv(store)
 	if err != nil {
 		return err
