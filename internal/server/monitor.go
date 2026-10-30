@@ -32,6 +32,8 @@ type monitorSample struct {
 	ScanErrors      uint64    `json:"scan_errors"`
 	ScannedMilter   uint64    `json:"scanned_milter"`
 	ScanSeconds     float64   `json:"scan_seconds"`
+	MIMECoverageIncomplete uint64 `json:"mime_coverage_incomplete"`
+	PhishingCoverageIncomplete uint64 `json:"phishing_coverage_incomplete"`
 	QueueEnabled    bool      `json:"queue_enabled"`
 	QueueAvailable  bool      `json:"queue_available"`
 	QueueQueued     int       `json:"queue_queued"`
@@ -189,6 +191,16 @@ func (m *operationsMonitor) save(next monitorState) error {
 	return nil
 }
 
+// Rate alerts require two same-boot samples. A process restart resets
+// counters; it must not be misinterpreted as a healthy interval.
+func monitorRateAlert(code string) bool {
+	switch code {
+	case "scan_errors", "mime_coverage", "phishing_coverage":
+		return true
+	}
+	return false
+}
+
 func monitorThreshold(key string, fallback int) int {
 	raw := os.Getenv(key)
 	if raw == "" {
@@ -219,6 +231,15 @@ func (m *operationsMonitor) record(s monitorSample) error {
 	if previous != nil && previous.BootID == s.BootID && s.ScanErrors >= previous.ScanErrors {
 		deltas = s.ScanErrors - previous.ScanErrors
 	}
+	mimeDeltas, phishingDeltas := uint64(0), uint64(0)
+	if previous != nil && previous.BootID == s.BootID {
+		if s.MIMECoverageIncomplete >= previous.MIMECoverageIncomplete {
+			mimeDeltas = s.MIMECoverageIncomplete - previous.MIMECoverageIncomplete
+		}
+		if s.PhishingCoverageIncomplete >= previous.PhishingCoverageIncomplete {
+			phishingDeltas = s.PhishingCoverageIncomplete - previous.PhishingCoverageIncomplete
+		}
+	}
 	signals := map[string]struct{ severity, summary string }{}
 	if s.QueueEnabled && !s.QueueAvailable {
 		signals["queue_unreadable"] = struct{ severity, summary string }{"critical", "Durable SMTP queue inventory cannot be read"}
@@ -235,6 +256,12 @@ func (m *operationsMonitor) record(s monitorSample) error {
 	if deltas >= uint64(monitorThreshold("SPAMGATE_MONITOR_SCAN_ERROR_THRESHOLD", 5)) {
 		signals["scan_errors"] = struct{ severity, summary string }{"warning", fmt.Sprintf("%d scan failures observed between durable samples", deltas)}
 	}
+	if mimeDeltas >= uint64(monitorThreshold("SPAMGATE_MONITOR_MIME_COVERAGE_THRESHOLD", 5)) {
+		signals["mime_coverage"] = struct{ severity, summary string }{"warning", fmt.Sprintf("%d scans reported incomplete MIME text/filename inspection between durable samples; review source limits and encoding", mimeDeltas)}
+	}
+	if phishingDeltas >= uint64(monitorThreshold("SPAMGATE_MONITOR_PHISHING_COVERAGE_THRESHOLD", 5)) {
+		signals["phishing_coverage"] = struct{ severity, summary string }{"warning", fmt.Sprintf("%d scans reported incomplete opt-in phishing link inspection between durable samples; review MIME limits and transfer encodings", phishingDeltas)}
+	}
 	for i := range next.Alerts {
 		a := &next.Alerts[i]
 		if a.State != "open" {
@@ -245,7 +272,7 @@ func (m *operationsMonitor) record(s monitorSample) error {
 			a.Summary = active.summary
 			a.Severity = active.severity
 			delete(signals, a.Code)
-		} else if a.Code != "scan_errors" || previous != nil && previous.BootID == s.BootID {
+		} else if !monitorRateAlert(a.Code) || (previous != nil && previous.BootID == s.BootID) {
 			a.State = "resolved"
 			t := s.At
 			a.ResolvedAt = &t
@@ -325,7 +352,7 @@ func (m *operationsMonitor) snapshot() (monitorState, error) {
 
 func (s *Server) monitorCapture() error {
 	t := core.RuntimeScanTelemetry()
-	sample := monitorSample{At: s.monitor.now(), BootID: s.monitor.bootID, ScanTotal: t.Total, ScanErrors: t.Errors, ScannedMilter: t.ByConnector["milter"], ScanSeconds: t.DurationSecondsSum, QueueEnabled: s.Queue != nil}
+	sample := monitorSample{At: s.monitor.now(), BootID: s.monitor.bootID, ScanTotal: t.Total, ScanErrors: t.Errors, ScannedMilter: t.ByConnector["milter"], ScanSeconds: t.DurationSecondsSum, QueueEnabled: s.Queue != nil, MIMECoverageIncomplete: t.DetectionMessages["MIME_COVERAGE_INCOMPLETE"], PhishingCoverageIncomplete: t.DetectionMessages["PHISHING_COVERAGE_INCOMPLETE"]}
 	if s.Queue != nil {
 		q, err := s.Queue.Snapshot()
 		if err != nil {

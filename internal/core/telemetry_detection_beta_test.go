@@ -34,3 +34,17 @@ func TestBetaDetectionMetricsBoundedPrivacyAndDeduplication(t *testing.T) {
         t.Fatal("telemetry snapshot returned mutable map")
     }
 }
+
+func TestCoverageDiagnosticSymbolsAreBoundedMessageCounters(t *testing.T) {
+    before:=RuntimeScanTelemetry()
+    observeDetectionFindings([]Finding{
+        {Symbol:"MIME_COVERAGE_INCOMPLETE",Detail:"sender@example.org"},
+        {Symbol:"MIME_COVERAGE_INCOMPLETE",Detail:"duplicate"},
+        {Symbol:"PHISHING_COVERAGE_INCOMPLETE",Detail:"private link"},
+    })
+    after:=RuntimeScanTelemetry()
+    if after.DetectionMessages["MIME_COVERAGE_INCOMPLETE"]!=before.DetectionMessages["MIME_COVERAGE_INCOMPLETE"]+1 ||
+       after.DetectionMessages["PHISHING_COVERAGE_INCOMPLETE"]!=before.DetectionMessages["PHISHING_COVERAGE_INCOMPLETE"]+1 {
+        t.Fatalf("coverage counters not deduplicated: %+v",after.DetectionMessages)
+    }
+}

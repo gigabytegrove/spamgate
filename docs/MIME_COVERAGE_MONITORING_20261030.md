@@ -1,0 +1,7 @@
+# Durable MIME/phishing coverage diagnostics — 2026-10-30
+
+Issue #6 now records two additional **aggregate, privacy-limited** runtime counters in the authenticated Prometheus endpoint and five-minute durable operations samples: `MIME_COVERAGE_INCOMPLETE` and `PHISHING_COVERAGE_INCOMPLETE`. Counters represent messages with a finding, not the number of malformed parts or URLs. The fixed symbol allowlist excludes arbitrary subjects, addresses, domains, and attacker-controlled labels. The phishing counter only advances when opt-in phishing inspection actually runs and reports a gap.
+
+An operations warning opens when at least five incomplete MIME or phishing inspections are observed between **two samples from the same process boot**. Optional positive integer thresholds (1–100000): `SPAMGATE_MONITOR_MIME_COVERAGE_THRESHOLD` and `SPAMGATE_MONITOR_PHISHING_COVERAGE_THRESHOLD`. Invalid values fall back to five. Alerts persist across restart, and rate alerts only resolve after a clean same-boot interval; a counter reset cannot masquerade as recovery. Alert summaries contain only aggregate counts and investigation guidance. These diagnostics have no effect on mail disposition.
+
+Tests cover deduplication, persistence, restart safety, threshold validation, and alert resolution. This does not measure actual delivery, inspect real Postfix logs, or establish independent classifier accuracy. Both issues #5 and #6 remain open pending production evidence.
