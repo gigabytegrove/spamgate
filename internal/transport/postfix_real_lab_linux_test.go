@@ -35,7 +35,10 @@ func TestRealPostfixMilterLocalDeliveryAndTempfail(t *testing.T) {
  if err!=nil{t.Fatal(err)}
  if err:=store.UpdateConfig(func(c *core.Config)error{
   c.SetupComplete=true
-  c.Rules=append(c.Rules,core.Rule{ID:"ci-postfix-hold",Name:"Test Postfix hold",Kind:"sender_email",Value:"hold-lab@example.org",Action:"quarantine",Enabled:true})
+  c.Rules=append(c.Rules,
+   core.Rule{ID:"ci-postfix-hold",Name:"Test Postfix hold",Kind:"sender_email",Value:"hold-lab@example.org",Action:"quarantine",Enabled:true},
+   core.Rule{ID:"ci-postfix-tag",Name:"Test Sieve Junk placement",Kind:"sender_email",Value:"tag-lab@example.org",Action:"tag",Enabled:true},
+  )
   return nil
  });err!=nil{t.Fatal(err)}
  t.Setenv("SPAMGATE_TEST_RECIPIENTS",recipient)
@@ -53,15 +56,27 @@ func TestRealPostfixMilterLocalDeliveryAndTempfail(t *testing.T) {
   time.Sleep(50*time.Millisecond)
  }
  if !ready{t.Fatal("Milter failed to listen")}
- listMaildir:=func()([]string,error){
-  out,e:=exec.Command("sudo","-n","find",home,"-type","f").CombinedOutput()
-  if e!=nil {
-   // An empty, not-yet-created Maildir is a valid initial state.
+ // Count message files in new/cur only: Dovecot also writes UID/index
+ // metadata and Junk lives in .Junk. Counting every file is not evidence
+ // of actual mailbox disposition.
+ listBox:=func(box string)([]string,error){
+  root:=home
+  if box!=""{root=filepath.Join(home,"."+box)}
+  out,e:=exec.Command("sudo","-n","find",root,"-maxdepth","2","-type","f").CombinedOutput()
+  if e!=nil{
    if strings.Contains(string(out),"No such file or directory"){return nil,nil}
-   return nil,fmt.Errorf("maildir inventory: %w: %s",e,out)
+   return nil,fmt.Errorf("maildir %s inventory: %w: %s",box,e,out)
   }
-  return strings.Fields(strings.TrimSpace(string(out))),nil
+  var messages []string
+  for _,path:=range strings.Split(strings.TrimSpace(string(out)),"\n"){
+   if strings.HasPrefix(path,root+"/new/")||strings.HasPrefix(path,root+"/cur/"){
+    messages=append(messages,path)
+   }
+  }
+  return messages,nil
  }
+ listMaildir:=func()([]string,error){return listBox("")}
+ listJunk:=func()([]string,error){return listBox("Junk")}
  baseline,e:=listMaildir();if e!=nil{t.Fatal(e)}
  msg:=func(id,body string)[]byte{
   return []byte("From: <sender@example.org>\r\nTo: <"+recipient+">\r\nDate: Thu, 29 Oct 2026 15:00:00 +0000\r\nMessage-ID: <"+id+"@example.org>\r\nSubject: SpamGate real Postfix lab "+id+"\r\n\r\n"+body+"\r\n")
@@ -144,6 +159,44 @@ func TestRealPostfixMilterLocalDeliveryAndTempfail(t *testing.T) {
  }
  if len(accepted)<=len(afterHold){t.Fatal("Postfix hold released but no delivery to test Maildir observed")}
  t.Logf("Postfix hold and postsuper release observed for queue %s; Dovecot receipt checked separately",heldID)
+ // A forced tag must traverse Postfix, the actual Milter header mutation,
+ // Dovecot LDA and Pigeonhole Sieve to the Junk mailbox, not merely be
+ // recorded as a requested action in SpamGate history.
+ beforeJunk,e:=listJunk();if e!=nil{t.Fatal(e)}
+ if e:=smtp.SendMail("127.0.0.1:25",nil,"tag-lab@example.org",[]string{recipient},msg("tag-to-junk","Harmless tagged message for real Sieve Junk delivery."));e!=nil{
+  t.Fatalf("real Postfix refused tagged test mail: %v",e)
+ }
+ var afterJunk []string
+ for i:=0;i<80;i++{
+  afterJunk,e=listJunk();if e!=nil{t.Fatal(e)}
+  if len(afterJunk)>len(beforeJunk){break}
+  time.Sleep(150*time.Millisecond)
+ }
+ if len(afterJunk)!=len(beforeJunk)+1{t.Fatalf("tagged mail did not appear exactly once in Dovecot Junk: before=%d after=%d",len(beforeJunk),len(afterJunk))}
+ afterTagInbox,e:=listMaildir();if e!=nil{t.Fatal(e)}
+ if len(afterTagInbox)!=len(accepted){t.Fatal("tagged mail incorrectly entered INBOX")}
+ scans=store.List(20,"")
+ if len(scans)==0||scans[0].Action!="tag"||scans[0].MTAAction!="spam_header_requested"{
+  t.Fatalf("Milter did not request trusted tag headers: %+v",scans)
+ }
+ t.Logf("Real Postfix Milter tag reached Dovecot Junk exactly once; scan=%s",scans[0].ID)
+ // An external sender must not be able to forge SpamGate's verdict headers
+ // and force an otherwise accepted message into Junk.
+ forged:=[]byte("From: <sender@example.org>\r\nTo: <"+recipient+">\r\nX-SpamGate-ID: attacker-forged\r\nX-SpamGate-Action: tag\r\nSubject: forged-verdict-lab\r\n\r\nOrdinary accepted mail.\r\n")
+ if e:=smtp.SendMail("127.0.0.1:25",nil,"sender@example.org",[]string{recipient},forged);e!=nil{
+  t.Fatalf("Postfix rejected forged-header safety fixture: %v",e)
+ }
+ var afterForged []string
+ for i:=0;i<80;i++{
+  afterForged,e=listMaildir();if e!=nil{t.Fatal(e)}
+  if len(afterForged)>len(accepted){break}
+  time.Sleep(150*time.Millisecond)
+ }
+ if len(afterForged)!=len(accepted)+1{t.Fatalf("forged-header accepted mail not delivered exactly once to INBOX: before=%d after=%d",len(accepted),len(afterForged))}
+ junkAfterForged,e:=listJunk();if e!=nil{t.Fatal(e)}
+ if len(junkAfterForged)!=len(afterJunk){t.Fatal("forged SpamGate verdict caused unauthorized Junk placement")}
+ accepted=afterForged
+ t.Log("Forged SpamGate verdict headers stripped; legitimate mail remained in INBOX")
  err=send("synthetic-reject",core.StandardGTUBE)
  if err==nil{t.Fatal("real Postfix accepted SGTUBE synthetic reject")}
  var smtpError *textproto.Error

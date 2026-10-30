@@ -34,7 +34,7 @@ jobs:
           set -Eeuo pipefail
           printf 'postfix postfix/mailname string localhost\npostfix postfix/main_mailer_type select Local only\n' | sudo debconf-set-selections
           sudo -E apt-get update -qq
-          sudo -E apt-get install -y -qq postfix dovecot-core dovecot-imapd
+          sudo -E apt-get install -y -qq postfix dovecot-core dovecot-imapd dovecot-sieve
           if ! id spamgatebeta >/dev/null 2>&1; then
             sudo useradd -m -s /bin/bash spamgatebeta
           fi
@@ -43,7 +43,7 @@ jobs:
           sudo postconf -e 'mydestination = localhost, localhost.localdomain'
           sudo postconf -e 'mynetworks = 127.0.0.0/8'
           sudo postconf -e 'home_mailbox = Maildir/'
-          sudo postconf -e 'mailbox_command ='
+          sudo postconf -e 'mailbox_command = /usr/lib/dovecot/dovecot-lda'
           sudo postconf -e 'smtpd_milters = inet:127.0.0.1:38472'
           sudo postconf -e 'non_smtpd_milters ='
           sudo postconf -e 'milter_default_action = tempfail'
@@ -66,12 +66,23 @@ jobs:
           # Maildir used by Postfix's home_mailbox in this disposable lab.
           grep -q '^namespace inbox {' /etc/dovecot/conf.d/15-mailboxes.conf
           sudo sed -i '/^namespace inbox {/a\  location = maildir:~/Maildir' /etc/dovecot/conf.d/15-mailboxes.conf
+          # Disposable CI host only: Postfix delivers through Dovecot LDA, so
+          # the Sieve rule is exercised on the real SMTP -> Milter -> LDA path.
+          # This is NOT an installer or a production MTA configuration change.
+          sudo test -x /usr/lib/dovecot/dovecot-lda
+          sudo install -d -m 0755 /etc/dovecot/sieve
+          sudo install -m 0644 scripts/fixtures/spamgate-junk.sieve /etc/dovecot/sieve/spamgate-ci.sieve
+          sudo sievec /etc/dovecot/sieve/spamgate-ci.sieve
+          printf '%s\n' 'protocol lda {' '  mail_plugins = $mail_plugins sieve' '}' 'plugin {' '  sieve_before = /etc/dovecot/sieve/spamgate-ci.sieve' '}' | sudo tee /etc/dovecot/conf.d/99-spamgate-ci-sieve.conf >/dev/null
           sudo systemctl restart dovecot
           sudo doveadm user spamgatebeta
+          sudo doveadm mailbox create -u spamgatebeta Junk
+          sudo doveadm mailbox list -u spamgatebeta
 
           sudo doveconf -n
           sudo postfix status
-          sudo postconf -n | grep -E 'milter|mydestination|home_mailbox|inet_interfaces'
+          sudo postconf -n | grep -E 'milter|mydestination|home_mailbox|mailbox_command|inet_interfaces'
+          sudo doveconf -n | grep -E 'sieve_before|mail_plugins|mail_location'
           ss -ltn | grep -E ':25[[:space:]]'
 
       - name: Real Postfix accept, synthetic reject and storage tempfail
@@ -95,19 +106,27 @@ jobs:
           sudo ls -ld /home/spamgatebeta /home/spamgatebeta/Maildir /home/spamgatebeta/Maildir/new
           sudo doveadm mailbox list -u spamgatebeta
           sudo doveadm force-resync -u spamgatebeta INBOX
-          STATUS="$(sudo doveadm mailbox status -u spamgatebeta messages INBOX)"
-          printf 'Dovecot mailbox status: %s\n' "$STATUS"
-          RESULTS="$(sudo doveadm search -u spamgatebeta ALL)"
-          printf 'Dovecot indexed UIDs: %s\n' "$RESULTS"
-          # Exactly three test messages must be visible: ordinary accepted,
-          # null-reverse-path DSN and released Postfix hold. Reject/tempfail
-          # must not produce a fourth or fifth mailbox delivery.
-          COUNT="$(printf '%s\n' "$RESULTS" | sed '/^$/d' | wc -l | tr -d ' ')"
-          if [ "$COUNT" -ne 3 ] || ! printf '%s\n' "$STATUS" | grep -Eq 'INBOX messages=3([[:space:]]|$)'; then
+          INBOX_STATUS="$(sudo doveadm mailbox status -u spamgatebeta messages INBOX)"
+          JUNK_STATUS="$(sudo doveadm mailbox status -u spamgatebeta messages Junk)"
+          INBOX_UIDS="$(sudo doveadm search -u spamgatebeta mailbox INBOX ALL)"
+          JUNK_UIDS="$(sudo doveadm search -u spamgatebeta mailbox Junk ALL)"
+          printf 'Dovecot INBOX status: %s\n' "$INBOX_STATUS"
+          printf 'Dovecot Junk status: %s\n' "$JUNK_STATUS"
+          printf 'Dovecot INBOX UIDs: %s\n' "$INBOX_UIDS"
+          printf 'Dovecot Junk UIDs: %s\n' "$JUNK_UIDS"
+          # INBOX: normal accept, null sender, released hold, forged-header
+          # accept. Junk: exactly one real Milter-tagged message. Reject and
+          # storage tempfail produce no additional mailbox deliveries.
+          INBOX_COUNT="$(printf '%s\n' "$INBOX_UIDS" | sed '/^$/d' | wc -l | tr -d ' ')"
+          JUNK_COUNT="$(printf '%s\n' "$JUNK_UIDS" | sed '/^$/d' | wc -l | tr -d ' ')"
+          if [ "$INBOX_COUNT" -ne 4 ] || [ "$JUNK_COUNT" -ne 1 ] ||
+             ! printf '%s\n' "$INBOX_STATUS" | grep -Eq 'INBOX messages=4([[:space:]]|$)' ||
+             ! printf '%s\n' "$JUNK_STATUS" | grep -Eq 'Junk messages=1([[:space:]]|$)'; then
             sudo doveadm -Dv search -u spamgatebeta ALL || true
-            echo "Expected exactly three Dovecot-visible messages, found $COUNT: $STATUS"
+            echo "Expected exactly four INBOX and one Junk messages; observed $INBOX_COUNT / $JUNK_COUNT"
             exit 1
           fi
+          printf '%s\n' "$INBOX_STATUS" "$JUNK_STATUS" > lab-evidence/dovecot-mailbox-counts.txt
 
       - name: Postfix queue and delivery diagnostics
         if: always()
@@ -117,6 +136,8 @@ jobs:
           sudo postfix status || true
           sudo ls -la /home/spamgatebeta/Maildir/new || true
           sudo ls -la /home/spamgatebeta/Maildir/cur || true
+          sudo ls -la /home/spamgatebeta/Maildir/.Junk/new || true
+          sudo ls -la /home/spamgatebeta/Maildir/.Junk/cur || true
 
       - name: Preserve exact-commit integration evidence
         if: always()

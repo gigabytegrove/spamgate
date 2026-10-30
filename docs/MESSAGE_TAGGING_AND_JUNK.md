@@ -46,3 +46,22 @@ see the exact weighted findings and policy thresholds. SpamGate records that
 headers were **requested** from the Milter and does not claim final delivery.
 
 SpamGate removes inbound `X-SpamGate-*`, `X-Spam` and `X-Spam-Status` verdict headers in Milter mode before adding its own. This needs Milter CHGHDRS support; if unavailable and inbound verdict headers are present, the message is deferred instead of trusting a forged spam label. The Sieve example deliberately checks **SpamGate-specific** headers, not an arbitrary sender-provided `X-Spam: Yes`.
+
+## Disposable real Postfix/Dovecot Sieve qualification
+
+The `postfix-dovecot-lab` GitHub Actions workflow installs Postfix,
+Dovecot LDA and Pigeonhole Sieve in an isolated Ubuntu runner. It compiles
+`scripts/fixtures/spamgate-junk.sieve`, routes local Postfix delivery
+through Dovecot LDA, and tests actual mailbox placement.
+
+The integration test checks one genuine Milter-tagged message in **Junk**,
+four accepted messages in **INBOX** (including a forged inbound
+`X-SpamGate-Action: tag` that must be stripped), and no delivery for
+rejected or temporarily failed messages. The hold is released using the
+real Postfix queue command. Counts are confirmed independently with
+`doveadm mailbox status` and mailbox-specific `doveadm search`.
+
+This is a disposable-host test, not permission to edit a production
+Dovecot or ISPConfig configuration. The fixture is a reference rule:
+integrating it into an existing Sieve pipeline requires preserving
+existing user rules, folder names, ordering and rollback.
