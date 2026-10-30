@@ -1,6 +1,7 @@
 name: SpamGate real Postfix and Dovecot lab — isolated VM
 
 on:
+  workflow_call:
   push:
     branches: [main]
     paths:

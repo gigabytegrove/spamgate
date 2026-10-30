@@ -43,7 +43,7 @@ patched_go "$GOVERSION" || {
 }
 echo "Release compiler: $(go version) (GOTOOLCHAIN=${GOTOOLCHAIN:-auto})"
 VERSION="$(go run ./cmd/spamgate -version)"
-[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$ ]] || { echo "Invalid development version: $VERSION" >&2; exit 1; }
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+$ ]] || { echo "Invalid development version: $VERSION" >&2; exit 1; }
 echo "QUALIFYING source $(git rev-parse HEAD 2>/dev/null || echo source-tree) / Go $GOVERSION / SpamGate $VERSION"
 
 go test -count=1 ./...
