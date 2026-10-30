@@ -280,16 +280,20 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (out Message, scanErr erro
 		note("Attachment contents", "skipped", "Optional bounded content and ZIP inspection disabled")
 	}
 	attachmentStart := len(findings)
-	for _, a := range attachments {
-		ext := strings.ToLower(a)
-		for _, risky := range []string{".exe", ".scr", ".js", ".vbs", ".ps1", ".bat", ".cmd", ".hta", ".jar", ".docm", ".xlsm", ".lnk", ".iso"} {
-			if strings.HasSuffix(ext, risky) {
-				add("RISKY_ATTACHMENT", "builtin/attachment", a, 5)
-				break
+	for _, filename := range attachments {
+		for _, risk := range attachmentNameFindings(filename) {
+			switch risk.Symbol {
+			case "ATTACHMENT_RISKY_EXTENSION":
+				// Preserve existing policy symbol and its executable weight.
+				// Macro-enabled Office filenames alone receive a lower weight.
+				weight := 5.0
+				if risk.Score < weight { weight = risk.Score }
+				add("RISKY_ATTACHMENT", "builtin/attachment", attachmentLabel(filename), weight)
+			case "ATTACHMENT_DOUBLE_EXTENSION":
+				add("DOUBLE_EXTENSION", "builtin/attachment", attachmentLabel(filename), 4)
+			default:
+				add(risk.Symbol, "builtin/attachment", risk.Detail, risk.Score)
 			}
-		}
-		if strings.Contains(ext, ".pdf.exe") || strings.Contains(ext, ".jpg.exe") {
-			add("DOUBLE_EXTENSION", "builtin/attachment", a, 4)
 		}
 	}
 	note("Attachment filenames", matchedSince(attachmentStart), fmt.Sprintf("Checked %d attachment filename(s) for risky extensions; this is not a full attachment-content scan", len(attachments)))
