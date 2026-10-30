@@ -20,7 +20,7 @@ func TestLabelledCorpusConfusionMatrixAndNoPII(t *testing.T){
  },"\n")
  c,err:=readLabels(strings.NewReader(corpus));if err!=nil{t.Fatal(err)}
  if c.Ham!=3||c.Spam!=3||c.TP!=2||c.FP!=2||c.TN!=1||c.FN!=1{t.Fatalf("incorrect counts: %+v",c)}
- r:=evaluate(c,3,3,0.99,0.1)
+ r:=evaluate(c,1000,1000,0.01,0.90)
  if math.Abs(r.FalsePositiveRate-2.0/3)>1e-8||math.Abs(r.Recall-2.0/3)>1e-8||math.Abs(r.Precision-0.5)>1e-8{t.Fatalf("incorrect rates: %+v",r)}
  if r.GatePassed{t.Fatal("weak sample falsely qualified")}
  if wilson(0,1000,true)<=0||wilson(1000,1000,false)>=1{t.Fatal("confidence interval ignored finite sample size")}
