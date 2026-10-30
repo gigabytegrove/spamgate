@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"net/mail"
 	"unicode/utf8"
 
 	"github.com/gigabytegrove/spamgate/internal/core"
@@ -82,6 +83,13 @@ func validateRelayAddress(address string, allowNull bool) error {
 		case '\x00', '\r', '\n':
 			return errors.New("control octet in address")
 		}
+	}
+	// net/smtp formats paths as <address> without escaping. Require a
+	// single bare RFC 5322 mailbox to prevent angle-bracket and ESMTP
+	// parameter injection; quoted local parts remain valid.
+	parsed, err := mail.ParseAddress(address)
+	if err != nil || parsed.Address != address {
+		return errors.New("address is not a single bare mailbox")
 	}
 	return nil
 }
