@@ -8,7 +8,7 @@ trap 'rm -rf -- "$TMP"' EXIT
 command -v go >/dev/null || { echo 'go required' >&2; exit 1; }
 command -v python3 >/dev/null || { echo 'python3 required' >&2; exit 1; }
 BASE_VERSION="$(sed -n 's/^const Version = "\([^"]*\)"$/\1/p' "$ROOT/internal/core/types.go")"
-[[ "$BASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$ ]] || { echo 'unsupported development version' >&2; exit 1; }
+[[ "$BASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+$ ]] || { echo 'unsupported development version' >&2; exit 1; }
 cd "$ROOT"
 CGO_ENABLED=0 go build -trimpath -buildvcs=false -o "$TMP/spamgate-base" ./cmd/spamgate
 for VARIANT in healthy broken; do
