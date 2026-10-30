@@ -57,3 +57,9 @@ Perform only on a **designated test mailbox** under an administrator's supervisi
 - These controls do not establish final mailbox delivery, prevent upstream
   SMTP 250/crash duplicate ambiguity, or substitute for actual Postfix and
   Dovecot host qualification.
+
+- The immutable spool digest also covers the full saved scan verdict and findings;
+  a changed classification cannot silently be replayed as original evidence.
+- A cold backup/restore regression now exercises the full original-message
+  recovery path: archived outbox, restored data directory, rebuilt scan history,
+  one relay attempt and queue finalization.

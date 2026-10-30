@@ -105,7 +105,8 @@ func spoolDigest(rec spoolRecord) string {
   Sender string `json:"sender"`
   Recipients []string `json:"recipients"`
   Raw []byte `json:"raw"`
- }{rec.ID, rec.Sender, rec.Recipients, rec.RawRFC822})
+  Scan *core.Message `json:"scan,omitempty"`
+ }{rec.ID, rec.Sender, rec.Recipients, rec.RawRFC822, rec.Scan})
  sum := sha256.Sum256(payload)
  return hex.EncodeToString(sum[:])
 }

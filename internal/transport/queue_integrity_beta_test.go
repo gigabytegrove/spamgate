@@ -98,3 +98,17 @@ func TestAuditedDiscardFailsClosedOnHistoryErrorAndRecordsSuccess(t *testing.T) 
  persisted, ok := restarted.Get(id)
  if !ok || persisted.Delivery != "discarded" { t.Fatalf("discard audit did not survive restart: %+v", persisted) }
 }
+
+func TestQueueRejectsTamperedScanEvidence(t *testing.T) {
+ q, _, _ := newIntegrityQueue(t)
+ id := core.ID()
+ m := core.Message{ID:id, Sender:"a@example.org", Recipients:[]string{"b@example.net"}, Action:"accept", Score:0}
+ if err := q.Enqueue(m, []byte("Subject: evidence\r\n\r\nbody")); err != nil { t.Fatal(err) }
+ rec, err := q.get(id)
+ if err != nil || rec.Scan == nil { t.Fatalf("missing durable scan: %v", err) }
+ rec.Scan.Action = "reject"
+ if err := q.put(rec); err != nil { t.Fatal(err) }
+ if _, err := q.Snapshot(); err == nil || !strings.Contains(err.Error(), "integrity") {
+  t.Fatalf("modified scan verdict was not detected: %v", err)
+ }
+}
