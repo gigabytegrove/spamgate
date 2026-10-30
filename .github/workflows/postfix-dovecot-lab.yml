@@ -5,7 +5,10 @@ on:
   push:
     branches: [main]
     paths:
-      - 'internal/transport/postfix_real_lab_linux_test.go'
+      - 'internal/core/**'
+      - 'internal/transport/**'
+      - 'internal/server/postfix_hold.go'
+      - 'internal/server/postfix_hold_*_test.go'
       - '.github/workflows/postfix-dovecot-lab.yml'
   workflow_dispatch:
 

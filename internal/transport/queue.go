@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -416,12 +417,28 @@ func (q *DeliveryQueue) ProcessDue(ctx context.Context) error {
 			// forwarding. Never silently send then delete an untracked mail.
 			msg = queueHistoryMessage(rec)
 			if err := q.store.Save(msg); err != nil {
-				q.mu.Lock()
-				// Keep the in-flight spool for a later recovery attempt.
-				q.mu.Unlock()
 				return fmt.Errorf("cannot reconstruct queued scan history: %w", err)
 			}
 		}
+		// The fsync-backed spool, not the mutable history mirror, owns the
+		// SMTP reverse path and recipient set. A damaged or stale history
+		// entry must never redirect an accepted message to another mailbox.
+		// Restore the original scan evidence and persist the correction before
+		// attempting upstream delivery; on journal failure retain the spool.
+		if msg.Sender != rec.Sender || !slices.Equal(msg.Recipients, rec.Recipients) {
+			slog.Warn("queued history envelope differs from durable spool; restoring authoritative envelope", "id", rec.ID)
+			msg = queueHistoryMessage(rec)
+			msg.Findings = append(msg.Findings, core.Finding{
+				Symbol: "QUEUE_ENVELOPE_RESTORED", Source: "recovery/spool",
+				Detail: "History envelope differed from durable spool; original sender and recipients restored before delivery",
+			})
+			if err := q.store.Save(msg); err != nil {
+				return fmt.Errorf("cannot persist authoritative queue envelope for %s: %w", rec.ID, err)
+			}
+		}
+		// Never pass an envelope from history to a relay implementation.
+		msg.Sender = rec.Sender
+		msg.Recipients = append([]string(nil), rec.Recipients...)
 		sendCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
 		sendErr := q.send(sendCtx, msg, rec.RawRFC822)
 		cancel()

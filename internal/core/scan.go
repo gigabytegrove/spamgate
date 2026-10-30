@@ -183,7 +183,11 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (out Message, scanErr erro
 	m.HeaderSnapshot, m.HeaderTruncated = CaptureHeaders(in.Raw)
 	m.MessageID = parsed.Header.Get("Message-Id")
 	m.Subject = decodedHeader(parsed.Header.Get("Subject"))
-	if m.Sender == "" {
+	// Preserve the SMTP/Milter null reverse path. A bounce with MAIL FROM:<> must
+	// never inherit the RFC 5322 From identity, or the delivery worker can
+	// generate a new bounce instead of forwarding the original DSN envelope.
+	// Ad-hoc scans without a transport connector retain the historical display fallback.
+	if m.Sender == "" && in.Connector == "" {
 		m.Sender = parsed.Header.Get("From")
 	}
 	body, e := io.ReadAll(io.LimitReader(parsed.Body, 10<<20))
