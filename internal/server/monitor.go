@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -69,10 +70,53 @@ type operationsMonitor struct {
 	now       func() time.Time
 }
 
+// Monitor history is bounded before allocation and never follows a symlink
+// at the final path. The same-directory rename in save protects the prior
+// version on write failures; these checks protect the read side.
+func readMonitorFile(path string) ([]byte, error) {
+    info, err := os.Lstat(path)
+    if err != nil { return nil, err }
+    if !info.Mode().IsRegular() {
+        return nil, errors.New("operations history must be a regular file, not a symlink or device")
+    }
+    if info.Size() > 2<<20 {
+        return nil, errors.New("operations history exceeds 2 MiB limit")
+    }
+    file, err := os.Open(path)
+    if err != nil { return nil, err }
+    defer file.Close()
+    opened, err := file.Stat()
+    if err != nil { return nil, err }
+    if !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
+        return nil, errors.New("operations history changed during open")
+    }
+    data, err := io.ReadAll(io.LimitReader(file, (2<<20)+1))
+    if err != nil { return nil, err }
+    if len(data) > 2<<20 {
+        return nil, errors.New("operations history exceeds 2 MiB limit")
+    }
+    return data, nil
+}
+
+func monitorDirectorySafe(dir string) error {
+    info, err := os.Lstat(dir)
+    if err != nil { return err }
+    if !info.IsDir() {
+        return errors.New("operations history directory must not be a symlink or non-directory")
+    }
+    return nil
+}
+
 func newOperationsMonitor(dataDir string) *operationsMonitor {
 	m := &operationsMonitor{path: filepath.Join(dataDir, "operations", "monitor.json"), bootID: core.ID(), now: func() time.Time { return time.Now().UTC() }}
 	m.state = monitorState{Schema: 1, Samples: []monitorSample{}, Alerts: []monitorAlert{}}
-	data, err := os.ReadFile(m.path)
+	// A pre-existing symlinked operations directory must never redirect
+	// private monitoring writes outside the persistent SpamGate data tree.
+	if err := monitorDirectorySafe(filepath.Dir(m.path)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		m.loadError = err
+		return m
+	}
+	data, err := readMonitorFile(m.path)
 	if errors.Is(err, os.ErrNotExist) {
 		return m
 	}
@@ -103,6 +147,9 @@ func (m *operationsMonitor) save(next monitorState) error {
 		return fmt.Errorf("monitor history must be recovered before writing: %w", m.loadError)
 	}
 	if err := os.MkdirAll(filepath.Dir(m.path), 0700); err != nil {
+		return err
+	}
+	if err := monitorDirectorySafe(filepath.Dir(m.path)); err != nil {
 		return err
 	}
 	raw, err := json.Marshal(next)
