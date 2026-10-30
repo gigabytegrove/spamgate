@@ -250,6 +250,8 @@ func (s *SMTP) handle(conn net.Conn) {
 	mailIssued := false
 	forwardedIP := ""
 	forwardedHelo := ""
+	seenForwardedIP := false
+	seenForwardedHelo := false
 	for commands := 0; commands < 500; commands++ {
 		lineBytes, e := readLineLimited(reader, 4096)
 		line := string(lineBytes)
@@ -275,6 +277,8 @@ func (s *SMTP) handle(conn net.Conn) {
 			heloName = strings.TrimSpace(line[5:])
 			greeted = true
 			forwardedIP = ""
+			seenForwardedIP = false
+			seenForwardedHelo = false
 			forwardedHelo = ""
 			mailIssued = false
 			sender = ""
@@ -289,6 +293,8 @@ func (s *SMTP) handle(conn net.Conn) {
 			heloName = strings.TrimSpace(line[5:])
 			greeted = true
 			forwardedIP = ""
+			seenForwardedIP = false
+			seenForwardedHelo = false
 			forwardedHelo = ""
 			mailIssued = false
 			sender = ""
@@ -299,6 +305,8 @@ func (s *SMTP) handle(conn net.Conn) {
 		case upper == "RSET":
 			mailIssued = false
 			forwardedIP = ""
+			seenForwardedIP = false
+			seenForwardedHelo = false
 			forwardedHelo = ""
 			sender = ""
 			recipients = nil
@@ -349,15 +357,17 @@ func (s *SMTP) handle(conn net.Conn) {
 					break
 				}
 			}
-			if invalid || (!hasIP && !hasHelo) {
+			if invalid || (!hasIP && !hasHelo) || (hasIP && seenForwardedIP) || (hasHelo && seenForwardedHelo) {
 				reply(501, "5.5.2 Invalid or duplicate XFORWARD identity")
 				continue
 			}
 			if hasIP {
 				forwardedIP = proposedIP
+				seenForwardedIP = true
 			}
 			if hasHelo {
 				forwardedHelo = proposedHelo
+				seenForwardedHelo = true
 			}
 			reply(250, "2.0.0 Original SMTP identity recorded")
 		case strings.HasPrefix(upper, "MAIL FROM:"):
@@ -443,6 +453,8 @@ func (s *SMTP) handle(conn net.Conn) {
 				sender = ""
 				mailIssued = false
 				forwardedIP = ""
+			seenForwardedIP = false
+			seenForwardedHelo = false
 				forwardedHelo = ""
 				recipients = nil
 				continue
@@ -453,7 +465,7 @@ func (s *SMTP) handle(conn net.Conn) {
 				originIP = forwardedIP
 			}
 			originHelo := heloName
-			if forwardedIP != "" {
+			if forwardedHelo != "" {
 				originHelo = forwardedHelo
 			}
 			scanCtx, cancelScan := context.WithTimeout(context.Background(), 45*time.Second)
@@ -467,6 +479,8 @@ func (s *SMTP) handle(conn net.Conn) {
 				sender = ""
 				mailIssued = false
 				forwardedIP = ""
+			seenForwardedIP = false
+			seenForwardedHelo = false
 				forwardedHelo = ""
 				recipients = nil
 				continue
@@ -487,6 +501,8 @@ func (s *SMTP) handle(conn net.Conn) {
 				sender = ""
 				mailIssued = false
 				forwardedIP = ""
+			seenForwardedIP = false
+			seenForwardedHelo = false
 				forwardedHelo = ""
 				recipients = nil
 				continue
@@ -501,6 +517,8 @@ func (s *SMTP) handle(conn net.Conn) {
 				sender = ""
 				mailIssued = false
 				forwardedIP = ""
+			seenForwardedIP = false
+			seenForwardedHelo = false
 				forwardedHelo = ""
 				recipients = nil
 				continue
@@ -527,6 +545,8 @@ func (s *SMTP) handle(conn net.Conn) {
 				sender = ""
 				mailIssued = false
 				forwardedIP = ""
+			seenForwardedIP = false
+			seenForwardedHelo = false
 				forwardedHelo = ""
 				recipients = nil
 				continue
@@ -537,6 +557,8 @@ func (s *SMTP) handle(conn net.Conn) {
 				sender = ""
 				mailIssued = false
 				forwardedIP = ""
+			seenForwardedIP = false
+			seenForwardedHelo = false
 				forwardedHelo = ""
 				recipients = nil
 				continue
