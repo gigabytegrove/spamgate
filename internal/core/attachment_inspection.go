@@ -168,17 +168,21 @@ func InspectMIMEAttachments(raw []byte) ([]AttachmentFinding, error) {
 		if name == "" {
 			name = "unnamed attachment"
 		}
+		for _, risk := range attachmentNameFindings(name) {
+			appendFinding(risk.Symbol, risk.Detail, risk.Score)
+		}
+		label := attachmentLabel(name)
 		payload, err := attachmentPayload(data, h.Get("Content-Transfer-Encoding"))
 		if err != nil || len(payload) > 5<<20 {
-			appendFinding("MIME_UNREADABLE", "Attachment cannot be decoded safely: "+name, 0)
+			appendFinding("MIME_UNREADABLE", "Attachment cannot be decoded safely: "+label, 0)
 			return
 		}
 		// Compare actual bytes, not filename or claimed Content-Type alone.
 		if bytes.HasPrefix(payload, []byte("MZ")) || bytes.HasPrefix(payload, []byte{0x7f, 'E', 'L', 'F'}) {
-			appendFinding("ATTACHMENT_EXECUTABLE_CONTENT", "Executable file signature in: "+name, 6)
+			appendFinding("ATTACHMENT_EXECUTABLE_CONTENT", "Executable file signature in: "+label, 6)
 		}
 		if bytes.HasPrefix(payload, []byte("PK\x03\x04")) {
-			inspectZIPAttachment(payload, name, appendFinding)
+			inspectZIPAttachment(payload, label, appendFinding)
 		}
 	}
 	inspect(msg.Header, body, 0)
