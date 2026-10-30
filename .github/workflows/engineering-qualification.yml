@@ -54,8 +54,13 @@ jobs:
           GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o dist/spamgate-worker-linux-amd64 ./cmd/spamgate
           GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o dist/spamgate-launcher-linux-amd64 ./cmd/spamgate-run
           GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o dist/spamgate-eval-linux-amd64 ./cmd/spamgate-eval
+          GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o dist/spamgate-spool-audit-linux-amd64 ./cmd/spamgate-spool-audit
           GOOS=windows GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w -H=windowsgui' -o dist/spamgate-windows-amd64.exe ./cmd/spamgate
-          chmod 0755 dist/spamgate-worker-linux-amd64 dist/spamgate-launcher-linux-amd64
+          chmod 0755 dist/spamgate-worker-linux-amd64 dist/spamgate-launcher-linux-amd64 dist/spamgate-spool-audit-linux-amd64
+          AUDIT_TEST_DIR="$(mktemp -d)"
+          mkdir -m 0700 "$AUDIT_TEST_DIR/queue"
+          dist/spamgate-spool-audit-linux-amd64 -dir "$AUDIT_TEST_DIR/queue" -json | grep -q '"published": 0'
+          rm -rf "$AUDIT_TEST_DIR"
           test "$(dist/spamgate-worker-linux-amd64 -version)" = "$(go run ./cmd/spamgate -version)"
           test "$(dist/spamgate-launcher-linux-amd64 -version)" = "$(go run ./cmd/spamgate -version)"
           (cd dist && sha256sum * > SHA256SUMS.txt && sha256sum -c SHA256SUMS.txt)
