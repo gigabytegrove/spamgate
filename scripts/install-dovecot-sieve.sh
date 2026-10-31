@@ -124,7 +124,7 @@ fi
 stage="$(mktemp -d "$confdir/sieve/.spamgate-stage.XXXXXXXX")"
 created=("$stage" "${created[@]}")
 install -m 0644 -- "$source_rule" "$stage/spamgate-junk.sieve"
-sievec -o "$stage/spamgate-junk.svbin" "$stage/spamgate-junk.sieve"
+sievec "$stage/spamgate-junk.sieve"
 snippet_content > "$stage/99-spamgate-junk.conf"
 chmod 0644 "$stage/99-spamgate-junk.conf" "$stage/spamgate-junk.svbin"
 install -m 0644 -- "$stage/spamgate-junk.sieve" "$rule"; created=("$rule" "${created[@]}")

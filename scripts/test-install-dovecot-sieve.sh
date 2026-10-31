@@ -14,8 +14,8 @@ fi
 MOCK
 cat > "$base/bin/sievec" <<'MOCK'
 #!/usr/bin/env bash
-[[ "$#" == 3 && "$1" == -o ]] || exit 88
-cp -- "$3" "$2"
+[[ "$#" == 1 && "$1" == *.sieve ]] || exit 88
+cp -- "$1" "${1%.sieve}.svbin"
 MOCK
 chmod 0755 "$base/bin/doveconf" "$base/bin/sievec"
 export PATH="$base/bin:$PATH"
@@ -51,8 +51,8 @@ if "$script" --apply --confirm DOVECOT-SIEVE > "$base/out" 2>&1; then fail 'Comp
 if [[ -d "$base/etc/sieve" ]] && [[ -n "$(find "$base/etc/sieve" -mindepth 1 -print -quit)" ]]; then fail 'Compiler failure retained staged artifacts'; fi
 cat > "$base/bin/sievec" <<'MOCK'
 #!/usr/bin/env bash
-[[ "$#" == 3 && "$1" == -o ]] || exit 88
-cp -- "$3" "$2"
+[[ "$#" == 1 && "$1" == *.sieve ]] || exit 88
+cp -- "$1" "${1%.sieve}.svbin"
 MOCK
 chmod 0755 "$base/bin/sievec"
 cat > "$base/bin/doveconf" <<'MOCK'
