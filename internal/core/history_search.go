@@ -27,7 +27,7 @@ func (s *Store) SearchHistory(query HistoryQuery, mailbox string) (HistoryResult
 	if query.Offset < 0 || query.Limit < 1 || query.Limit > 500 || query.Offset > 500000 {
 		return HistoryResult{}, errors.New("invalid pagination")
 	}
-	if query.Action != "" && query.Action != "all" && query.Action != "accept" && query.Action != "tag" && query.Action != "quarantine" && query.Action != "reject" {
+	if query.Action != "" && query.Action != "all" && query.Action != "accept" && query.Action != "tag" && query.Action != "quarantine" && query.Action != "reject" && query.Action != "soft_reject" {
 		return HistoryResult{}, errors.New("invalid action")
 	}
 	query.Text = strings.ToLower(strings.TrimSpace(query.Text))
