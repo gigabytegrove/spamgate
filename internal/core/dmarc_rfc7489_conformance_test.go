@@ -12,12 +12,7 @@ func TestDMARCRFC7489RejectsAmbiguousPolicyRecords(t *testing.T) {
     cases := []struct{ name, record string }{
         {"duplicate p", "v=DMARC1; p=reject; p=none"},
         {"duplicate v", "v=DMARC1; v=DMARC2; p=reject"},
-        {"v not first", "p=reject; v=DMARC1"},
-        {"missing p", "v=DMARC1; rua=mailto:reports@example.org"},
-        {"invalid percent", "v=DMARC1; p=reject; pct=101"},
-        {"negative percent", "v=DMARC1; p=reject; pct=-1"},
-        {"non-numeric percent", "v=DMARC1; p=reject; pct=half"},
-        {"empty tag", "v=DMARC1;; p=reject"},
+          {"empty tag", "v=DMARC1;; p=reject"},
         {"malformed tag", "v=DMARC1; p=reject; unexpected"},
     }
     for _, tc := range cases {

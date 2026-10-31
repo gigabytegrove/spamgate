@@ -3,23 +3,17 @@ package core
 import (
     "errors"
     "fmt"
-    "strconv"
     "strings"
 )
 
 var errDMARCPolicy = errors.New("invalid DMARC policy")
 
-// dmarcCandidate intentionally checks every v tag, not the last map value.
-// Otherwise a duplicated v= tag could hide a malformed DMARC policy as absent.
+// RFC 9989 requires v=DMARC1 as the first tag, with a case-sensitive value.
+// A misplaced version tag is not a discoverable DMARC policy record.
 func dmarcCandidate(record string) bool {
-    for _, field := range strings.Split(record, ";") {
-        key, value, ok := strings.Cut(strings.TrimSpace(field), "=")
-        if ok && strings.EqualFold(strings.TrimSpace(key), "v") &&
-            strings.EqualFold(strings.TrimSpace(value), "DMARC1") {
-            return true
-        }
-    }
-    return false
+    first, _, _ := strings.Cut(strings.TrimSpace(record), ";")
+    key, value, ok := strings.Cut(strings.TrimSpace(first), "=")
+    return ok && strings.TrimSpace(key) == "v" && strings.TrimSpace(value) == "DMARC1"
 }
 
 // parseDMARCRecord enforces RFC 7489 policy tag syntax before any alignment
@@ -50,7 +44,7 @@ func parseDMARCRecord(record string) (map[string]string, error) {
                 return nil, fmt.Errorf("%w: invalid tag name %q", errDMARCPolicy, key)
             }
         }
-        if i == 0 && (key != "v" || !strings.EqualFold(value, "DMARC1")) {
+        if i == 0 && (key != "v" || value != "DMARC1") {
             return nil, fmt.Errorf("%w: v=DMARC1 must be first", errDMARCPolicy)
         }
         if _, exists := tags[key]; exists {
@@ -58,14 +52,13 @@ func parseDMARCRecord(record string) (map[string]string, error) {
         }
         tags[key] = value
     }
-    if !strings.EqualFold(tags["v"], "DMARC1") || tags["p"] == "" {
-        return nil, fmt.Errorf("%w: missing required v or p tag", errDMARCPolicy)
+    if tags["v"] != "DMARC1" {
+        return nil, fmt.Errorf("%w: missing or invalid v=DMARC1", errDMARCPolicy)
     }
-    if pct, exists := tags["pct"]; exists {
-        n, err := strconv.Atoi(pct)
-        if err != nil || len(pct) > 3 || n < 0 || n > 100 {
-            return nil, fmt.Errorf("%w: pct must be between 0 and 100", errDMARCPolicy)
-        }
+    // RFC 9989 makes p optional with a default of none. The historic pct
+    // tag is ignored, regardless of its value, rather than changing policy.
+    if tags["p"] == "" {
+        tags["p"] = "none"
     }
     return tags, nil
 }

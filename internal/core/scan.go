@@ -651,12 +651,10 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (out Message, scanErr erro
 	case "pass":
 		add("DMARC_PASS", "auth/dmarc/"+dmarc.Domain, dmarc.Detail, -1)
 	case "fail":
-		// pct sampling changes policy-based scoring, never authentication.
-		// SpamGate does not directly enforce DMARC dispositions at the MTA.
-		effective, selected, sampleErr := chooseDMARCPolicy(dmarc)
-		if sampleErr != nil {
-			return Message{}, fmt.Errorf("DMARC sampling failed: %w", sampleErr)
-		}
+		// RFC 9989 t=y test mode lowers the requested policy one level.
+		// Historic pct= has no effect. This is score input, not direct MTA
+		// enforcement, and authentication evidence is retained.
+		effective := effectiveDMARCPolicy(dmarc)
 		weight := 0.0
 		if effective == "quarantine" {
 			weight = 4
@@ -664,10 +662,10 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (out Message, scanErr erro
 		if effective == "reject" {
 			weight = 6
 		}
-		detail := fmt.Sprintf("%s; effective scoring policy=%s (pct=%d; selected=%t)", dmarc.Detail, effective, dmarc.Percent, selected)
+		detail := fmt.Sprintf("%s; effective scoring policy=%s (t=%t; RFC 9989)", dmarc.Detail, effective, dmarc.Testing)
 		add("DMARC_FAIL", "auth/dmarc/"+dmarc.Domain, detail, weight)
-		if !selected {
-			note("DMARC policy sampling", "info", fmt.Sprintf("Published p=%s pct=%d; sampled-out effective policy=%s; authentication still failed", dmarc.Policy, dmarc.Percent, effective))
+		if dmarc.Testing {
+			note("DMARC policy test mode", "info", fmt.Sprintf("Published p=%s t=y; effective policy=%s; authentication still failed", dmarc.Policy, effective))
 		}
 	case "permerror":
 		add("DMARC_PERMERROR", "auth/dmarc/"+dmarc.Domain, dmarc.Detail, 1)

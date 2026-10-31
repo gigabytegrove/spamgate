@@ -1,8 +1,9 @@
 package core
 
-// RFC 7489 DMARC policy discovery and organizational-domain alignment. Public
-// suffix rules can be replaced with the current official PSL snapshot via
-// SPAMGATE_PUBLIC_SUFFIX_FILE. PSD DMARC (RFC 9091) is not implemented.
+// DMARC policy discovery and organizational-domain alignment. This is a
+// transitional implementation: RFC 9989 t=y test mode is honored, but full
+// DNS Tree Walk and PSD discovery are still outstanding. Public suffix rules
+// may be overridden using SPAMGATE_PUBLIC_SUFFIX_FILE.
 
 import (
 	"context"
@@ -10,16 +11,15 @@ import (
 	"fmt"
 	"net"
 	"net/mail"
-	"strconv"
 	"strings"
 	"time"
 )
 
 type DMARCResult struct {
 	Result, Domain, Policy, Detail string
-	// Percent is the published pct= request (default 100), not a change
-	// to the authentication result or original publisher policy.
-	Percent int
+	// Testing records the current RFC 9989 t=y request. Historic pct
+	// values are ignored; authentication evidence is never suppressed.
+	Testing bool
 }
 
 func dmarcAligned(used, from, mode string) bool {
@@ -146,10 +146,7 @@ func DMARCCheck(ctx context.Context, resolver SPFResolver, headerFrom string, sp
 		}
 	}
 	result.Policy = policy
-	result.Percent = 100
-	if pct, ok := tags["pct"]; ok {
-		result.Percent, _ = strconv.Atoi(pct) // validated by parseDMARCRecord
-	}
+	result.Testing = tags["t"] == "y"
 	if spf.Result == "pass" && dmarcAligned(spf.Domain, domain, tags["aspf"]) {
 		result.Result = "pass"
 		result.Detail = "SPF authenticated an aligned organizational domain"
