@@ -117,22 +117,28 @@ func (s *Server) postfixHoldQueue(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, "Postfix hold inventory unavailable. Check that postqueue -j is supported and the SpamGate process has permission; no queue was changed.")
 		return
 	}
-	// Join *exact* queue IDs with prior SpamGate hold requests; never match
-	// by sender/subject, which can be spoofed and are not unique.
+	// A queue ID alone is not ownership evidence: Postfix may reuse it.
+	// Correlate only one unambiguous scan to one inventory entry, including
+	// its arrival time, complete recipient multiset, and reverse path.
 	scans := s.Store.List(1000, "")
-	byQueue := map[string]string{}
+	byQueue := make(map[string][]core.Message)
 	for _, scan := range scans {
 		if scan.MTAQueueID != "" && scan.MTAAction == "postfix_hold_requested" {
-			if previous, exists := byQueue[scan.MTAQueueID]; !exists {
-    byQueue[scan.MTAQueueID] = scan.ID
-   } else if previous != scan.ID {
-    // A reused queue ID with multiple candidate scans is ambiguous.
-    byQueue[scan.MTAQueueID] = ""
-   }
+			byQueue[scan.MTAQueueID] = append(byQueue[scan.MTAQueueID], scan)
 		}
 	}
+	inventoryCount := make(map[string]int)
+	for _, held := range messages {
+		inventoryCount[held.QueueID]++
+	}
 	for i := range messages {
-		messages[i].SpamGateScanID = byQueue[messages[i].QueueID]
+		candidates := byQueue[messages[i].QueueID]
+		if inventoryCount[messages[i].QueueID] != 1 || len(candidates) != 1 {
+			continue
+		}
+		if correlatesPostfixHold(candidates[0], messages[i]) {
+			messages[i].SpamGateScanID = candidates[0].ID
+		}
 	}
 	jsonReply(w, 200, map[string]any{"enabled": true, "messages": messages, "detail": "Read-only Postfix hold queue. No automatic release or mailbox placement is implied."})
 }
@@ -215,49 +221,19 @@ func (s *Server) postfixReleaseMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	matched := false
-	for _, h := range held {
-		if h.QueueID != req.QueueID { continue }
-  if matched {
-   fail(w, 409, "Multiple Postfix queue records share this ID; release refused")
-   return
-  }
-  if h.RecipientsTruncated || (h.RecipientCount > 0 && h.RecipientCount != len(h.Recipients)) {
-   fail(w, 409, "Postfix recipient inventory is incomplete; cannot authorize release")
-   return
-  }
-  if h.ArrivalTime <= 0 || absDuration(m.Timestamp.Sub(time.Unix(h.ArrivalTime, 0))) > 15*time.Minute {
-			fail(w, 409, "Queue ID was reused or the queue arrival time cannot be correlated with this scan; nothing was released")
+	for _, held := range held {
+		if held.QueueID != req.QueueID {
+			continue
+		}
+		if matched {
+			fail(w, 409, "Multiple Postfix queue records share this ID; release refused")
 			return
 		}
-		// Postfix queue identifiers can be reused. Demand a matching envelope
-		// sender and ensure every queued recipient belongs to this scan. A
-		// message with no reliable sender/recipient evidence fails closed.
-		// The SMTP null reverse path is a valid envelope identity for DSNs.
-		// Require both sides to agree exactly after angle-bracket normalization;
-		// never reject an otherwise correlated held DSN merely for being null.
-		if !strings.EqualFold(strings.Trim(m.Sender, "<>"), strings.Trim(h.Sender, "<>")) {
-			fail(w, 409, "Postfix envelope sender does not match the scanned sender; nothing was released")
+		if !correlatesPostfixHold(m, held) {
+			fail(w, 409, "Held message does not match the scan's complete envelope and arrival evidence; nothing was released")
 			return
-		}
-		if len(h.Recipients) == 0 || len(m.Recipients) == 0 {
-			fail(w, 409, "Postfix queue recipients cannot be correlated; nothing was released")
-			return
-		}
-		for _, actual := range h.Recipients {
-			recipientMatches := false
-			for _, wanted := range m.Recipients {
-				if strings.EqualFold(wanted, actual) {
-					recipientMatches = true
-					break
-				}
-			}
-			if !recipientMatches {
-				fail(w, 409, "Held message has a recipient outside the scanned envelope; nothing was released")
-				return
-			}
 		}
 		matched = true
-		// Continue scanning: a second record with the same queue ID is ambiguous.
 	}
 	if !matched {
 		fail(w, 409, "The exact message is not currently present in Postfix's hold queue; nothing was released")
