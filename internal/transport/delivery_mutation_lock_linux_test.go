@@ -7,6 +7,7 @@ import (
     "errors"
     "os"
     "path/filepath"
+    "runtime"
     "strings"
     "sync"
     "testing"
@@ -104,7 +105,12 @@ func waitForDurableDelivery(t *testing.T, done <-chan error, description string)
             t.Fatalf("%s: %v", description, err)
         }
     case <-time.After(30 * time.Second):
-        t.Fatalf("%s: worker did not finish durable finalization within 30 seconds", description)
+        // The duration alone cannot distinguish delayed fsync from a lock
+        // deadlock. Capture the blocked worker's stack before failing.
+        stacks := make([]byte, 1<<20)
+        size := runtime.Stack(stacks, true)
+        t.Errorf("%s: durable delivery did not finish within 30 seconds; active goroutines:\n%s", description, stacks[:size])
+        t.FailNow()
     }
 }
 
