@@ -80,20 +80,14 @@ func policyDecision(score, tag, quarantine, reject float64) string {
 }
 func previewOne(m core.Message, p policyPreviewRequest, policies []core.RecipientPolicy) policyPreviewItem {
 	result := policyPreviewItem{ID: m.ID, Score: m.Score, HistoricalAction: m.Action, PolicySource: "global"}
-	tag, quarantine, reject := p.TagThreshold, p.QuarantineThreshold, p.RejectThreshold
-	if len(m.Recipients) == 1 {
-		for _, v := range policies {
-			if strings.EqualFold(v.Mailbox, m.Recipients[0]) {
-				tag, quarantine, reject = v.TagThreshold, v.QuarantineThreshold, v.RejectThreshold
-				result.PolicySource = "mailbox"
-				break
-			}
-		}
-	} else if len(m.Recipients) > 1 && len(policies) > 0 {
-		result.PolicySource = "global_multi_recipient"
-		result.Note = "One SMTP transaction cannot apply different recipient dispositions; global thresholds used"
+	selected := core.SelectRecipientThresholds(core.Settings{
+		TagThreshold: p.TagThreshold, QuarantineThreshold: p.QuarantineThreshold, RejectThreshold: p.RejectThreshold,
+	}, policies, m.Recipients)
+	result.PolicySource = selected.Source
+	if selected.Source == "global_multi_recipient" {
+		result.Note = "Conflicting effective recipient thresholds; global thresholds used for this SMTP transaction"
 	}
-	result.HypotheticalAction = policyDecision(m.Score, tag, quarantine, reject)
+	result.HypotheticalAction = policyDecision(m.Score, selected.TagThreshold, selected.QuarantineThreshold, selected.RejectThreshold)
 	if m.Scoring != nil && m.Scoring.ForcedAction != "" {
 		result.Forced = true
 		result.HypotheticalAction = m.Scoring.ForcedAction

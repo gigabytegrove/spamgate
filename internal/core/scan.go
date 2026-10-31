@@ -205,20 +205,11 @@ func (s *Scanner) Scan(ctx context.Context, in Input) (out Message, scanErr erro
 		return Message{}, fmt.Errorf("%w: size must be 1–10485760 bytes", ErrInvalidMessage)
 	}
 	cfg := s.Store.Config()
-	policyDetail := "Global policy"
-	if len(in.Recipients) == 1 {
-		for _, rp := range cfg.RecipientPolicies {
-			if equalEmail(in.Recipients[0], rp.Mailbox) {
-				cfg.Settings.TagThreshold = rp.TagThreshold
-				cfg.Settings.QuarantineThreshold = rp.QuarantineThreshold
-				cfg.Settings.RejectThreshold = rp.RejectThreshold
-				policyDetail = "Mailbox-specific thresholds for " + rp.Mailbox
-				break
-			}
-		}
-	} else if len(in.Recipients) > 1 && len(cfg.RecipientPolicies) != 0 {
-		policyDetail = "Global thresholds used for multi-recipient transaction; split message by MTA for distinct mailbox actions"
-	}
+	selected := SelectRecipientThresholds(cfg.Settings, cfg.RecipientPolicies, in.Recipients)
+	cfg.Settings.TagThreshold = selected.TagThreshold
+	cfg.Settings.QuarantineThreshold = selected.QuarantineThreshold
+	cfg.Settings.RejectThreshold = selected.RejectThreshold
+	policyDetail := selected.Detail
 	trace := &ScoringTrace{TagThreshold: cfg.Settings.TagThreshold, QuarantineThreshold: cfg.Settings.QuarantineThreshold, RejectThreshold: cfg.Settings.RejectThreshold}
 	note := func(name, status, detail string) {
 		trace.Checks = append(trace.Checks, ScanCheck{Name: name, Status: status, Detail: detail})
