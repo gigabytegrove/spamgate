@@ -103,6 +103,7 @@ func readRecord(path string) (record,error) {
  if !info.Mode().IsRegular()||info.Size()<2||info.Size()>maxRecordBytes {
   return record{},errors.New("not a bounded regular spool record")
  }
+ if err:=validateAuditRecordMetadata(path,info);err!=nil{return record{},fmt.Errorf("unsafe spool metadata: %w",err)}
  f,err:=os.Open(path)
  if err!=nil{return record{},err}
  defer f.Close()
@@ -111,13 +112,15 @@ func readRecord(path string) (record,error) {
  if !opened.Mode().IsRegular()||!os.SameFile(info,opened)||opened.Size()!=info.Size(){
   return record{},errors.New("spool path changed during open")
  }
+ if err:=validateAuditRecordMetadata(path,opened);err!=nil{return record{},fmt.Errorf("unsafe opened spool metadata: %w",err)}
  data,err:=io.ReadAll(io.LimitReader(f,maxRecordBytes+1))
  if err!=nil{return record{},err}
  after,err:=f.Stat()
  if err!=nil{return record{},err}
- if int64(len(data))!=info.Size()||after.Size()!=info.Size()||!after.ModTime().Equal(info.ModTime()){
+ if int64(len(data))!=info.Size()||after.Size()!=info.Size()||!after.ModTime().Equal(info.ModTime())||!os.SameFile(opened,after){
   return record{},errors.New("spool record changed during read")
  }
+ if err:=validateAuditRecordMetadata(path,after);err!=nil{return record{},fmt.Errorf("unsafe spool metadata after read: %w",err)}
  var rec record
  if err:=json.Unmarshal(data,&rec);err!=nil{return record{},errors.New("invalid spool JSON")}
  if !validID(rec.ID)||rec.Size<1||rec.Size>10<<20||len(rec.Raw)!=rec.Size||

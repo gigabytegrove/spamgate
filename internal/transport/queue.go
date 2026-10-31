@@ -72,6 +72,8 @@ type DeliveryQueue struct {
 	store    *core.Store
 	send     func(context.Context, core.Message, []byte) error
 	now      func() time.Time
+	// Fault injection only; production always syncs the actual spool directory.
+	syncDirForTest func() error
 }
 
 func NewDeliveryQueue(dataDir string, store *core.Store, deliver func(context.Context, core.Message, []byte) error) (*DeliveryQueue, error) {
@@ -141,6 +143,9 @@ func spoolStateDigest(rec spoolRecord) string {
 }
 func (q *DeliveryQueue) path(id string) string { return filepath.Join(q.dir, id+".json") }
 func (q *DeliveryQueue) syncDirectory() error {
+	if q.syncDirForTest != nil {
+		return q.syncDirForTest()
+	}
 	if runtime.GOOS == "windows" {
 		return nil
 	} // directory fsync is not supported by Windows file handles
@@ -188,6 +193,12 @@ func (q *DeliveryQueue) put(rec spoolRecord) error {
 		return e
 	}
 	complete = true
+	// The temporary pathname must itself be durable before rename. File fsync
+	// alone does not guarantee that a crash will preserve a newly created
+	// directory entry if rename or the following directory sync fails.
+	if e = q.syncDirectory(); e != nil {
+		return fmt.Errorf("unpublished spool retained at %s but directory durability is unconfirmed: %w", filepath.Base(tmp), e)
+	}
  // Preserve synced unpublished evidence rather than overwrite an unsafe destination.
  if existing, inspectErr := os.Lstat(q.path(rec.ID)); inspectErr == nil {
   if inspectErr = validateSpoolMetadata(q.path(rec.ID), existing); inspectErr != nil {
