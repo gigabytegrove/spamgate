@@ -88,6 +88,8 @@ func main(){
  mux.HandleFunc("/healthz",func(w http.ResponseWriter,r *http.Request){w.Header().Set("Content-Type","application/json");fmt.Fprintf(w,"{\"version\":%%q}",version)})
  mux.HandleFunc("/trigger",func(w http.ResponseWriter,r *http.Request){w.WriteHeader(202);w.(http.Flusher).Flush();go func(){os.Exit(75)}()})
  mux.HandleFunc("/crash",func(w http.ResponseWriter,r *http.Request){w.WriteHeader(202);w.(http.Flusher).Flush();go func(){os.Exit(2)}()})
+ mux.HandleFunc("/exit-clean",func(w http.ResponseWriter,r *http.Request){w.WriteHeader(202);w.(http.Flusher).Flush();go func(){os.Exit(0)}()})
+ mux.HandleFunc("/pid",func(w http.ResponseWriter,r *http.Request){fmt.Fprint(w,os.Getpid())})
  s:=&http.Server{Addr:listen,Handler:mux}
  signalChan:=make(chan os.Signal,1);signal.Notify(signalChan,os.Interrupt,syscall.SIGTERM)
  go func(){<-signalChan;_ =s.Close();os.Exit(0)}()
@@ -330,4 +332,57 @@ func TestRunnerRecoversWorkerCrash(t *testing.T) {
 		t.Fatalf("supervisor exited after recoverable crash: %v", err)
 	default:
 	}
+}
+
+func TestRunnerRecoversUnexpectedCleanWorkerExit(t *testing.T) {
+	if testing.Short() { t.Skip("integration build") }
+	dir := t.TempDir()
+	binary := buildFixture(t, dir, "clean-exit-worker", "0.6.0-beta.1", false)
+	installed := filepath.Join(dir, "spamgate-worker")
+	if err := copyAtomic(binary, installed); err != nil { t.Fatal(err) }
+	o := options{worker: installed, data: filepath.Join(dir, "data"), listen: port(t)}
+	o.args = []string{"-data", o.data, "-listen", o.listen}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- supervise(ctx, o) }()
+	defer func() {
+		cancel()
+		select {
+		case err := <-done:
+			if err != nil { t.Errorf("supervisor returned error: %v", err) }
+		case <-time.After(10 * time.Second):
+			t.Error("supervisor did not stop")
+		}
+	}()
+	awaitVersion(t, o.listen, "0.6.0-beta.1")
+	readPID := func() string {
+		resp, err := http.Get("http://" + o.listen + "/pid")
+		if err != nil { return "" }
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK { return "" }
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 64))
+		if err != nil { return "" }
+		return strings.TrimSpace(string(body))
+	}
+	original := readPID()
+	if original == "" { t.Fatal("missing original worker PID") }
+	resp, err := http.Get("http://" + o.listen + "/exit-clean")
+	if err != nil { t.Fatal(err) }
+	resp.Body.Close()
+	deadline := time.Now().Add(15 * time.Second)
+	recovered := false
+	for time.Now().Before(deadline) {
+		if next := readPID(); next != "" && next != original {
+			recovered = true
+			break
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("permanent launcher exited on unexpected worker exit(0): %v", err)
+		default:
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !recovered { t.Fatalf("launcher failed to restart clean-exited worker PID %s", original) }
+	awaitVersion(t, o.listen, "0.6.0-beta.1")
 }
