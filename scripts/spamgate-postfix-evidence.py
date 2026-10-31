@@ -18,6 +18,7 @@ MAX_LOG_BYTES = 64 * 1024 * 1024
 MAX_LINE_BYTES = 65536
 QUEUE = r"[A-Za-z0-9]{5,32}"
 CLEANUP = re.compile(r"\bpostfix/cleanup\[\d+\]: (" + QUEUE + r"): message-id=<([a-f0-9]{32})@spamgate-qualification\.invalid>", re.I)
+CLEANUP_ANY = re.compile(r"\bpostfix/cleanup\[\d+\]: (" + QUEUE + r"): message-id=<([^<>]+)>", re.I)
 EVENT = re.compile(r"\bpostfix/(smtp|lmtp|local|virtual|pipe|error|discard)\[\d+\]: (" + QUEUE + r"): to=<([^<>\s]+)>.*?\bstatus=(sent|deferred|bounced)\b", re.I)
 REMOVED = re.compile(r"\bpostfix/qmgr\[\d+\]: (" + QUEUE + r"): removed\b", re.I)
 HOLD = re.compile(r"\bpostfix/(?:cleanup|smtpd)\[\d+\]: (" + QUEUE + r"):.*\bhold:\s", re.I)
@@ -117,6 +118,12 @@ def correlate(report, paths, recipient):
                     queue_to_run[queue_id] = rid
                     entries[rid]["queue_id"] = queue_id
                 continue
+            other_cleanup = CLEANUP_ANY.search(line)
+            if other_cleanup and other_cleanup.group(1) in queue_to_run:
+                # Queue IDs can be reused after a completed delivery. A later
+                # unrelated cleanup must never lend its status to an old run.
+                duplicate.add(queue_to_run[other_cleanup.group(1)])
+                continue
             event = EVENT.search(line)
             if event:
                 transport, queue_id, address, status = event.groups()
@@ -143,8 +150,10 @@ def correlate(report, paths, recipient):
             entry["state"] = "held_unverified"
         elif "bounced" in statuses:
             entry["state"] = "bounced"
-        elif "sent" in statuses:
+        elif "sent" in statuses and entry["queue_removed"]:
             entry["state"] = "transport_sent_not_mailbox_verified"
+        elif "sent" in statuses:
+            entry["state"] = "sent_but_queue_removal_unobserved"
         elif "deferred" in statuses:
             entry["state"] = "deferred"
         else:
