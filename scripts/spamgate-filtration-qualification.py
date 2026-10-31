@@ -110,6 +110,17 @@ def exclusive_output(path):
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     fd = os.open(path, flags, 0o600)
+    try:
+        parent = os.path.dirname(os.path.abspath(path))
+        directory = os.open(parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    except OSError:
+        os.close(fd)
+        os.unlink(path)
+        raise
     return os.fdopen(fd, "w", encoding="utf-8")
 
 
@@ -221,9 +232,23 @@ def reconcile(args):
             raise ValueError("invalid label or cohort in report")
         rows.append({"id": case["id"], "label": case["label"],
                      "cohort": case["cohort"], "action": observations[case["run_id"]]})
-    with exclusive_output(args.labels_out) as output:
-        for row in rows:
-            record(output, row)
+    # Publish only complete label sets; never overwrite prior evidence.
+    # An interrupted evaluation must not leave a partial qualifying corpus.
+    target = pathlib.Path(args.labels_out)
+    temporary = target.with_name(f".{target.name}.pending-{uuid.uuid4().hex}")
+    try:
+        with exclusive_output(temporary) as output:
+            for row in rows:
+                record(output, row)
+        os.link(temporary, target)
+        temporary.unlink()
+        directory = os.open(target.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        temporary.unlink(missing_ok=True)
     return len(rows)
 
 
