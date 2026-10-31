@@ -187,7 +187,7 @@ class Installer:
             if not VERSION.fullmatch(version):
                 raise RuntimeError(f'{executable} reported invalid version: {version!r}')
             versions.append(version)
-        if self.unit.is_symlink() or self.dropin.is_symlink():
+        if self.unit.is_symlink() or self.dropin.is_symlink() or self.dropin.parent.is_symlink():
             raise RuntimeError('refusing to replace symlinked systemd configuration')
         if self.unit.exists():
             text = self.unit.read_text()
@@ -261,8 +261,8 @@ Environment="SPAMGATE_MILTER_TRUSTED_CIDRS=127.0.0.1/32"
         stopped_manual = False
         try:
             if original_unit is None:
-                atomic_write(self.unit, self.unit_text())
                 changed = True
+                atomic_write(self.unit, self.unit_text())
             # The drop-in write can fail after creating/replacing a file.
             # Mark rollback required before attempting it.
             changed = True
