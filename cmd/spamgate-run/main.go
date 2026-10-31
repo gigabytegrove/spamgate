@@ -550,7 +550,10 @@ func supervise(ctx context.Context, o options) error {
 		case err = <-done:
 		}
 		if !isUpdateExit(err) {
-			if err == nil { return nil }
+			// A worker that exits with code 0 outside launcher shutdown is still
+			// an outage. Do not silently terminate the permanent mail supervisor.
+			if ctx.Err() != nil { return nil }
+			if err == nil { err = errors.New("worker exited without a launcher shutdown request") }
 			if time.Since(healthySince) >= 5*time.Minute { failures = 0 }
 			failures++
 			log.Printf("SpamGate launcher: worker failure %d: %v; recovering with bounded backoff", failures, err)
