@@ -21,3 +21,5 @@ Linux audit now matches the worker's published/pending record metadata checks: r
 ## Still not qualified
 
 Tests with injected directory-sync failures do not simulate actual power loss, filesystem corruption, full-disk behavior, journal reordering or controller write caches. Remote SMTP 250 followed by a local crash remains an explicit at-least-once duplicate window. Live host delivery, independent authentication conformance, classifier false-positive evidence, tenant policy lifecycle, complete browser acceptance, cold restore and native update/rollback remain open. No production mail server is changed by this commit.
+
+Root-run read-only audits validate each record against the private spool directory's owner rather than the auditor's effective UID; this avoids false corruption alarms when an administrator audits originals owned by the unprivileged SpamGate worker. The worker's own runtime checks remain unchanged.

@@ -6,6 +6,7 @@ import (
     "errors"
     "fmt"
     "os"
+    "path/filepath"
     "syscall"
 )
 
@@ -32,8 +33,18 @@ func validateAuditRecordMetadata(path string, inspected os.FileInfo) error {
     if stat.Nlink != 1 {
         return errors.New("spool original must have exactly one hard link")
     }
-    if stat.Uid != uint32(os.Geteuid()) {
-        return errors.New("spool original must belong to the worker")
+    // A root-run forensic audit must not falsely flag legitimate originals
+    // owned by the unprivileged service account. The private spool directory
+    // is the ownership authority, not the identity of the audit operator.
+    parent, err := os.Lstat(filepath.Dir(path))
+    if err != nil { return fmt.Errorf("inspect spool directory: %w", err) }
+    if !parent.IsDir() || parent.Mode()&os.ModeSymlink != 0 {
+        return errors.New("spool directory is not a real directory")
+    }
+    owner, ok := parent.Sys().(*syscall.Stat_t)
+    if !ok { return errors.New("cannot inspect spool directory ownership") }
+    if stat.Uid != owner.Uid {
+        return errors.New("spool original owner differs from spool directory owner")
     }
     return nil
 }

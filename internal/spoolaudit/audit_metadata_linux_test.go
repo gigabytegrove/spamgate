@@ -52,3 +52,17 @@ func TestAuditRejectsExposedPublishedAndPendingOriginals(t *testing.T) {
         t.Fatal("forensic findings leaked original message content")
     }
 }
+
+func TestAuditAsRootUsesSpoolDirectoryOwner(t *testing.T) {
+    if os.Geteuid() != 0 { t.Skip("requires root to simulate a different service account") }
+    dir := privateDir(t)
+    path := filepath.Join(dir, idA+".json")
+    write(t, dir, idA+".json", fixture(idA))
+    const serviceUID = 65534
+    if err := os.Chown(path, serviceUID, serviceUID); err != nil { t.Fatal(err) }
+    if err := os.Chown(dir, serviceUID, serviceUID); err != nil { t.Fatal(err) }
+    report, err := Audit(dir)
+    if err != nil || report.HasFindings() || report.States["queued"] != 1 {
+        t.Fatalf("root audit falsely rejected service-owned spool: %+v %v", report, err)
+    }
+}
