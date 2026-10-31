@@ -44,9 +44,23 @@ class HostProbeTests(unittest.TestCase):
     def test_remote_target_refused_by_default(self):
         result = self.invoke("--send", "--recipient", "a@example.org",
                              "--confirm-recipient", "a@example.org",
-                             "--host", "192.0.2.1")
+                             "--host", "192.0.2.1", "--sender", "probe@example.org")
         self.assertEqual(result.returncode, 2)
         self.assertIn("non-loopback", result.stderr)
+
+    def test_sender_required_for_live_mail(self):
+        result = self.invoke("--send", "--recipient", "a@example.org",
+                             "--confirm-recipient", "a@example.org")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("explicit --sender", result.stderr)
+
+    def test_hostname_refused_to_prevent_dns_rebinding(self):
+        result = self.invoke("--send", "--recipient", "a@example.org",
+                             "--confirm-recipient", "a@example.org",
+                             "--sender", "probe@example.org",
+                             "--host", "localhost")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("IP literal", result.stderr)
 
     def test_report_exclusive_create(self):
         with tempfile.TemporaryDirectory() as directory:
