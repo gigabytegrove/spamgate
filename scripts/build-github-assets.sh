@@ -57,6 +57,8 @@ python3 scripts/test-spamgate-host-probe-smtp.py -v
 python3 scripts/test-spamgate-filtration-qualification.py -v
 python3 scripts/test-spamgate-postfix-evidence.py -v
 python3 scripts/test-spamgate-maildir-evidence.py -v
+python3 scripts/test-native-systemd.py -v
+python3 -m py_compile scripts/install-native-systemd.py
 node --check internal/server/assets/app.js
 node --test scripts/ui-regression.test.mjs
 bash -n scripts/bootstrap-foreground.sh
