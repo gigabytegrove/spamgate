@@ -96,10 +96,6 @@ func Create(source, archive string) (err error) {
 		if path == source {
 			return nil
 		}
-		// Runtime lock state must never be copied into a restored instance.
-		if path == filepath.Join(source, ".worker.lock") {
-			return nil
-		}
 		info, e := os.Lstat(path)
 		if e != nil {
 			return e
@@ -107,17 +103,28 @@ func Create(source, archive string) (err error) {
 		if info.Mode()&os.ModeSymlink != 0 {
 			return fmt.Errorf("refusing symlink in data: %s", path)
 		}
+		relative, e := filepath.Rel(source, path)
+		if e != nil {
+			return e
+		}
+		relative = filepath.ToSlash(relative)
+		// Never archive process-local flock inodes. They are not application
+		// state, and restoring root-owned locks can prevent an unprivileged
+		// SpamGate worker from starting or accepting/delivering mail.
+		// Inspect before skipping so an attacker cannot conceal a directory
+		// or symlink by giving it the name of a runtime lock.
+		if runtimeLockPath(relative) {
+			if !info.Mode().IsRegular() {
+				return fmt.Errorf("runtime lock is not a regular file: %s", relative)
+			}
+			return nil
+		}
 		if de.IsDir() {
 			return nil
 		}
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("refusing non-regular data file: %s", path)
 		}
-		relative, e := filepath.Rel(source, path)
-		if e != nil {
-			return e
-		}
-		relative = filepath.ToSlash(relative)
 		if !safeName(relative) {
 			return fmt.Errorf("unsafe data filename: %q", relative)
 		}
@@ -340,7 +347,13 @@ func Restore(archive, destination string) error {
 	for _, f := range z.File {
 		files[f.Name] = f
 	}
+	restoredFiles := 0
 	for _, entry := range manifest.Entries {
+		// Older backups may contain stale lock inodes. Verify their archive
+		// hashes in inspect(), but never restore them to a new worker identity.
+		if runtimeLockPath(entry.Path) {
+			continue
+		}
 		target := filepath.Join(stage, filepath.FromSlash(entry.Path))
 		if err = os.MkdirAll(filepath.Dir(target), 0700); err != nil {
 			return err
@@ -367,6 +380,10 @@ func Restore(archive, destination string) error {
 		closeErr := w.Close()
 		if copyErr != nil { return copyErr }
 		if closeErr != nil { return closeErr }
+		restoredFiles++
+	}
+	if restoredFiles == 0 {
+		return errors.New("backup contains only ephemeral runtime lock files; refusing empty restore")
 	}
 	if err := syncRestoredTree(stage); err != nil { return fmt.Errorf("restore directory durability: %w", err) }
 	return publishRestoredDirectory(stage, dest)
