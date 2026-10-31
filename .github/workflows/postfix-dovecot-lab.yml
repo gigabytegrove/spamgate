@@ -140,7 +140,7 @@ jobs:
           bash scripts/install-postfix-release-helper.sh --preview
           sudo bash scripts/install-postfix-release-helper.sh --apply --confirm POSTFIX-HOLD-RELEASE
           test "$(stat -c '%U:%G:%a' /usr/local/libexec/spamgate/postfix-hold-release)" = root:root:755
-          test "$(stat -c '%U:%G:%a' /etc/sudoers.d/spamgate-postfix-release)" = root:root:440
+          test "$(sudo stat -c '%U:%G:%a' /etc/sudoers.d/spamgate-postfix-release)" = root:root:440
           sudo visudo -cf /etc/sudoers.d/spamgate-postfix-release
           # Verify sudoers does not grant broad postsuper access.
           if sudo -u spamgate sudo -n -- /usr/sbin/postsuper -H ALL >/dev/null 2>&1; then
