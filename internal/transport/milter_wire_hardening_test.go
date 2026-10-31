@@ -2,10 +2,16 @@ package transport
 
 import (
 	"bytes"
+	"context"
+	"encoding/binary"
 	"errors"
 	"io"
+	"net"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/gigabytegrove/spamgate/internal/core"
 )
 
 type fragmentedMilterWriter struct {
@@ -97,5 +103,55 @@ func TestMilterHeaderRejectsTrailingCallbackData(t *testing.T) {
 	}
 	if got, err := milterHeader([]byte("Subject\x00safe\x00")); err != nil || string(got) != "Subject: safe\r\n" {
 		t.Fatalf("valid header rejected: %q, %v", got, err)
+	}
+}
+
+func TestMilterMalformedHeaderTempfailsWithoutSavingAndRecovers(t *testing.T) {
+	store, err := core.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpdateConfig(func(c *core.Config) error {
+		c.SetupComplete = true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	m := &Milter{Store: store, Scanner: &core.Scanner{Store: store, Resolver: milterStubDNS{}}}
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+	done := make(chan error, 1)
+	go func() { done <- m.handle(context.Background(), server) }()
+	opts := make([]byte, 12)
+	binary.BigEndian.PutUint32(opts[:4], 6)
+	binary.BigEndian.PutUint32(opts[4:8], milterAddHeader|milterQuarantine)
+	milterSend(t, client, 'O', 'O', opts)
+	milterSend(t, client, 'M', 'c', []byte("<sender@example.org>\\x00"))
+	milterSend(t, client, 'R', 'c', []byte("<recipient@example.org>\\x00"))
+	milterSend(t, client, 'L', 't', []byte("Subject\\x00safe\\x00Injected: bad"))
+	milterSend(t, client, 'E', 't', nil)
+	if messages := store.List(10, ""); len(messages) != 0 {
+		t.Fatalf("invalid transaction saved a verdict: %d", len(messages))
+	}
+	// The failed message must not poison the next transaction on this connection.
+	milterSend(t, client, 'M', 'c', []byte("<sender@example.org>\\x00"))
+	milterSend(t, client, 'R', 'c', []byte("<recipient@example.org>\\x00"))
+	milterSend(t, client, 'L', 'c', []byte("From\\x00sender@example.org\\x00"))
+	milterSend(t, client, 'L', 'c', []byte("Subject\\x00normal status report\\x00"))
+	milterSend(t, client, 'N', 'c', nil)
+	milterSend(t, client, 'B', 'c', []byte("Normal body\\r\\n"))
+	milterSend(t, client, 'E', 'c', nil)
+	if messages := store.List(10, ""); len(messages) != 1 {
+		t.Fatalf("valid subsequent transaction not recorded: %d", len(messages))
+	}
+	milterSend(t, client, 'Q', 0, nil)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("milter handler did not stop")
 	}
 }
