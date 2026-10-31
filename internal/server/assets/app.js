@@ -1,5 +1,5 @@
 'use strict';
-const S={authenticated:false,setup:false,me:null,config:null,messages:[],stats:null,bayesStats:null,fuzzyStats:null,fuzzyEntries:[],neuralStats:null,signals:[],runtime:null,hostReport:null,section:'overview',inspect:null,search:'',filterAction:'all',onceToken:null,menu:false,deliveryQueue:null,postfixHold:null,investigation:null,historyResults:null,historyOffset:0,editRule:null,preview:null,diagnostics:null,readiness:null,wizardLoaded:false,wizardStep:0,wizardServer:'testing',wizardMode:'test',wizardPolicy:'balanced',livePollBusy:false,liveLastCheck:null,liveError:null,liveNewCount:0,overviewWindow:'24h',headerView:null,updateInfo:null,updateReleaseChecked:false,updateError:null,telemetry:null,telemetryError:null,diagnosticsCheckedAt:null,diagnosticsBusy:false,monitorData:null,monitorError:null,policyPreview:null,policyPreviewError:null,sgtubeCatalog:null,sgtubeSelected:null,sgtubeMessages:null,sgtubeResult:null,sgtubeError:null,historyAudit:null,historyAuditError:null,historyAuditBusy:false,historyLoaded:false,historyRefreshError:null};
+const S={authenticated:false,setup:false,me:null,config:null,messages:[],stats:null,bayesStats:null,fuzzyStats:null,fuzzyEntries:[],neuralStats:null,signals:[],runtime:null,hostReport:null,section:'overview',inspect:null,search:'',filterAction:'all',reviewStatus:'pending',reviewSort:'newest',historySort:'newest',historySearchError:null,historySearching:false,onceToken:null,menu:false,deliveryQueue:null,postfixHold:null,investigation:null,historyResults:null,historyOffset:0,editRule:null,preview:null,diagnostics:null,readiness:null,wizardLoaded:false,wizardStep:0,wizardServer:'testing',wizardMode:'test',wizardPolicy:'balanced',livePollBusy:false,liveLastCheck:null,liveError:null,liveNewCount:0,overviewWindow:'24h',headerView:null,updateInfo:null,updateReleaseChecked:false,updateError:null,telemetry:null,telemetryError:null,diagnosticsCheckedAt:null,diagnosticsBusy:false,monitorData:null,monitorError:null,policyPreview:null,policyPreviewError:null,sgtubeCatalog:null,sgtubeSelected:null,sgtubeMessages:null,sgtubeResult:null,sgtubeError:null,historyAudit:null,historyAuditError:null,historyAuditBusy:false,historyLoaded:false,historyRefreshError:null};
 const $=q=>document.querySelector(q);
 const esc=v=>String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const n=v=>Number(v||0).toLocaleString();
@@ -258,16 +258,40 @@ function quarantine(){
  <section class="task-surface"><div class="task-section-head"><div><span class="task-kicker">HELD BY POSTFIX</span><h2>Mail server hold queue</h2><p>Read-only. SpamGate cannot currently release Postfix queue entries through this screen.</p></div></div><div class="task-queue-inspector">${S.me.role==='admin'?'<button class="secondary" type="button" id="inspect-postfix-hold">Check Postfix hold queue</button>':''}${inventory?`<p>${esc(inventory.detail||'Inventory returned by the local server.')}</p>${(inventory.messages||[]).length?`<div class="task-queue-list">${inventory.messages.map(v=>`<div><strong>${esc(v.queue_id)}</strong>${v.spamgate_scan_id?`<small>Matched SpamGate hold request: ${esc(v.spamgate_scan_id)}</small>`:`<small>No verified SpamGate scan ID correlation</small>`}<span>${esc(v.sender)}</span><small>${esc((v.recipients||[]).join(', '))}</small></div>`).join('')}</div>`:empty('No held Postfix messages reported','The inventory returned no held mail, or inspection is disabled.')}`:'<p>Use the button to ask the local Postfix server which emails are actually on hold. This check is disabled until explicitly enabled by the administrator.</p>'}</div></section></div>`;
 }
 
+// Display-only ordering: never mutate persisted evidence or scan verdicts.
+function sortMailRows(items, order='newest'){
+ const key=m=>{const parsed=Date.parse(m.timestamp||'');return Number.isFinite(parsed)?parsed:0};
+ const score=m=>{const value=Number(m.score);return Number.isFinite(value)?value:0};
+ return [...items].sort((a,b)=>{
+  let diff=order==='oldest'?key(a)-key(b):order==='score-high'?score(b)-score(a):order==='score-low'?score(a)-score(b):key(b)-key(a);
+  if(!diff)diff=key(b)-key(a);
+  return diff||String(a.id||'').localeCompare(String(b.id||''));
+ });
+}
+function reviewMailRows(items, search='', actionFilter='all', status='pending', order='newest'){
+ const text=String(search||'').trim().toLowerCase();
+ return sortMailRows(items.filter(m=>['tag','quarantine','reject','soft_reject'].includes(m.action))
+  .filter(m=>actionFilter==='all'||m.action===actionFilter)
+  .filter(m=>status==='all'||(status==='reviewed'?!!m.review_status:!m.review_status))
+  .filter(m=>!text||[m.sender,m.subject,m.client_ip,m.id,(m.recipients||[]).join(' ')].join(' ').toLowerCase().includes(text)),order);
+}
 function investigate(){
- const q=S.search.toLowerCase();
- const rows=S.messages.filter(m=>S.filterAction==='all'||m.action===S.filterAction).filter(m=>[m.sender,m.subject,m.client_ip,m.id,(m.recipients||[]).join(' ')].join(' ').toLowerCase().includes(q));
- const flagged=rows.filter(m=>['tag','quarantine','reject','soft_reject'].includes(m.action));
- const pending=flagged.filter(m=>!m.review_status);
- const reviewed=flagged.length-pending.length;
- return `<div class="ops-page-header"><div><span class="ops-eyebrow">OPERATIONS / CLASSIFICATION</span><h1>Review mail</h1><p>Review scanner verdicts, inspect contributing signals and record feedback. Review does not alter Postfix delivery history.</p></div><div class="ops-page-tools"><a class="secondary" href="/messages" data-route="history">All messages</a></div></div>
- <div class="ops-review-totals"><div><strong>${n(pending.length)}</strong><span>Pending review</span></div><div><strong>${n(reviewed)}</strong><span>Reviewed</span></div><div><strong>${n(flagged.length)}</strong><span>Flagged matches</span></div></div>
- <section class="ops-panel"><div class="ops-panel-heading"><div><h2>Classification queue</h2><p>Newest first · Open any message to inspect scoring evidence and record a correction</p></div><a href="/signals" data-route="signals">Detector settings</a></div>${taskSearch('Search mail, sender, IP or message ID')}${quickMessageList(flagged,1000)}</section>
- <p class="ops-review-footer">Allowed messages are available in <a href="/messages" data-route="history">All messages</a> for missed-spam reporting.</p>`;
+ const sample=S.messages||[];
+ const flagged=sample.filter(m=>['tag','quarantine','reject','soft_reject'].includes(m.action));
+ const pending=flagged.filter(m=>!m.review_status).length;
+ const reviewed=flagged.length-pending;
+ const selected=reviewMailRows(sample,S.search,S.filterAction,S.reviewStatus,S.reviewSort);
+ const statusLabel={pending:'Not yet reviewed',reviewed:'Already reviewed',all:'All flagged messages'}[S.reviewStatus]||'Not yet reviewed';
+ const sortChoices=[['newest','Newest first'],['oldest','Oldest first'],['score-high','Highest score'],['score-low','Lowest score']];
+ return '<div class="ops-page-header"><div><span class="ops-eyebrow">OPERATIONS / CLASSIFICATION</span><h1>Review mail</h1><p>Inspect real scanner evidence and record corrections. Feedback does not rewrite mail-server delivery history.</p></div><div class="ops-page-tools"><a class="secondary" href="/messages" data-route="history">All messages</a></div></div>'+
+ '<div class="ops-review-totals" aria-label="Loaded review statistics"><div><strong>'+n(pending)+'</strong><span>Awaiting review</span></div><div><strong>'+n(reviewed)+'</strong><span>Reviewed</span></div><div><strong>'+n(flagged.length)+'</strong><span>Flagged in loaded records</span></div></div>'+
+ '<section class="ops-panel"><div class="ops-panel-heading"><div><h2>Classification queue</h2><p>Showing the latest '+n(sample.length)+' loaded scans, not all-time totals. Review changes are recorded against the original verdict.</p></div><a href="/signals" data-route="signals">Detector settings</a></div>'+
+ '<div class="ops-review-controls"><label for="review-status">Review status<select id="review-status"><option value="pending" '+(S.reviewStatus==='pending'?'selected':'')+'>Awaiting review</option><option value="reviewed" '+(S.reviewStatus==='reviewed'?'selected':'')+'>Reviewed</option><option value="all" '+(S.reviewStatus==='all'?'selected':'')+'>All flagged</option></select></label>'+
+ '<label for="review-sort">Order by<select id="review-sort">'+sortChoices.map(([id,label])=>'<option value="'+id+'" '+(S.reviewSort===id?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
+ '<span class="ops-review-results" role="status">'+n(selected.length)+' matching · '+esc(statusLabel)+'</span></div>'+
+ taskSearch('Find subject, sender, recipient, IP or message ID')+
+ (selected.length?quickMessageList(selected,1000):'<div class="task-empty" role="status"><h3>No matching messages</h3><p>'+(S.reviewStatus==='pending'&&pending===0?'All flagged messages in the loaded sample have been reviewed.':'Change review status, decision or search to inspect another message.')+'</p></div>')+
+ '</section><p class="ops-review-footer">Allowed mail can also be investigated and reported as missed spam from <a href="/messages" data-route="history">All messages</a>. Saved scan verdicts do not certify final Postfix or Dovecot delivery.</p>';
 }
 
 function threats(){
@@ -327,12 +351,14 @@ function messageHistory(){
  const q=S.search.toLowerCase();
  const remote=!!S.historyResults;
  const matched=remote?(S.historyResults.items||[]):S.messages.filter(m=>(S.filterAction==='all'||S.filterAction===m.action)&&[m.sender,m.subject,m.action,(m.recipients||[]).join(' '),m.id].join(' ').toLowerCase().includes(q));
- const total=remote?S.historyResults.total:S.messages.length;
+ const total=remote?Number(S.historyResults.total||0):matched.length;
+ const sorted=sortMailRows(matched,S.historySort);
+ const sortChoices=[['newest','Newest first'],['oldest','Oldest first'],['score-high','Highest score'],['score-low','Lowest score']];
  return `${taskIntro('MAIL HISTORY','Message history','Search retained scan records, evidence, and transport action requests.',[['Review flagged mail','investigate',false]])}
  <section class="task-surface"><div class="task-section-head"><div><h2>All messages</h2><p>${remote?'Searching retained history':'Showing the latest '+n(S.messages.length)+' messages'} · ${n(matched.length)} matching entries. Past decisions are never silently rewritten.</p></div>${S.me.role==='admin'?'<a class="secondary" href="/api/v1/export" download>Export history</a>':''}</div>
  ${historyIntegrityPanel()}
  ${taskSearch('Search sender, recipient, subject or message ID')}
- <div class="task-history-tools"><button class="secondary" id="search-full" type="button">Search entire saved history</button><span>Results shown newest first</span></div>${quickMessageList(matched,1000)}
+ <div class="task-history-tools"><button class="secondary" id="search-full" type="button" ${S.historySearching?'disabled':''}>${S.historySearching?'Searching retained history…':'Search entire saved history'}</button><label for="history-sort">Sort ${remote?'current page':'loaded results'} <select id="history-sort">${sortChoices.map(([id,label])=>'<option value="'+id+'" '+(S.historySort===id?'selected':'')+'>'+label+'</option>').join('')}</select></label><span>${remote?'Sorting this page only':'Local display order; saved evidence is unchanged'}</span></div>${S.historySearchError?'<p class="task-search-error" role="alert">'+esc(S.historySearchError)+'</p>':''}${quickMessageList(sorted,1000)}
  ${remote?`<div class="task-pagination"><button class="secondary" id="search-prev" ${S.historyOffset===0?'disabled':''}>Previous</button><span>${n(S.historyOffset+1)}–${n(Math.min(S.historyOffset+50,total))} of ${n(total)}</span><button class="secondary" id="search-next" ${S.historyOffset+50>=total?'disabled':''}>Next</button></div>`:''}</section>`;
 }
 
@@ -624,8 +650,17 @@ function deliveryQueue(){
 }
 
 async function runHistorySearch(offset=0){
+ if(S.historySearching)return;
+ S.historySearching=true;S.historySearchError=null;
  const params=new URLSearchParams({q:S.search,action:S.filterAction,offset:String(offset),limit:'50'});
- S.historyResults=await api('/api/v1/history/search?'+params.toString());S.historyOffset=offset;render();
+ try{
+  const response=await api('/api/v1/history/search?'+params.toString());
+  if(!response||!Array.isArray(response.items)||!Number.isFinite(Number(response.total)))throw Error('History search returned an invalid result');
+  S.historyResults=response;S.historyOffset=offset;
+ }catch(e){
+  S.historyResults=null;S.historyOffset=0;
+  S.historySearchError='Saved-history search failed: '+(e?.message||'unknown error')+'. Loaded recent records remain available below.';
+ }finally{S.historySearching=false;if(S.section==='history')render()}
 }
 const serverChoices=[
  ['testing','Just testing','Try standalone before connecting a mail server'],
@@ -808,8 +843,8 @@ document.addEventListener('click',async event=>{const el=event.target.closest('b
   const deletion=[['delete-rule','rules'],['delete-dns','dns-lists'],['delete-user','users'],['delete-token','tokens']].find(([attr])=>el.dataset[attr]!==undefined);
   if(deletion){const [attr,path]=deletion;const target=el.dataset[attr];if(!confirm(`Remove ${target}? This action cannot be undone.`))return;await api('/api/v1/'+path+'/'+encodeURIComponent(target),{method:'DELETE'});await refresh();alertUser('Removed successfully')}
 }catch(e){alertUser(e.message,true)}});
-document.addEventListener('change',event=>{if(event.target.id==='overview-window'){S.overviewWindow=event.target.value;render();return}if(event.target.name==='server-choice'){S.wizardServer=event.target.value;if(S.wizardServer==='testing')S.wizardMode='test';render();return}if(event.target.name==='mode-choice'){S.wizardMode=event.target.value;render();return}if(event.target.name==='policy-choice'){S.wizardPolicy=event.target.value;render();return}if(event.target.id==='wizard-delivered'){const b=$('#wizard-activate');if(b)b.disabled=!event.target.checked;return}if(event.target.id==='action-filter'){S.filterAction=event.target.value;S.historyResults=null;render()}});
-document.addEventListener('input',event=>{if(event.target.id==='search'){const pos=event.target.selectionStart;S.search=event.target.value;S.historyResults=null;render();const el=$('#search');if(el){el.focus();el.setSelectionRange(pos,pos)}}});
+document.addEventListener('change',event=>{if(event.target.id==='overview-window'){S.overviewWindow=event.target.value;render();return}if(event.target.name==='server-choice'){S.wizardServer=event.target.value;if(S.wizardServer==='testing')S.wizardMode='test';render();return}if(event.target.name==='mode-choice'){S.wizardMode=event.target.value;render();return}if(event.target.name==='policy-choice'){S.wizardPolicy=event.target.value;render();return}if(event.target.id==='wizard-delivered'){const b=$('#wizard-activate');if(b)b.disabled=!event.target.checked;return}if(event.target.id==='review-status'){S.reviewStatus=event.target.value;render();$('#review-status')?.focus();return}if(event.target.id==='review-sort'){S.reviewSort=event.target.value;render();$('#review-sort')?.focus();return}if(event.target.id==='history-sort'){S.historySort=event.target.value;render();$('#history-sort')?.focus();return}if(event.target.id==='action-filter'){S.filterAction=event.target.value;S.historyResults=null;S.historySearchError=null;render();$('#action-filter')?.focus();return}});
+document.addEventListener('input',event=>{if(event.target.id==='search'){const pos=event.target.selectionStart;S.search=event.target.value;S.historyResults=null;S.historySearchError=null;render();const el=$('#search');if(el){el.focus();el.setSelectionRange(pos,pos)}}});
 function restoreInspectionFocus(){const target=[...document.querySelectorAll('[data-inspect]')].find(el=>el.dataset.inspect===S.lastInspectedId);target?.focus()}
 document.addEventListener('keydown',event=>{
   if(!S.inspect)return;
