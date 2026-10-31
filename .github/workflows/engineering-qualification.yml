@@ -49,7 +49,16 @@ jobs:
           bash scripts/test-install-postfix-release-helper.sh
           bash -n scripts/install-dovecot-sieve.sh scripts/test-install-dovecot-sieve.sh
           bash scripts/test-install-dovecot-sieve.sh
-      - name: Native host probe safety regression\n        run: |\n          set -Eeuo pipefail\n          python3 -m unittest discover -s scripts -p 'test-spamgate-host-probe*.py' -v\n          python3 scripts/spamgate-host-probe.py > /tmp/spamgate-preflight.json\n          python3 -c 'import json; r=json.load(open("/tmp/spamgate-preflight.json")); assert r["status"] == "preflight_only" and not r["smtp"]["attempted"]'\n      - name: Compile native Linux and Windows programs
+      - name: Native host and filtration qualification regressions
+        run: |
+          set -Eeuo pipefail
+          # unittest discover silently skips hyphenated filenames: invoke each directly.
+          python3 scripts/test-spamgate-host-probe.py -v
+          python3 scripts/test-spamgate-host-probe-smtp.py -v
+          python3 scripts/test-spamgate-filtration-qualification.py -v
+          python3 scripts/spamgate-host-probe.py > /tmp/spamgate-preflight.json
+          python3 -c 'import json; r=json.load(open("/tmp/spamgate-preflight.json")); assert r["status"] == "preflight_only" and not r["smtp"]["attempted"]'
+      - name: Compile native Linux and Windows programs
         env:
           CGO_ENABLED: '0'
         run: |
@@ -63,8 +72,8 @@ jobs:
           GOOS=windows GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w -H=windowsgui' -o dist/spamgate-windows-amd64.exe ./cmd/spamgate
           # Exercise the compiled native evaluator, not only go test fixtures.
           EVAL_TEST_DIR="$(mktemp -d)"
-          printf '%s\n' '{"label":"ham","action":"accept","cohort":"direct"}' '{"label":"spam","action":"reject","cohort":"direct"}' '{"label":"ham","action":"accept","cohort":"forwarded"}' '{"label":"spam","action":"reject","cohort":"forwarded"}' > "$EVAL_TEST_DIR/labels.jsonl"
-          dist/spamgate-eval-linux-amd64 --require-cohorts --min-ham=1 --min-spam=1 --max-fpr-upper=1 --min-recall-lower=0 --min-cohort-ham=1 --min-cohort-spam=1 --max-cohort-fpr-upper=1 --min-cohort-recall-lower=0 "$EVAL_TEST_DIR/labels.jsonl" | grep -q '"cohort_gate_passed":true'
+          printf '%s\n' '{"label":"ham","action":"accept","cohort":"direct","id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}' '{"label":"spam","action":"reject","cohort":"direct","id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}' '{"label":"ham","action":"accept","cohort":"forwarded","id":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}' '{"label":"spam","action":"reject","cohort":"forwarded","id":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}' > "$EVAL_TEST_DIR/labels.jsonl"
+          dist/spamgate-eval-linux-amd64 --require-unique-ids --require-cohorts --min-ham=1 --min-spam=1 --max-fpr-upper=1 --min-recall-lower=0 --min-cohort-ham=1 --min-cohort-spam=1 --max-cohort-fpr-upper=1 --min-cohort-recall-lower=0 "$EVAL_TEST_DIR/labels.jsonl" | grep -q '"cohort_gate_passed":true'
           rm -rf "$EVAL_TEST_DIR"
           chmod 0755 dist/spamgate-worker-linux-amd64 dist/spamgate-launcher-linux-amd64 dist/spamgate-spool-audit-linux-amd64 dist/spamgate-postfix-release-linux-amd64
           if dist/spamgate-postfix-release-linux-amd64 ALL > /dev/null 2>&1; then echo 'Privileged helper accepted unsafe invocation' >&2; exit 1; fi
