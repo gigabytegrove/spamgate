@@ -38,6 +38,42 @@ The publisher checks the local clean tracked source, remote main SHA, absent exi
 
 For independent GitHub CI qualification, manually dispatch `SpamGate native release qualification` on `main` with the exact `expected_sha`; the workflow only uploads artifacts and cannot publish releases (`contents: read`). Do not confuse CI artifacts with updater-compatible published GitHub releases.
 
+## Service-aware preview deployment on an existing mail host
+
+The **existing** native installer is never replaced by a Docker container or a
+second launcher. When an unpublished but exact-commit qualified worker must be
+previewed on a systemd-managed SpamGate host, the explicitly invoked
+`scripts/deploy-native-worker.sh` handles the existing running service:
+
+```bash
+# After building and verifying the exact source revision:
+bash scripts/deploy-native-worker.sh \
+  --worker /opt/spamgate-build/spamgate-worker-linux-amd64 \
+  --sha256 "$(sha256sum /opt/spamgate-build/spamgate-worker-linux-amd64 | cut -d' ' -f1)" \
+  --version 0.6.0-beta.2
+```
+
+The operator must independently verify the build's expected checksum against
+its exact-commit CI artifact before deployment. This tool verifies SHA-256 and
+version again, confirms the locked launcher/worker/data layout, backs up the
+worker, **stops the running SpamGate service when needed**, replaces only the
+worker atomically, starts the same service, and checks HTTP version and the
+worker-owned Milter listener. An unhealthy replacement triggers rollback and
+a restart of the previous worker. If the installed binary is already correct
+but the service is stopped or unhealthy, it restarts the service without
+replacing that binary. It never changes the launcher, Postfix, Dovecot or
+persistent data. The Milter may be unavailable briefly during restart; the
+site's configured `milter_default_action` determines mail handling.
+
+A release build can safely run while the mail filter is active. The native
+migration regression test uses a synthetic `ss` shim with a simulated busy
+port to test its refusal logic, never the live system's port table. This does
+not weaken the one-time migration helper's own refusal of occupied ports,
+which protects against unrelated applications or conflicting launchers.
+
+The service-aware preview is a manually requested exception for unpublished
+builds. Published releases should continue through **Software Updates**.
+
 ## Operator-controlled installation
 
 After publication, sign in to the running SpamGate UI as an administrator. Under **Software Updates**, select **Check for updates**, **Download and verify**, then **Install verified update**. The worker selects `spamgate-worker-linux-amd64`, checks `SHA256SUMS.txt`, stages the update in `/opt/spamgate/data/updates`, and asks the permanent launcher to replace only `/opt/spamgate/spamgate-worker`, restart and probe the new version. The launcher maintains the previous worker for rollback.
