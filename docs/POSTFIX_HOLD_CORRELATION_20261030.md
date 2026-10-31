@@ -10,7 +10,7 @@ SMTP transaction must be treated as one envelope.
 
 ## Changes
 
-The inventory now labels a held item with a scan ID only when exactly one
+The inventory searches the complete retained scan history (not just the 1000-row UI history window) and now labels a held item with a scan ID only when exactly one
 candidate scan and one held queue record exist, and the connector, HOLD action,
 queue ID, sender, arrival timestamp (within 15 minutes), and complete recipient
 multiset match. Ambiguous and truncated inventories remain visible but
@@ -30,7 +30,7 @@ production-host acceptance.
 
 Postfix inventory is a point-in-time snapshot; a queue can change between
 inventory and `postsuper -H`. The narrow privileged helper, cross-process
-locking, complete history beyond the UI's bounded scan listing, independent
+locking, independent
 queue identity, and real Postfix/Dovecot mailbox evidence remain outstanding
 under issues #1 and #9. Fail closed when identity is ambiguous. No service
 configuration, Milter ports, data layout, or default Postfix failure action

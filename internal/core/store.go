@@ -237,6 +237,25 @@ func (s *Store) Get(id string) (Message, bool) {
 	m, ok := s.messages[id]
 	return m, ok
 }
+// PostfixHoldCandidates indexes the complete retained scan history rather than
+// the 1000-entry UI history window. Only two candidates per queue ID are
+// needed: two means correlation is ambiguous and must fail closed.
+func (s *Store) PostfixHoldCandidates() map[string][]Message {
+    s.mu.RLock()
+    defer s.mu.RUnlock()
+    out := make(map[string][]Message)
+    for _, id := range s.order {
+        m, exists := s.messages[id]
+        if !exists || m.MTAQueueID == "" || m.MTAAction != "postfix_hold_requested" {
+            continue
+        }
+        if len(out[m.MTAQueueID]) < 2 {
+            out[m.MTAQueueID] = append(out[m.MTAQueueID], m)
+        }
+    }
+    return out
+}
+
 func (s *Store) List(limit int, email string) []Message {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

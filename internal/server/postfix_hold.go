@@ -120,13 +120,7 @@ func (s *Server) postfixHoldQueue(w http.ResponseWriter, r *http.Request) {
 	// A queue ID alone is not ownership evidence: Postfix may reuse it.
 	// Correlate only one unambiguous scan to one inventory entry, including
 	// its arrival time, complete recipient multiset, and reverse path.
-	scans := s.Store.List(1000, "")
-	byQueue := make(map[string][]core.Message)
-	for _, scan := range scans {
-		if scan.MTAQueueID != "" && scan.MTAAction == "postfix_hold_requested" {
-			byQueue[scan.MTAQueueID] = append(byQueue[scan.MTAQueueID], scan)
-		}
-	}
+	byQueue := s.Store.PostfixHoldCandidates()
 	inventoryCount := make(map[string]int)
 	for _, held := range messages {
 		inventoryCount[held.QueueID]++

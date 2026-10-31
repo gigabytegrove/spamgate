@@ -166,3 +166,53 @@ func TestPostfixHoldReleaseRefusesPartialRecipientOwnership(t *testing.T) {
     if code := release(); code != http.StatusAccepted { t.Fatalf("complete envelope release rejected: HTTP %d", code) }
     if calls != 1 { t.Fatalf("expected one Postfix invocation, got %d", calls) }
 }
+
+func TestPostfixHoldInventoryRefusesAmbiguousRetainedScanHistory(t *testing.T) {
+    store, err := core.Open(t.TempDir())
+    if err != nil { t.Fatal(err) }
+    if err := store.UpdateConfig(func(c *core.Config) error {
+        c.SetupComplete = true
+        c.Users = []core.User{{Name: "admin", Role: "admin"}}
+        return nil
+    }); err != nil { t.Fatal(err) }
+    now := time.Now().UTC()
+    first := core.Message{
+        ID: core.ID(), Timestamp: now, Connector: "milter",
+        MTAQueueID: "FEED1234", MTAAction: "postfix_hold_requested",
+        Sender: "sender@example.org", Recipients: []string{"alice@example.org"},
+    }
+    if err := store.Save(first); err != nil { t.Fatal(err) }
+    other := first
+    other.ID = core.ID()
+    other.Timestamp = now.Add(-time.Hour)
+    if err := store.Save(other); err != nil { t.Fatal(err) }
+    candidates := store.PostfixHoldCandidates()
+    if len(candidates[first.MTAQueueID]) != 2 {
+        t.Fatalf("duplicate queue ID was not retained as ambiguous: %+v", candidates)
+    }
+    t.Setenv("SPAMGATE_POSTFIX_HOLD_INVENTORY", "true")
+    srv := New(store, nil)
+    srv.sessions["ambiguous-admin"] = session{
+        Identity: Identity{Name: "admin", Role: "admin", Session: true},
+        Expires: time.Now().Add(time.Hour),
+    }
+    srv.PostfixHeldInventory = func(context.Context) ([]PostfixHeld, error) {
+        return []PostfixHeld{{
+            QueueID: first.MTAQueueID, Sender: first.Sender,
+            ArrivalTime: first.Timestamp.Unix(), RecipientCount: 1,
+            Recipients: []string{"alice@example.org"},
+        }}, nil
+    }
+    req := httptest.NewRequest(http.MethodGet, "/api/v1/postfix/hold-queue", nil)
+    req.AddCookie(&http.Cookie{Name: "spamgate_session", Value: "ambiguous-admin"})
+    response := httptest.NewRecorder()
+    srv.Router().ServeHTTP(response, req)
+    if response.Code != http.StatusOK {
+        t.Fatalf("inventory failed: %d %s", response.Code, response.Body.String())
+    }
+    var payload struct { Messages []PostfixHeld `json:"messages"` }
+    if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil { t.Fatal(err) }
+    if len(payload.Messages) != 1 || payload.Messages[0].SpamGateScanID != "" {
+        t.Fatalf("ambiguous reused queue ID was labelled as a scan: %+v", payload.Messages)
+    }
+}
