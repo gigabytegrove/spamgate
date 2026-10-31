@@ -92,6 +92,22 @@ func TestIntakeLockRejectsUnsafeFilesystemWithoutAcknowledging(t *testing.T) {
     }
 }
 
+// waitForDurableDelivery allows slow filesystem fsync/journal operations under
+// the Go race detector, without making an unfinished worker look successful.
+// A short deadline causes t.TempDir to remove the journal while a delivery
+// goroutine is still finalizing, masking the original timing failure.
+func waitForDurableDelivery(t *testing.T, done <-chan error, description string) {
+    t.Helper()
+    select {
+    case err := <-done:
+        if err != nil {
+            t.Fatalf("%s: %v", description, err)
+        }
+    case <-time.After(30 * time.Second):
+        t.Fatalf("%s: worker did not finish durable finalization within 30 seconds", description)
+    }
+}
+
 func TestManualMutationsCannotRaceActiveCrossProcessDelivery(t *testing.T) {
     dir := t.TempDir()
     store, err := core.Open(dir)
@@ -107,7 +123,20 @@ func TestManualMutationsCannotRaceActiveCrossProcessDelivery(t *testing.T) {
     m := core.Message{ID:core.ID(),Sender:"s@example.org",Recipients:[]string{"r@example.org"}}
     if err := a.Enqueue(m,[]byte("Subject: original\r\n\r\nbody")); err != nil { t.Fatal(err) }
     done := make(chan error,1)
-    go func(){done<-a.ProcessDue(context.Background())}()
+    finished := make(chan struct{})
+    ctx, cancel := context.WithCancel(context.Background())
+    // t.Cleanup runs before t.TempDir's cleanup (LIFO). Never let the
+    // temporary journal disappear while ProcessDue still owns it.
+    t.Cleanup(func() {
+        cancel()
+        select { case <-release: default: close(release) }
+        select {
+        case <-finished:
+        case <-time.After(60*time.Second):
+            t.Error("delivery goroutine remained active after cancellation and release")
+        }
+    })
+    go func(){defer close(finished);done<-a.ProcessDue(ctx)}()
     select {
     case <-entered:
     case err := <-done: t.Fatalf("worker stopped before relay: %v",err)
@@ -123,10 +152,7 @@ func TestManualMutationsCannotRaceActiveCrossProcessDelivery(t *testing.T) {
     rec, err := b.get(m.ID)
     if err != nil || rec.State != "delivering" { t.Fatalf("active original was changed: %+v %v",rec.QueuedMessage,err) }
     close(release)
-    select {
-    case err := <-done: if err != nil { t.Fatal(err) }
-    case <-time.After(5*time.Second): t.Fatal("worker did not finish")
-    }
+    waitForDurableDelivery(t, done, "delivery worker")
     snap, err := b.Snapshot()
     if err != nil || snap.Total != 0 { t.Fatalf("original not finalized: %+v %v",snap,err) }
 }
@@ -149,7 +175,20 @@ func TestNewIntakeDoesNotWaitForSlowUpstreamRelay(t *testing.T) {
     second := core.Message{ID:core.ID(),Subject:"new",Sender:"s@example.org",Recipients:[]string{"r@example.org"}}
     if err := a.Enqueue(first,[]byte("Subject: slow\r\n\r\nbody")); err != nil { t.Fatal(err) }
     done := make(chan error,1)
-    go func(){done<-a.ProcessDue(context.Background())}()
+    finished := make(chan struct{})
+    ctx, cancel := context.WithCancel(context.Background())
+    // t.Cleanup runs before t.TempDir's cleanup (LIFO). Never let the
+    // temporary journal disappear while ProcessDue still owns it.
+    t.Cleanup(func() {
+        cancel()
+        select { case <-release: default: close(release) }
+        select {
+        case <-finished:
+        case <-time.After(60*time.Second):
+            t.Error("delivery goroutine remained active after cancellation and release")
+        }
+    })
+    go func(){defer close(finished);done<-a.ProcessDue(ctx)}()
     select {
     case <-entered:
     case err := <-done: t.Fatalf("worker stopped: %v",err)
@@ -161,10 +200,7 @@ func TestNewIntakeDoesNotWaitForSlowUpstreamRelay(t *testing.T) {
     rec, err := b.get(second.ID)
     if err != nil || rec.State != "queued" { t.Fatalf("new original not persisted: %+v %v",rec.QueuedMessage,err) }
     close(release)
-    select {
-    case err := <-done: if err != nil { t.Fatal(err) }
-    case <-time.After(5*time.Second): t.Fatal("worker did not finish")
-    }
+    waitForDurableDelivery(t, done, "delivery worker")
     if err := b.ProcessDue(context.Background()); err != nil { t.Fatal(err) }
     snap, err := b.Snapshot()
     if err != nil || snap.Total != 0 { t.Fatalf("new intake did not relay: %+v %v",snap,err) }
