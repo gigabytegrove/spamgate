@@ -209,3 +209,15 @@ test('failed essential history API is visible, not an empty-success condition',a
  assert.match(vm.runInContext('S.historyRefreshError',ctx),/history service unavailable/);
  assert.match(vm.runInContext('historyIntegrityPanel()',ctx),/Message history could not refresh/);
 });
+
+test('recipient policy UI explains uniform multi-mailbox overrides and explicit conflicts',()=>{
+ const ctx=context();
+ vm.runInContext(`S.config={settings:{tag_threshold:5,quarantine_threshold:10,reject_threshold:20,retention_days:30,max_history:10000},recipient_policies:[{mailbox:"alice@example.org",tag_threshold:1,quarantine_threshold:2,reject_threshold:3}]};
+ S.policyPreview={totals:{changed:0,examined:2,forced_preserved:0,multi_recipient_fallback:1,uniform_shared:1},items:[],limitations:["Not proof of delivery"]};`,ctx);
+ const html=vm.runInContext('settings()',ctx);
+ assert.match(html,/identical effective thresholds/);
+ assert.match(html,/Conflicting recipients use global thresholds/);
+ assert.doesNotMatch(html,/A message sent to multiple recipients uses the global settings/);
+ assert.match(html,/1 uniform multi-mailbox overrides/);
+ assert.match(html,/1 multi-recipient conflicts using global thresholds/);
+});

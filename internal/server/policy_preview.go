@@ -39,6 +39,7 @@ type policyPreviewTotals struct {
 	WouldReject            int `json:"would_reject"`
 	ForcedPreserved        int `json:"forced_preserved"`
 	MultiRecipientFallback int `json:"multi_recipient_fallback"`
+	UniformShared          int `json:"uniform_shared"`
 }
 
 func validatePreview(p policyPreviewRequest) error {
@@ -132,6 +133,9 @@ func (s *Server) previewPolicy(w http.ResponseWriter, r *http.Request) {
 		}
 		if result.PolicySource == "global_multi_recipient" {
 			totals.MultiRecipientFallback++
+		}
+		if result.PolicySource == "mailbox_shared" {
+			totals.UniformShared++
 		}
 		switch result.HypotheticalAction {
 		case "accept":
