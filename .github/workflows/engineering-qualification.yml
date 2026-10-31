@@ -59,6 +59,7 @@ jobs:
           bash -n scripts/deploy-native-worker.sh
           python3 scripts/test-deploy-native-worker.py -v
           python3 scripts/test-spamgate-host-probe.py -v
+          python3 scripts/test-spamgate-host-probe-services.py -v
           python3 scripts/test-spamgate-host-probe-smtp.py -v
           python3 scripts/test-spamgate-filtration-qualification.py -v
           python3 scripts/test-spamgate-postfix-evidence.py -v

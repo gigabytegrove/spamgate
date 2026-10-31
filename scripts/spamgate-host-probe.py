@@ -6,9 +6,12 @@ Default mode never transmits mail. Sending requires --send, --recipient and
 The harness never edits Postfix, Dovecot, SpamGate configuration or spool files.
 """
 import argparse
+import http.client
 import json
 import os
 import pathlib
+import re
+import socket
 import smtplib
 import ipaddress
 import ssl
@@ -39,9 +42,15 @@ def parse_args(argv):
     p.add_argument("--starttls", action="store_true", help="require STARTTLS with verified certificate")
     p.add_argument("--category-marker", help="optional harmless SGTUBE marker, test mailbox only")
     p.add_argument("--output", help="write JSON report, exclusive create")
+    p.add_argument("--check-services", action="store_true", help="opt-in read-only loopback HTTP health and Milter TCP checks")
+    p.add_argument("--health-port", type=int, default=38470, help="loopback health port (default 38470)")
+    p.add_argument("--milter-port", type=int, default=38472, help="loopback Milter TCP port (default 38472)")
+    p.add_argument("--expect-version", help="require the /healthz worker version to match exactly")
     a = p.parse_args(argv)
-    if not 1 <= a.port <= 65535 or not 0 < a.timeout <= 120:
-        p.error("port must be 1..65535 and timeout 0..120 seconds")
+    if not all(1 <= port <= 65535 for port in (a.port, a.health_port, a.milter_port)) or not 0 < a.timeout <= 120:
+        p.error("ports must be 1..65535 and timeout 0..120 seconds")
+    if a.expect_version and (not a.check_services or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.+_-]{0,79}", a.expect_version)):
+        p.error("--expect-version requires --check-services and a safe version token")
     if a.send and (not a.recipient or a.recipient != a.confirm_recipient):
         p.error("--send requires matching --recipient and --confirm-recipient")
     if a.send and not a.sender:
@@ -76,6 +85,57 @@ def preflight():
             results[key] = {"error": str(exc)}
     return results
 
+def probe_services(a):
+    """Opt-in loopback checks. No HTTP redirects, proxy, SMTP, or Milter commands.
+
+    A TCP accept on the Milter port proves only that something is listening;
+    it does not prove Milter protocol negotiation or mail disposition.
+    """
+    result = {
+        "attempted": True,
+        "health": {"status": "failed", "target": f"127.0.0.1:{a.health_port}"},
+        "milter": {"status": "failed", "target": f"127.0.0.1:{a.milter_port}",
+                   "protocol_verified": False},
+    }
+    connection = http.client.HTTPConnection("127.0.0.1", a.health_port, timeout=a.timeout)
+    try:
+        connection.request("GET", "/healthz",
+                           headers={"Host": "127.0.0.1", "Accept": "application/json",
+                                    "Connection": "close"})
+        response = connection.getresponse()
+        result["health"]["http_status"] = response.status
+        raw = response.read(4097)
+        if len(raw) > 4096:
+            raise ValueError("health response exceeds 4096-byte limit")
+        if response.status != 200:
+            raise ValueError(f"health endpoint returned HTTP {response.status}")
+        payload = json.loads(raw)
+        if not isinstance(payload, dict) or payload.get("status") != "ok":
+            raise ValueError("health response did not report status=ok")
+        version = payload.get("version")
+        if not isinstance(version, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.+_-]{0,127}", version):
+            raise ValueError("health response version is missing or invalid")
+        result["health"]["version"] = version
+        if a.expect_version and version != a.expect_version:
+            raise ValueError("health version does not match --expect-version")
+        result["health"]["status"] = "ok"
+    except (OSError, ValueError, http.client.HTTPException) as exc:
+        result["health"]["error_type"] = type(exc).__name__
+        result["health"]["error"] = str(exc)[:240]
+    finally:
+        connection.close()
+
+    try:
+        with socket.create_connection(("127.0.0.1", a.milter_port), timeout=a.timeout):
+            result["milter"]["status"] = "tcp_listening"
+    except OSError as exc:
+        result["milter"]["error_type"] = type(exc).__name__
+        result["milter"]["error"] = str(exc)[:240]
+    result["ok"] = (result["health"]["status"] == "ok" and
+                    result["milter"]["status"] == "tcp_listening")
+    return result
+
+
 def make_message(a, run_id):
     msg = EmailMessage()
     msg["From"] = a.sender
@@ -95,10 +155,17 @@ def run(a):
     report = {"schema": 1, "run_id": uuid.uuid4().hex,
               "timestamp_utc": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
               "host": a.host, "port": a.port, "send_requested": a.send,
-              "preflight": preflight(), "smtp": {"attempted": False},
+              "preflight": preflight(), "services": {"attempted": False},
+              "smtp": {"attempted": False},
               "limitations": ["SMTP 250 is not proof of mailbox delivery",
                               "Synthetic marker results do not measure real-world classifier accuracy",
-                              "Read-only preflight cannot establish production safety"]}
+                              "Read-only preflight cannot establish production safety",
+                              "Milter TCP acceptance does not verify protocol negotiation or message disposition"]}
+    if a.check_services:
+        report["services"] = probe_services(a)
+        if not report["services"]["ok"]:
+            report["status"] = "service_probe_failed"
+            return report
     if not a.send:
         report["status"] = "preflight_only"
         return report

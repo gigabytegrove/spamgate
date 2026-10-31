@@ -69,3 +69,38 @@ This lab deliberately does not invoke Postfix, Dovecot, or the SpamGate classifi
 **Regression correction (October 31):** The earlier `unittest discover` command silently executed **zero** tests because the test filenames contain hyphens. The build and engineering workflow now invoke each script directly and fail on assertion errors. This correction supersedes any earlier claim that the host-probe tests passed merely because discovery returned exit code zero.
 
 **Safety change:** Live submission requires an explicit `--sender` and an IP-literal SMTP host. This prevents silently using an invalid example sender and avoids DNS rebinding between target validation and SMTP connection. The `--allow-remote` flag remains required for non-loopback IP addresses.
+
+## Optional read-only service checks (issue #6)
+
+The default preflight **still makes no network connections**. To explicitly
+check the installed worker and local Milter listener without sending a message:
+
+```bash
+python3 scripts/spamgate-host-probe.py --check-services \
+  --health-port 38470 --milter-port 38472 \
+  --expect-version 0.6.0-beta.2 \
+  --output /root/spamgate-services-qualification.json
+```
+
+The probe uses a direct, proxy-free HTTP GET to `127.0.0.1:38470/healthz`
+and a TCP connect to `127.0.0.1:38472`. Ports are configurable for isolated
+labs. The HTTP response must be status 200, bounded to 4096 bytes, valid JSON
+with `status=ok` and a safe nonempty version. Redirects, unexpected versions,
+unreachable ports and malformed responses fail the check. The TCP probe sends
+**no Milter protocol commands**. It establishes a listener only, not a
+successful negotiation or mail verdict. Both checks are explicitly opt-in.
+
+If `--check-services` is combined with `--send`, failed service checks
+prevent the SMTP send. The report differentiates measured HTTP health from
+TCP listener reachability; it cannot verify the service identity behind an
+open TCP port, real Postfix integration, queue durability, or Dovecot delivery.
+
+```bash
+python3 scripts/test-spamgate-host-probe-services.py -v
+```
+
+The test runs a temporary local HTTP health endpoint and a separate TCP
+listener on ephemeral ports; it covers healthy service responses, 503,
+redirects, malformed and oversized JSON, version mismatches, closed listener,
+argument rejection and prevention of SMTP transmission on precheck failure.
+No production service is modified or contacted by the tests.
