@@ -98,3 +98,36 @@ a{color:#164bbf}a:hover{color:#12399c}
 .ops-verification-strip strong{font-size:12px;font-weight:790;color:#18243a}.ops-verification-strip small{font-size:11px;line-height:1.5;color:#53647b}
 .ops-verification-strip a{flex:0 0 auto;font-size:12px;font-weight:800}
 @media(max-width:690px){.ops-verification-strip{flex-wrap:wrap;gap:13px}.ops-verification-strip>div{flex-basis:100%}}
+
+
+/* v1 usability: readable operations data, keyboard focus and responsive tables.
+   Deliberately scoped to presentation; no mail-policy or API behavior changes. */
+.sg-main :where(button,a,input,select,textarea,summary):focus-visible,
+.sg-topbar :where(button,a):focus-visible,
+.sg-related :where(button,a):focus-visible {
+  outline:3px solid #b35b00;
+  outline-offset:3px;
+}
+.sg-main :where(input,select,textarea) { min-height:40px; }
+.sg-main :where(button) { min-height:36px; }
+.dg-kpis span,.dg-section-heading span,.dg-section-heading a,
+.dg-line small,.dg-footnote,.dg-guide-section>p,.dg-guide>div,
+.dg-guide small,.dg-limitations p,.ops-verification-strip small {
+  font-size:max(13px,0.8125rem);
+  line-height:1.5;
+}
+.dg-line strong,.dg-value,.dg-section-heading h2 { overflow-wrap:anywhere; }
+.dg-command { font-size:12px; max-width:100%; overflow-x:auto; }
+.sg-main :where(table) { max-width:100%; }
+.sg-main :where(th,td) { overflow-wrap:anywhere; }
+@media(max-width:840px) {
+  .dg-guide-grid { grid-template-columns:minmax(0,1fr); }
+  .dg-line { flex-wrap:wrap; }
+  .dg-value { max-width:100%; text-align:left; }
+}
+@media(max-width:580px) {
+  .dg-kpis { grid-template-columns:minmax(0,1fr); }
+  .dg-kpis>div { border-right:0; border-bottom:1px solid #e1e7f1; }
+  .dg-kpis>div:last-child { border-bottom:0; }
+  .sg-main :where(input,select,textarea) { max-width:100%; }
+}
