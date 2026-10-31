@@ -195,6 +195,26 @@ class QualificationTests(unittest.TestCase):
                 server.shutdown()
                 thread.join(timeout=5)
 
+    def test_reconcile_never_overwrites_existing_labels(self):
+        with SMTPServer() as server:
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                report = self.root / 'report.jsonl'
+                self.assertEqual(self.send(server.server_address[1], report).returncode, 0)
+                events = [json.loads(x) for x in report.read_text().splitlines()]
+                observed = self.root / 'observed.jsonl'
+                observed.write_text(json.dumps({'run_id': events[1]['run_id'], 'action': 'accept'}) + '\n')
+                labels = self.root / 'labels.jsonl'
+                labels.write_text('PRESERVE ORIGINAL')
+                result = self.call('reconcile', '--report', str(report), '--observations', str(observed), '--labels-out', str(labels))
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(labels.read_text(), 'PRESERVE ORIGINAL')
+                self.assertEqual(list(self.root.glob('.labels.jsonl.pending-*')), [])
+            finally:
+                server.shutdown()
+                thread.join(timeout=5)
+
     def test_output_exclusive(self):
         with SMTPServer() as server:
             thread = threading.Thread(target=server.serve_forever, daemon=True)
