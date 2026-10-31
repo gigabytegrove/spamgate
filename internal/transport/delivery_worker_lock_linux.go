@@ -13,12 +13,19 @@ import (
 	"time"
 )
 
-const deliveryWorkerLockName = ".delivery-worker.lock"
+const (
+	deliveryWorkerLockName = ".delivery-worker.lock"
+	deliveryIntakeLockName = ".delivery-intake.lock"
+)
 
 // ErrDeliveryWorkerBusy means another native worker currently owns the
 // shared spool's delivery lease. It is not a mail failure or a reason to
 // change the Postfix disposition.
 var ErrDeliveryWorkerBusy = errors.New("delivery queue already has an active worker")
+
+// ErrDeliveryIntakeBusy means another process is modifying the durable intake
+// inventory. SMTP callers must return a temporary failure, never acknowledge.
+var ErrDeliveryIntakeBusy = errors.New("delivery queue intake lock is busy")
 
 // acquireDeliveryWorkerLock holds an advisory Linux flock across an entire
 // ProcessDue pass, including the upstream SMTP acknowledgement and durable
@@ -26,6 +33,16 @@ var ErrDeliveryWorkerBusy = errors.New("delivery queue already has an active wor
 // from relaying the same queued original concurrently. Never unlink the lock
 // file: an unlinked inode could allow two independent locks on one spool.
 func acquireDeliveryWorkerLock(ctx context.Context, dir string) (func(), error) {
+	return acquireDeliveryLease(ctx, dir, deliveryWorkerLockName, 300*time.Millisecond, ErrDeliveryWorkerBusy)
+}
+
+// A short, separate lease protects the capacity check and publication across
+// independent SMTP intake processes. It never waits for an upstream SMTP relay.
+func acquireDeliveryIntakeLock(ctx context.Context, dir string) (func(), error) {
+	return acquireDeliveryLease(ctx, dir, deliveryIntakeLockName, 2*time.Second, ErrDeliveryIntakeBusy)
+}
+
+func acquireDeliveryLease(ctx context.Context, dir, name string, timeout time.Duration, busy error) (func(), error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -36,7 +53,7 @@ func acquireDeliveryWorkerLock(ctx context.Context, dir string) (func(), error) 
 	if !root.IsDir() || root.Mode()&os.ModeSymlink != 0 || root.Mode().Perm()&0022 != 0 {
 		return nil, errors.New("delivery spool directory must be a real directory without group/world write access")
 	}
-	path := filepath.Join(dir, deliveryWorkerLockName)
+	path := filepath.Join(dir, name)
 	fd, err := syscall.Open(path, syscall.O_CREAT|syscall.O_RDWR|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("open safe delivery worker lock: %w", err)
@@ -67,7 +84,7 @@ func acquireDeliveryWorkerLock(ctx context.Context, dir string) (func(), error) 
 	}
 	// Contention is bounded; SMTP intake must not wait for a slow upstream
 	// relay held by a different worker. A later 15-second tick can retry.
-	deadline := time.NewTimer(300 * time.Millisecond)
+	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
@@ -94,7 +111,7 @@ func acquireDeliveryWorkerLock(ctx context.Context, dir string) (func(), error) 
 		case <-ctx.Done():
 			return closeOnError(ctx.Err())
 		case <-deadline.C:
-			return closeOnError(ErrDeliveryWorkerBusy)
+			return closeOnError(busy)
 		case <-ticker.C:
 		}
 	}

@@ -320,6 +320,11 @@ func (q *DeliveryQueue) Enqueue(m core.Message, raw []byte) error {
 	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	// The inventory limit and new original must be one transaction across
+	// all native intake processes sharing the persistent spool.
+	unlockIntake, lockErr := acquireDeliveryIntakeLock(context.Background(), q.dir)
+	if lockErr != nil { return fmt.Errorf("cannot serialize SMTP spool intake: %w", lockErr) }
+	defer unlockIntake()
 	summary, e := q.snapshotLocked()
 	if e != nil {
 		return e
@@ -346,6 +351,11 @@ func (q *DeliveryQueue) Enqueue(m core.Message, raw []byte) error {
 	return q.put(rec)
 }
 func (q *DeliveryQueue) Retry(id string) error {
+	// Admin mutations must not race a different process that has already
+	// selected a job for SMTP delivery. Never wait for that relay to finish.
+	unlockWorker, lockErr := acquireDeliveryWorkerLock(context.Background(), q.dir)
+	if lockErr != nil { return fmt.Errorf("cannot retry while delivery is active: %w", lockErr) }
+	defer unlockWorker()
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	rec, e := q.get(id)
@@ -363,6 +373,9 @@ func (q *DeliveryQueue) Retry(id string) error {
 	return q.put(rec)
 }
 func (q *DeliveryQueue) Discard(id string) error {
+	unlockWorker, lockErr := acquireDeliveryWorkerLock(context.Background(), q.dir)
+	if lockErr != nil { return fmt.Errorf("cannot discard while delivery is active: %w", lockErr) }
+	defer unlockWorker()
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	rec, e := q.get(id)
@@ -384,6 +397,9 @@ func (q *DeliveryQueue) DiscardWithAudit(id, actor string) error {
  if actor == "" || len(actor) > 128 || strings.ContainsAny(actor, "\r\n") {
   return errors.New("valid audit actor required")
  }
+ unlockWorker, lockErr := acquireDeliveryWorkerLock(context.Background(), q.dir)
+ if lockErr != nil { return fmt.Errorf("cannot discard while delivery is active: %w", lockErr) }
+ defer unlockWorker()
  q.mu.Lock()
  defer q.mu.Unlock()
  rec, err := q.get(id)
