@@ -82,7 +82,7 @@ class SMTPWireTests(unittest.TestCase):
                 args = [sys.executable, str(SCRIPT), "--send",
                         "--recipient", RECIPIENT, "--confirm-recipient", RECIPIENT,
                         "--host", "127.0.0.1", "--port", str(server.server_address[1]),
-                        "--timeout", "3"]
+                        "--timeout", "3", "--sender", "probe@example.org"]
                 if marker:
                     args += ["--category-marker", marker]
                 result = subprocess.run(args, text=True, capture_output=True, timeout=10)
