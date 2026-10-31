@@ -115,9 +115,9 @@ class QualificationTests(unittest.TestCase):
                 result = self.send(server.server_address[1], report_path)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 events = [json.loads(line) for line in report_path.read_text().splitlines()]
-                self.assertEqual([x['event'] for x in events], ['attempted', 'smtp_accepted'])
+                self.assertEqual([x['event'] for x in events], ['plan', 'attempted', 'smtp_accepted'])
                 self.assertEqual(len(server.messages), 1)
-                self.assertIn(events[0]['run_id'].encode(), server.messages[0])
+                self.assertIn(events[1]['run_id'].encode(), server.messages[0])
                 self.assertIn(b'To: spambox@example.org', server.messages[0])
                 self.assertNotIn(b'To: old@example.org', server.messages[0])
                 observations = self.root / 'observations.jsonl'
@@ -126,7 +126,7 @@ class QualificationTests(unittest.TestCase):
                 missing = self.call('reconcile', '--report', str(report_path), '--observations', str(observations), '--labels-out', str(labels))
                 self.assertEqual(missing.returncode, 2)
                 self.assertFalse(labels.exists())
-                observations.write_text(json.dumps({'run_id': events[0]['run_id'], 'action': 'accept'}) + '\n')
+                observations.write_text(json.dumps({'run_id': events[1]['run_id'], 'action': 'accept'}) + '\n')
                 valid = self.call('reconcile', '--report', str(report_path), '--observations', str(observations), '--labels-out', str(labels))
                 self.assertEqual(valid.returncode, 0, valid.stderr)
                 row = json.loads(labels.read_text().strip())
@@ -148,10 +148,48 @@ class QualificationTests(unittest.TestCase):
                 events = [json.loads(line) for line in report_path.read_text().splitlines()]
                 self.assertEqual(events[-1]['event'], 'failed')
                 observations = self.root / 'observations.jsonl'
-                observations.write_text(json.dumps({'run_id': events[0]['run_id'], 'action': 'reject'}) + '\n')
+                observations.write_text(json.dumps({'run_id': events[1]['run_id'], 'action': 'reject'}) + '\n')
                 labels = self.root / 'labels.jsonl'
                 reconcile = self.call('reconcile', '--report', str(report_path), '--observations', str(observations), '--labels-out', str(labels))
                 self.assertEqual(reconcile.returncode, 2)
+                self.assertFalse(labels.exists())
+            finally:
+                server.shutdown()
+                thread.join(timeout=5)
+
+    def test_partial_batch_cannot_be_misreported_as_complete(self):
+        with SMTPServer() as server:
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                report = self.root / 'partial.jsonl'
+                result = self.send(server.server_address[1], report)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                events = [json.loads(x) for x in report.read_text().splitlines()]
+                events[0]['cases'] = 2  # interrupted before second attempt
+                report.write_text('\\n'.join(json.dumps(x) for x in events) + '\\n')
+                observed = self.root / 'observed.jsonl'
+                observed.write_text(json.dumps({'run_id': events[1]['run_id'], 'action': 'accept'}) + '\\n')
+                labels = self.root / 'labels.jsonl'
+                reconciled = self.call('reconcile', '--report', str(report), '--observations', str(observed), '--labels-out', str(labels))
+                self.assertEqual(reconciled.returncode, 2)
+                self.assertFalse(labels.exists())
+            finally:
+                server.shutdown()
+                thread.join(timeout=5)
+
+    def test_extra_observation_is_rejected(self):
+        with SMTPServer() as server:
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                report = self.root / 'report.jsonl'
+                self.assertEqual(self.send(server.server_address[1], report).returncode, 0)
+                events = [json.loads(x) for x in report.read_text().splitlines()]
+                observed = self.root / 'observed.jsonl'
+                observed.write_text(json.dumps({'run_id': events[1]['run_id'], 'action': 'accept'}) + '\\n' + json.dumps({'run_id': 'unknown', 'action': 'reject'}) + '\\n')
+                labels = self.root / 'labels.jsonl'
+                self.assertEqual(self.call('reconcile', '--report', str(report), '--observations', str(observed), '--labels-out', str(labels)).returncode, 2)
                 self.assertFalse(labels.exists())
             finally:
                 server.shutdown()
