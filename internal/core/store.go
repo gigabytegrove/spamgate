@@ -31,6 +31,7 @@ type Store struct {
 	policy   deliveryPolicyState
 	journalSize int64
 	journalKnown bool
+ journalInfo os.FileInfo
 }
 
 func ID() string {
@@ -70,7 +71,10 @@ func Open(dir string) (*Store, error) {
 	if err := s.loadDeliveryPolicy(); err != nil {
 		return nil, err
 	}
-	f, err := os.Open(filepath.Join(dir, "events.jsonl"))
+	unlockHistory, lockErr := acquireHistoryWriteLock(dir)
+ if lockErr != nil { return nil, fmt.Errorf("lock startup history: %w",lockErr) }
+ defer unlockHistory()
+ f, err := os.Open(filepath.Join(dir, "events.jsonl"))
 	if errors.Is(err, os.ErrNotExist) {
 		return s, nil
 	}
@@ -78,7 +82,7 @@ func Open(dir string) (*Store, error) {
 		return nil, err
 	}
 	defer f.Close()
-	if fi, e := f.Stat(); e == nil {s.journalKnown=true;s.journalSize=fi.Size()}
+	if fi, e := f.Stat(); e == nil {s.journalKnown=true;s.journalSize=fi.Size();s.journalInfo=fi}
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	for scanner.Scan() {
@@ -179,8 +183,12 @@ func (s *Store) Save(m Message) error {
 		return errors.New("invalid scan ID for header persistence")
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	// Persist the headers separately, using strict filesystem permissions; do
+ defer s.mu.Unlock()
+ unlockHistory, lockErr := acquireHistoryWriteLock(s.dir)
+ if lockErr != nil { return fmt.Errorf("cannot serialize history: %w",lockErr) }
+ defer unlockHistory()
+ if err:=s.refreshHistoryLocked();err!=nil{return fmt.Errorf("cannot reconcile shared history: %w",err)}
+ // Persist the headers separately, using strict filesystem permissions; do
 	// not put header contents in events.jsonl or normal message-list responses.
 	if len(m.HeaderSnapshot) > 0 {
 		dir := filepath.Join(s.dir, "headers")
@@ -220,6 +228,7 @@ func (s *Store) Save(m Message) error {
 	}
 	if closeErr != nil {return closeErr}
  s.journalSize=size;s.journalKnown=true
+ if info,statErr:=os.Lstat(path);statErr==nil{s.journalInfo=info}else{return statErr}
  if _, ok := s.messages[m.ID]; !ok {
 		s.order = append(s.order, m.ID)
 	}
@@ -335,6 +344,10 @@ func (s *Store) pruneLocked() {
 }
 func (s *Store) Compact() error {
  s.mu.Lock();defer s.mu.Unlock()
+ unlockHistory,lockErr:=acquireHistoryWriteLock(s.dir)
+ if lockErr!=nil{return fmt.Errorf("cannot serialize compaction: %w",lockErr)}
+ defer unlockHistory()
+ if err:=s.refreshHistoryLocked();err!=nil{return fmt.Errorf("cannot reconcile history before compaction: %w",err)}
  audit,err:=s.auditHistoryLocked(context.Background())
  if err!=nil{return err}
  if audit.Status!="ok" && !(audit.Status=="missing"&&!s.journalKnown&&len(s.order)==0){
@@ -370,7 +383,7 @@ func (s *Store) compactLocked() error {
 		return e
 	}
 	if e=os.Rename(name,path);e!=nil{return e}
- if fi,e:=os.Stat(path);e==nil{s.journalSize=fi.Size();s.journalKnown=true}else{return e}
+ if fi,e:=os.Lstat(path);e==nil{s.journalSize=fi.Size();s.journalKnown=true;s.journalInfo=fi}else{return e}
  if runtime.GOOS!="windows" {
   directory,e:=os.Open(s.dir);if e!=nil{return e};defer directory.Close()
   if e=directory.Sync();e!=nil{return e}
