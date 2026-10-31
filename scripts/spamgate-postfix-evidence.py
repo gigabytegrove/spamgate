@@ -133,9 +133,11 @@ def correlate(report, paths, recipient, chronology=None):
             if event:
                 transport, queue_id, address, status = event.groups()
                 rid = queue_to_run.get(queue_id)
+                # Even a different recipient after removal indicates a
+                # reused/overlapping queue identity: never certify this run.
+                if rid is not None and entries[rid]["queue_removed"]:
+                    duplicate.add(rid)
                 if rid is not None and address == recipient:
-                    if entries[rid]["queue_removed"]:
-                        duplicate.add(rid)
                     item = {"transport": transport.lower(), "status": status.lower()}
                     if item["transport"] in ("discard", "error"):
                         entries[rid]["discarded"] = True
