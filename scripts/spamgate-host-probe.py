@@ -10,10 +10,9 @@ import json
 import os
 import pathlib
 import smtplib
-import socket
+import ipaddress
 import ssl
 import sys
-import time
 import uuid
 from email.message import EmailMessage
 
@@ -34,7 +33,7 @@ def parse_args(argv):
     p.add_argument("--timeout", type=float, default=8.0)
     p.add_argument("--recipient", type=address)
     p.add_argument("--confirm-recipient", type=address)
-    p.add_argument("--sender", type=address, default="spamgate-probe@example.invalid")
+    p.add_argument("--sender", type=address, help="explicit sender authorized for the test mailbox")
     p.add_argument("--send", action="store_true", help="explicitly enable SMTP submission")
     p.add_argument("--allow-remote", action="store_true", help="explicitly permit non-loopback target")
     p.add_argument("--starttls", action="store_true", help="require STARTTLS with verified certificate")
@@ -45,15 +44,17 @@ def parse_args(argv):
         p.error("port must be 1..65535 and timeout 0..120 seconds")
     if a.send and (not a.recipient or a.recipient != a.confirm_recipient):
         p.error("--send requires matching --recipient and --confirm-recipient")
+    if a.send and not a.sender:
+        p.error("--send requires an explicit --sender")
     if a.category_marker and (not a.send or len(a.category_marker) > 2048 or any(x in a.category_marker for x in "\r\n")):
         p.error("marker requires --send and a single-line marker <=2048 characters")
-    if a.send and not a.allow_remote:
+    if a.send:
         try:
-            ips = {x[4][0] for x in socket.getaddrinfo(a.host, a.port, type=socket.SOCK_STREAM)}
-            if not ips or any(not __import__("ipaddress").ip_address(ip).is_loopback for ip in ips):
-                p.error("non-loopback SMTP target requires --allow-remote")
-        except socket.gaierror as exc:
-            p.error("cannot resolve SMTP target: " + str(exc))
+            target = ipaddress.ip_address(a.host)
+        except ValueError:
+            p.error("SMTP host must be an IP literal to prevent DNS rebinding")
+        if not target.is_loopback and not a.allow_remote:
+            p.error("non-loopback SMTP target requires --allow-remote")
     return a
 
 def preflight():
