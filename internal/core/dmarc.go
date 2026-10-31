@@ -10,11 +10,17 @@ import (
 	"fmt"
 	"net"
 	"net/mail"
+	"strconv"
 	"strings"
 	"time"
 )
 
-type DMARCResult struct{ Result, Domain, Policy, Detail string }
+type DMARCResult struct {
+	Result, Domain, Policy, Detail string
+	// Percent is the published pct= request (default 100), not a change
+	// to the authentication result or original publisher policy.
+	Percent int
+}
 
 func dmarcAligned(used, from, mode string) bool {
 	used = strings.TrimSuffix(strings.ToLower(used), ".")
@@ -140,6 +146,10 @@ func DMARCCheck(ctx context.Context, resolver SPFResolver, headerFrom string, sp
 		}
 	}
 	result.Policy = policy
+	result.Percent = 100
+	if pct, ok := tags["pct"]; ok {
+		result.Percent, _ = strconv.Atoi(pct) // validated by parseDMARCRecord
+	}
 	if spf.Result == "pass" && dmarcAligned(spf.Domain, domain, tags["aspf"]) {
 		result.Result = "pass"
 		result.Detail = "SPF authenticated an aligned organizational domain"

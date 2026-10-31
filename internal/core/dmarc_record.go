@@ -63,7 +63,7 @@ func parseDMARCRecord(record string) (map[string]string, error) {
     }
     if pct, exists := tags["pct"]; exists {
         n, err := strconv.Atoi(pct)
-        if err != nil || n < 0 || n > 100 {
+        if err != nil || len(pct) > 3 || n < 0 || n > 100 {
             return nil, fmt.Errorf("%w: pct must be between 0 and 100", errDMARCPolicy)
         }
     }
