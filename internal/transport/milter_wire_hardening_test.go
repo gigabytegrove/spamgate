@@ -127,20 +127,20 @@ func TestMilterMalformedHeaderTempfailsWithoutSavingAndRecovers(t *testing.T) {
 	binary.BigEndian.PutUint32(opts[:4], 6)
 	binary.BigEndian.PutUint32(opts[4:8], milterAddHeader|milterQuarantine)
 	milterSend(t, client, 'O', 'O', opts)
-	milterSend(t, client, 'M', 'c', []byte("<sender@example.org>\\x00"))
-	milterSend(t, client, 'R', 'c', []byte("<recipient@example.org>\\x00"))
-	milterSend(t, client, 'L', 't', []byte("Subject\\x00safe\\x00Injected: bad"))
+	milterSend(t, client, 'M', 'c', []byte("<sender@example.org>\x00"))
+	milterSend(t, client, 'R', 'c', []byte("<recipient@example.org>\x00"))
+	milterSend(t, client, 'L', 't', []byte("Subject\x00safe\x00Injected: bad"))
 	milterSend(t, client, 'E', 't', nil)
 	if messages := store.List(10, ""); len(messages) != 0 {
 		t.Fatalf("invalid transaction saved a verdict: %d", len(messages))
 	}
 	// The failed message must not poison the next transaction on this connection.
-	milterSend(t, client, 'M', 'c', []byte("<sender@example.org>\\x00"))
-	milterSend(t, client, 'R', 'c', []byte("<recipient@example.org>\\x00"))
-	milterSend(t, client, 'L', 'c', []byte("From\\x00sender@example.org\\x00"))
-	milterSend(t, client, 'L', 'c', []byte("Subject\\x00normal status report\\x00"))
+	milterSend(t, client, 'M', 'c', []byte("<sender@example.org>\x00"))
+	milterSend(t, client, 'R', 'c', []byte("<recipient@example.org>\x00"))
+	milterSend(t, client, 'L', 'c', []byte("From\x00sender@example.org\x00"))
+	milterSend(t, client, 'L', 'c', []byte("Subject\x00normal status report\x00"))
 	milterSend(t, client, 'N', 'c', nil)
-	milterSend(t, client, 'B', 'c', []byte("Normal body\\r\\n"))
+	milterSend(t, client, 'B', 'c', []byte("Normal body\r\n"))
 	milterSend(t, client, 'E', 'c', nil)
 	if messages := store.List(10, ""); len(messages) != 1 {
 		t.Fatalf("valid subsequent transaction not recorded: %d", len(messages))
