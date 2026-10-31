@@ -50,7 +50,23 @@ func CheckARCStructure(raw []byte) ARCStructure {
 		if pos < 0 {
 			return invalid("ARC header missing colon")
 		}
-		tags := dkimTags(string(header.raw[pos+1:]))
+		var tags map[string]string
+		if typ == 1 {
+			// ARC-Authentication-Results is not a DKIM tag list: after its
+			// leading i= instance, it contains an authserv-id and results.
+			first, remainder, found := strings.Cut(strings.TrimSpace(string(header.raw[pos+1:])), ";")
+			key, value, assignment := strings.Cut(strings.TrimSpace(first), "=")
+			if !found || !assignment || !strings.EqualFold(strings.TrimSpace(key), "i") || strings.TrimSpace(remainder) == "" {
+				return invalid("ARC-Authentication-Results missing instance or authserv-id")
+			}
+			tags = map[string]string{"i": strings.TrimSpace(value)}
+		} else {
+			var parseErr error
+			tags, parseErr = dkimParseTagsStrict(string(header.raw[pos+1:]))
+			if parseErr != nil {
+				return invalid("Malformed ARC signature or seal tags: " + parseErr.Error())
+			}
+		}
 		instance, err := strconv.Atoi(strings.TrimSpace(tags["i"]))
 		if err != nil || instance < 1 || instance > 50 {
 			return invalid("ARC instance outside 1..50")

@@ -177,12 +177,24 @@ func dkimParsePublicKey(txts []string, algorithm string) (crypto.PublicKey, erro
 	if record == "" {
 		return nil, errors.New("no DKIM key record")
 	}
-	tags := dkimTags(record)
+	tags, err := dkimParseTagsStrict(record)
+	if err != nil {
+		return nil, fmt.Errorf("malformed DKIM key record: %w", err)
+	}
 	if tags["v"] != "" && !strings.EqualFold(tags["v"], "DKIM1") {
 		return nil, errors.New("unknown DKIM key version")
 	}
+	if tags["v"] != "" && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(record)), "v=dkim1;") && !strings.EqualFold(strings.TrimSpace(record), "v=DKIM1") {
+		return nil, errors.New("DKIM key version must be the first tag")
+	}
 	if tags["p"] == "" {
 		return nil, errors.New("DKIM key revoked or missing")
+	}
+	if hashes := tags["h"]; hashes != "" && !dkimListContains(hashes, "sha256") {
+		return nil, errors.New("DKIM key does not authorize SHA-256")
+	}
+	if services := tags["s"]; services != "" && !dkimListContains(services, "*") && !dkimListContains(services, "email") {
+		return nil, errors.New("DKIM key does not authorize email service")
 	}
 	data, err := base64.StdEncoding.DecodeString(dkimCompact(tags["p"]))
 	if err != nil {
@@ -221,11 +233,47 @@ func dkimParsePublicKey(txts []string, algorithm string) (crypto.PublicKey, erro
 }
 func dkimVerifyOne(ctx context.Context, resolver SPFResolver, headers []dkimHeader, body []byte, index int) DKIMResult {
 	sig := headers[index]
-	tags := dkimTags(string(sig.raw[bytes.IndexByte(sig.raw, ':')+1:]))
+	tags, tagErr := dkimParseTagsStrict(string(sig.raw[bytes.IndexByte(sig.raw, ':')+1:]))
 	domain := strings.ToLower(tags["d"])
 	selector := strings.ToLower(tags["s"])
 	result := DKIMResult{Result: "fail", Domain: domain, Selector: selector}
 	fail := func(reason string) DKIMResult { result.Detail = reason; return result }
+	if tagErr != nil {
+		return fail("Malformed DKIM signature tags: " + tagErr.Error())
+	}
+	if sig.name == "dkim-signature" && tags["v"] != "1" {
+		return fail("DKIM signature requires v=1")
+	}
+	for _, required := range []string{"a", "d", "s", "h", "bh", "b"} {
+		if tags[required] == "" {
+			return fail("Missing DKIM signature tag " + required)
+		}
+	}
+	if sig.name == "dkim-signature" && tags["i"] != "" {
+		identity := strings.ToLower(strings.TrimSpace(tags["i"]))
+		at := strings.LastIndexByte(identity, '@')
+		if at < 0 || at == len(identity)-1 {
+			return fail("Invalid DKIM signing identity")
+		}
+		identityDomain := identity[at+1:]
+		if identityDomain != domain && !strings.HasSuffix(identityDomain, "."+domain) {
+			return fail("DKIM signing identity is outside signing domain")
+		}
+	}
+	var signedAt int64
+	if tags["t"] != "" {
+		t, err := strconv.ParseInt(tags["t"], 10, 64)
+		if err != nil || t < 0 {
+			return fail("Invalid DKIM signing timestamp")
+		}
+		signedAt = t
+	}
+	if tags["x"] != "" {
+		x, err := strconv.ParseInt(tags["x"], 10, 64)
+		if err != nil || x < 0 || (tags["t"] != "" && x < signedAt) {
+			return fail("Invalid DKIM expiration timestamp")
+		}
+	}
 	if !isSubdomain(domain) || selector == "" || strings.ContainsAny(selector, "/ :@\\\r\n\t") {
 		return fail("Malformed DKIM domain or selector")
 	}
@@ -237,6 +285,9 @@ func dkimVerifyOne(ctx context.Context, resolver SPFResolver, headers []dkimHead
 	if tags["c"] != "" {
 		parts := strings.Split(tags["c"], "/")
 		headerStyle = parts[0]
+		if len(parts) > 2 {
+			return fail("Invalid DKIM canonicalization tag")
+		}
 		if len(parts) > 1 {
 			bodyStyle = parts[1]
 		}
@@ -262,6 +313,7 @@ func dkimVerifyOne(ctx context.Context, resolver SPFResolver, headers []dkimHead
 	}
 	signed := strings.Split(strings.ToLower(tags["h"]), ":")
 	signedFrom := false
+	signedFromPresent := false
 	used := map[int]bool{}
 	var headerData []byte
 	for _, name := range signed {
@@ -283,10 +335,13 @@ func dkimVerifyOne(ctx context.Context, resolver SPFResolver, headers []dkimHead
 			continue
 		} // permitted header oversigning
 		used[found] = true
+		if name == "from" {
+			signedFromPresent = true
+		}
 		headerData = append(headerData, dkimCanonHeader(headers[found].raw, headerStyle)...)
 	}
-	if !signedFrom {
-		return fail("DKIM must sign From header")
+	if !signedFrom || !signedFromPresent {
+		return fail("DKIM must sign an existing From header")
 	}
 	blank, err := dkimEmptySignatureValue(sig.raw)
 	if err != nil {
