@@ -7,7 +7,7 @@ This read-only qualifier addresses a missing observation in issues #1, #6, and #
 1. scripts/spamgate-filtration-qualification.py send produces a durable run report after explicit SMTP opt-in.
 2. scripts/spamgate-postfix-evidence.py matches cleanup queue IDs, recipient transport and queue removal. Its JSON now includes the recipient, and discard/error transports are never certified as delivery.
 3. scripts/spamgate-maildir-evidence.py reads that recipient-bound JSON and searches the explicitly selected INBOX and Junk Maildir new/ and cur/ directories for each unique run_id@spamgate-qualification.invalid Message-ID.
-4. The output records inbox, junk, missing, or duplicate for every run. Exit 0 requires exactly one match for every run; 3 means observed incomplete/duplicate placement; 2 means unsafe or invalid evidence.
+4. The output records inbox, junk, missing, or duplicate for every run. Optional independently specified placement expectations require the correct INBOX/Junk folder per case; no ham/spam folder mapping is assumed. Exit 0 requires exactly one match per run and, if expectations were provided, every folder match; 3 means incomplete, duplicate or misplaced mail; 2 means unsafe or invalid evidence.
 
 **This is not an automatic mail-host test.** No live mailbox was accessed during development. Maildir file placement is not independent proof of Dovecot IMAP visibility, Sieve enforcement, mailbox ownership, or correctness of classifier verdicts. Dovecot mdbox/sdbox/other storage is unsupported; do not infer Maildir paths from a username or assume the example paths match the server.
 
@@ -32,8 +32,11 @@ python3 scripts/spamgate-maildir-evidence.py \
   --junk-maildir /path/to/confirmed/Maildir/.Junk \
   --recipient spambox@gigabytegrove.com \
   --confirm-recipient spambox@gigabytegrove.com \
+  --expected-placement /root/spamgate-corpus/expected-placement.jsonl \
   --output /root/spamgate-corpus/maildir-evidence.json
 ~~~
+
+The optional expected-placement JSONL contains exactly one record for each case, for example {"case_id":"ham-001","folder":"INBOX"} or {"case_id":"spam-001","folder":"Junk"}. The independently adjudicated expected folder must reflect the configured policy; do not infer Junk from a spam label. Omit --expected-placement to collect placement observations without evaluating policy expectations.
 
 The second command refuses missing or incomplete transport evidence. The first command's status=sent correlation alone cannot certify mailbox placement. Each output is exclusive-create, mode 0600, fsynced, and never overwritten. No mail is sent by either evidence analyzer.
 
@@ -49,7 +52,7 @@ The second command refuses missing or incomplete transport evidence. The first c
 
 ## Executed verification and remaining gates
 
-The new Maildir script and its **18 isolated regression tests** were run locally with Python 3 and all 18 passed after fixing a directory-FD handling defect found during the first run. The tests cover INBOX/Junk/new/cur, missing and duplicate placement, multiple cases, wrong recipient, incomplete or reused queue identity, symlinks, oversized headers, existing output, and missing folders. This is synthetic filesystem evidence only. The existing Postfix analyzer received a recipient-binding and discard/error transport safety fix with two additional regressions; those integration tests and final GitHub Actions results must be verified independently before asserting success.
+The new Maildir script and its **22 isolated regression tests** were run locally with Python 3 and all 18 passed after fixing a directory-FD handling defect found during the first run. The tests cover INBOX/Junk/new/cur, missing and duplicate placement, multiple cases, wrong recipient, incomplete or reused queue identity, symlinks, oversized headers, existing output, and missing folders, matching and mismatching independent folder expectations. This is synthetic filesystem evidence only. The existing Postfix analyzer received a recipient-binding and discard/error transport safety fix with two additional regressions; those integration tests and final GitHub Actions results must be verified independently before asserting success.
 
 Open production gates remain: actual Postfix/Dovecot host qualification, Milter HOLD/release, Dovecot Sieve placement and IMAP visibility, durable crash/disk-full recovery, SMTP/authentication conformance, representative classifier false-positive bounds, tenant conflicts, browser accessibility, and native update/rollback. The October 31 morning long-term beta target was not met. Do not close issues #1–#9 based on this isolated tool alone.
 
