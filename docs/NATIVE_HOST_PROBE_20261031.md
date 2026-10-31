@@ -19,6 +19,7 @@ python3 scripts/spamgate-host-probe.py --send \
   --recipient spambox@example.org \
   --confirm-recipient spambox@example.org \
   --host 127.0.0.1 --port 25 \
+  --sender spambox@gigabytegrove.com \
   --output /root/spamgate-smtp-probe.json
 ```
 
@@ -66,3 +67,5 @@ This lab deliberately does not invoke Postfix, Dovecot, or the SpamGate classifi
 
 
 **Regression correction (October 31):** The earlier `unittest discover` command silently executed **zero** tests because the test filenames contain hyphens. The build and engineering workflow now invoke each script directly and fail on assertion errors. This correction supersedes any earlier claim that the host-probe tests passed merely because discovery returned exit code zero.
+
+**Safety change:** Live submission requires an explicit `--sender` and an IP-literal SMTP host. This prevents silently using an invalid example sender and avoids DNS rebinding between target validation and SMTP connection. The `--allow-remote` flag remains required for non-loopback IP addresses.
