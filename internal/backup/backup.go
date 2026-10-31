@@ -78,6 +78,18 @@ func Create(source, archive string) (err error) {
 	if err = os.MkdirAll(filepath.Dir(archive), 0700); err != nil {
 		return err
 	}
+	// The textual prefix check above cannot detect an archive destination
+	// reached through a symlinked parent. Resolve both directory identities
+	// before creating a temporary ZIP: otherwise the backup may snapshot its
+	// own growing output inside the live data root.
+	resolvedSource, resolveErr := filepath.EvalSymlinks(source)
+	if resolveErr != nil { return fmt.Errorf("resolve backup source: %w", resolveErr) }
+	resolvedParent, resolveErr := filepath.EvalSymlinks(filepath.Dir(archive))
+	if resolveErr != nil { return fmt.Errorf("resolve backup destination parent: %w", resolveErr) }
+	resolvedArchive := filepath.Join(resolvedParent, filepath.Base(archive))
+	if resolvedArchive == resolvedSource || strings.HasPrefix(resolvedArchive, resolvedSource+string(filepath.Separator)) {
+		return errors.New("backup destination resolves inside the SpamGate data directory")
+	}
 	tmp, err := os.CreateTemp(filepath.Dir(archive), ".spamgate-backup-*.tmp")
 	if err != nil {
 		return err

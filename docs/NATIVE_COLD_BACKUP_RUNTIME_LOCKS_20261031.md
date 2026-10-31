@@ -23,3 +23,7 @@ Legacy archives are still integrity-verified **including the lock entries**, but
 ## Qualification limits
 
 Unit tests cover new-archive exclusions, legacy-archive compatibility, preservation of unpublished originals, exact-name matching, unsafe masquerading locks and a full Create/Verify/Restore cycle. GitHub CI is not a substitute for a cold restore with real mail-host data, UID migration, ISPConfig and native systemd service restart. These gates remain open. Do not restore into an existing or running data directory.
+
+## Backup destination symlink containment
+
+A second cold-backup guard resolves the source and archive parent after directory creation, before opening a temporary ZIP. This rejects a destination whose apparent external pathname is actually a symlink alias into the data root. Without this check, a backup could read its own growing temporary ZIP during a recursive source walk. A symlink to a genuinely external directory remains supported. This is not a complete defense against a privileged adversary concurrently replacing parent-directory symlinks; offline backup still requires a controlled host and stopped worker.
