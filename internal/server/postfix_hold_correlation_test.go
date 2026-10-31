@@ -271,3 +271,53 @@ func TestPostfixHoldReleaseRefusesReusedQueueIDAcrossScans(t *testing.T) {
         t.Fatalf("refused operation changed audit state: %+v", saved)
     }
 }
+
+func TestInvestigationDoesNotClaimReusedPostfixQueueAsConfirmed(t *testing.T) {
+    store, err := core.Open(t.TempDir())
+    if err != nil { t.Fatal(err) }
+    if err := store.UpdateConfig(func(c *core.Config) error {
+        c.SetupComplete = true
+        c.Users = []core.User{{Name: "admin", Role: "admin"}}
+        return nil
+    }); err != nil { t.Fatal(err) }
+    scan := core.Message{
+        ID: core.ID(), Timestamp: time.Now().UTC(), Connector: "milter",
+        MTAQueueID: "A123BC", MTAAction: "postfix_hold_requested",
+        Sender: "sender@example.org", Recipients: []string{"alice@example.org"},
+    }
+    if err := store.Save(scan); err != nil { t.Fatal(err) }
+    t.Setenv("SPAMGATE_POSTFIX_HOLD_INVENTORY", "true")
+    srv := New(store, nil)
+    srv.sessions["investigate-admin"] = session{
+        Identity: Identity{Name: "admin", Role: "admin", Session: true},
+        Expires: time.Now().Add(time.Hour),
+    }
+    held := []PostfixHeld{{
+        QueueID: scan.MTAQueueID, Sender: "unrelated@example.org",
+        ArrivalTime: scan.Timestamp.Unix(), RecipientCount: 1,
+        Recipients: []string{"alice@example.org"},
+    }}
+    srv.PostfixHeldInventory = func(context.Context) ([]PostfixHeld, error) { return held, nil }
+    inspect := func() investigationResult {
+        t.Helper()
+        req := httptest.NewRequest(http.MethodGet, "/api/v1/messages/"+scan.ID+"/investigation", nil)
+        req.AddCookie(&http.Cookie{Name: "spamgate_session", Value: "investigate-admin"})
+        response := httptest.NewRecorder()
+        srv.Router().ServeHTTP(response, req)
+        if response.Code != http.StatusOK { t.Fatalf("investigation HTTP %d: %s", response.Code, response.Body.String()) }
+        var result investigationResult
+        if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil { t.Fatal(err) }
+        return result
+    }
+    if result := inspect(); result.PostfixHoldPresent == nil || *result.PostfixHoldPresent {
+        t.Fatalf("unrelated held sender was claimed as correlated: %+v", result)
+    }
+    held[0].Sender = scan.Sender
+    if result := inspect(); result.PostfixHoldPresent == nil || !*result.PostfixHoldPresent {
+        t.Fatalf("complete held envelope was not correlated: %+v", result)
+    }
+    held[0].ArrivalTime += 3600
+    if result := inspect(); result.PostfixHoldPresent == nil || *result.PostfixHoldPresent {
+        t.Fatalf("reused queue ID was claimed as correlated: %+v", result)
+    }
+}

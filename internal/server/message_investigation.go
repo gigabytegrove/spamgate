@@ -77,18 +77,26 @@ func (s *Server) messageInvestigation(w http.ResponseWriter, r *http.Request) {
 				add("Postfix hold queue", "unknown", "Cannot read current queue inventory: "+err.Error(), time.Time{})
 				result.Actions = append(result.Actions, "Check that postqueue -j is available and readable by the SpamGate service.")
 			} else {
-				present := false
+				queueIDPresent := 0
+				matched := 0
 				for _, h := range holds {
-					if h.QueueID == m.MTAQueueID {
-						present = true
-						break
+					if h.QueueID != m.MTAQueueID {
+						continue
+					}
+					queueIDPresent++
+					if correlatesPostfixHold(m, h) {
+						matched++
 					}
 				}
+				candidates := s.Store.PostfixHoldCandidates()[m.MTAQueueID]
+				present := queueIDPresent == 1 && matched == 1 &&
+					len(candidates) == 1 && candidates[0].ID == m.ID
 				result.PostfixHoldPresent = &present
 				if present {
-					add("Postfix hold queue", "confirmed", "The exact queue ID is present in Postfix's hold inventory now; this is not a mailbox delivery.", time.Now().UTC())
-				}
-				if !present {
+					add("Postfix hold queue", "confirmed", "A uniquely correlated Postfix HOLD entry matches this scan's complete sender, recipient and arrival evidence. Mailbox delivery is not implied.", time.Now().UTC())
+				} else if queueIDPresent > 0 {
+					add("Postfix hold queue", "unknown", "The queue ID appears in the hold inventory, but its complete envelope, arrival time or unique scan ownership is not verified. It cannot be attributed to this scan.", time.Now().UTC())
+				} else {
 					add("Postfix hold queue", "unknown", "The exact queue ID is not in the hold queue. It may have been released, deleted, delivered, or moved; logs are required.", time.Now().UTC())
 				}
 			}

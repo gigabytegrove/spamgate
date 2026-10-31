@@ -36,7 +36,7 @@ func TestInvestigationUsesEvidenceAndDoesNotClaimDelivery(t *testing.T) {
 	t.Setenv("SPAMGATE_POSTFIX_HOLD_INVENTORY", "true")
 	s := New(st, nil)
 	s.PostfixHeldInventory = func(context.Context) ([]PostfixHeld, error) {
-		return []PostfixHeld{{QueueID: "AB123", Recipients: []string{"user@example.org"}}}, nil
+		return []PostfixHeld{{QueueID: "AB123", Sender: msg.Sender, ArrivalTime: msg.Timestamp.Unix(), RecipientCount: 1, Recipients: []string{"user@example.org"}}}, nil
 	}
 	s.sessions["administrator"] = session{Identity: Identity{Name: "admin", Role: "admin", Session: true}, Expires: time.Now().Add(time.Hour)}
 	s.sessions["mailbox"] = session{Identity: Identity{Name: "mb", Role: "mailbox", Email: "user@example.org", Session: true}, Expires: time.Now().Add(time.Hour)}

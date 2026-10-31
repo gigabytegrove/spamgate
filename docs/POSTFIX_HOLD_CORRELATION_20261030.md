@@ -46,3 +46,11 @@ test fixture also lacked the new mandatory recipient count; it now models the
 actual `postqueue -j` parser output. The failing run must not be considered
 qualified; only a later exact-commit successful run establishes regression
 status.
+
+## Investigation timeline
+
+The message investigation endpoint previously marked a HOLD as confirmed when
+any queue entry shared its Postfix queue ID. It now uses the same complete
+correlation and uniqueness checks as inventory and release. An uncorrelated
+queue-ID hit is reported as unknown, not as an attributed hold or final mailbox
+receipt. Regression tests cover sender mismatch, valid match, and reused IDs.
