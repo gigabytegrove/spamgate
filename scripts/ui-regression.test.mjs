@@ -342,6 +342,7 @@ test('remote saved-history API failure is explicit and preserves recently loaded
  vm.runInContext(`
  S.section='history';S.historyResults={items:[{id:'stale',action:'reject'}],total:1};S.historyLoaded=true;
  S.messages=[{id:'recent',subject:'Retained local',action:'accept'}];
+ render=()=>{};
  api=async()=>{throw Error('database unavailable')};
  `,ctx);
  await vm.runInContext('runHistorySearch(0)',ctx);
