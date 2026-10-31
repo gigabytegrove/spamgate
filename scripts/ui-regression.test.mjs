@@ -258,3 +258,98 @@ test('updates page reports local status failure without asserting worker mode',a
  assert.match(html,/local status unavailable/);
  assert.doesNotMatch(html,/Installation is disabled because the worker was launched directly/);
 });
+
+
+test('review queue uses actual review status and does not mistake allowed mail for pending',()=>{
+ const ctx=context();
+ vm.runInContext(`
+ S.section='investigate';S.search='';S.filterAction='all';S.reviewStatus='pending';S.reviewSort='newest';
+ S.messages=[
+  {id:'a',action:'accept',subject:'Allowed mail',score:0,timestamp:'2026-10-31T10:00:00Z'},
+  {id:'b',action:'tag',subject:'Pending low',score:2,timestamp:'2026-10-31T10:01:00Z'},
+  {id:'c',action:'reject',subject:'Reviewed',review_status:'correct',score:25,timestamp:'2026-10-31T10:02:00Z'},
+  {id:'d',action:'quarantine',subject:'Pending high',score:14,timestamp:'2026-10-31T10:03:00Z'}
+ ];`,ctx);
+ const initial=vm.runInContext('investigate()',ctx);
+ assert.match(initial,/Awaiting review/);
+ assert.match(initial,/Pending low/);
+ assert.match(initial,/Pending high/);
+ assert.doesNotMatch(initial,/Allowed mail/);
+ assert.doesNotMatch(initial,/data-inspect="c"/);
+ assert.match(initial,/2 matching/);
+ vm.runInContext("S.reviewStatus='reviewed'",ctx);
+ const reviewed=vm.runInContext('investigate()',ctx);
+ assert.match(reviewed,/data-inspect="c"/);
+ assert.doesNotMatch(reviewed,/data-inspect="b"/);
+ assert.match(reviewed,/1 matching/);
+ vm.runInContext("S.reviewStatus='all'",ctx);
+ assert.equal((vm.runInContext('investigate()',ctx).match(/data-inspect=/g)||[]).length,3);
+});
+test('review search respects sender, recipient, action and review status',()=>{
+ const ctx=context();
+ vm.runInContext(`S.messages=[
+ {id:'p',action:'tag',sender:'alerts@example.org',recipients:['ops@example.org'],score:12,timestamp:'2026-10-31T15:00:00Z'},
+ {id:'q',action:'reject',sender:'news@example.org',recipients:['ops@example.org'],review_status:'correct',score:14,timestamp:'2026-10-31T16:00:00Z'},
+ {id:'r',action:'accept',sender:'alerts@example.org',recipients:['ops@example.org'],score:0}
+ ];`,ctx);
+ const ids=vm.runInContext("reviewMailRows(S.messages,'alerts','all','pending','newest').map(x=>x.id).join(',')",ctx);
+ assert.equal(ids,'p');
+ assert.equal(vm.runInContext("reviewMailRows(S.messages,'ops@example.org','reject','reviewed','newest').length",ctx),1);
+ assert.equal(vm.runInContext("reviewMailRows(S.messages,'','accept','all','newest').length",ctx),0);
+});
+test('mail sorting is stable and never mutates stored evidence',()=>{
+ const ctx=context();
+ vm.runInContext(`S.messages=[
+  {id:'a',score:1,timestamp:'2026-10-31T12:00:00Z'},
+  {id:'b',score:13,timestamp:'2026-10-31T12:03:00Z'},
+  {id:'c',score:5,timestamp:'2026-10-31T12:01:00Z'},
+  {id:'d',score:'bad',timestamp:'invalid'}
+ ];`,ctx);
+ assert.equal(vm.runInContext("sortMailRows(S.messages,'score-high').map(x=>x.id).join(',')",ctx),'b,c,a,d');
+ assert.equal(vm.runInContext("sortMailRows(S.messages,'oldest').map(x=>x.id).join(',')",ctx),'d,a,c,b');
+ assert.equal(vm.runInContext('S.messages.map(x=>x.id).join(",")',ctx),'a,b,c,d');
+});
+test('review content is escaped, review counts are limited to loaded records and empty review is useful',()=>{
+ const ctx=context();
+ vm.runInContext(`S.section='investigate';S.messages=[{id:'r',subject:'<img src=x onerror=alert(1)>',action:'tag',review_status:'correct'}];`,ctx);
+ let html=vm.runInContext('investigate()',ctx);
+ assert.match(html,/All flagged/);
+ assert.doesNotMatch(html,/<img src=x/);
+ assert.match(html,/No matching messages/);
+ assert.match(html,/All flagged messages in the loaded sample have been reviewed/);
+ vm.runInContext("S.reviewStatus='all'",ctx);
+ html=vm.runInContext('investigate()',ctx);
+ assert.match(html,/&lt;img src=x/);
+ assert.match(html,/latest 1 loaded scans/);
+});
+test('history sorting distinguishes paged remote results from loaded records',()=>{
+ const ctx=context();
+ vm.runInContext(`S.section='history';S.historyLoaded=true;S.historySort='score-high';S.messages=[
+ {id:'a',action:'accept',score:2,timestamp:'2026-10-31T12:00:00Z'},
+ {id:'b',action:'reject',score:17,timestamp:'2026-10-31T11:00:00Z'}
+ ];`,ctx);
+ let html=vm.runInContext('messageHistory()',ctx);
+ assert.match(html,/Sort loaded results/);
+ assert.ok(html.indexOf('data-inspect="b"')<html.indexOf('data-inspect="a"'));
+ vm.runInContext(`S.historyResults={total:29,items:[{id:'remote',action:'tag',score:8}]};S.historyOffset=0;`,ctx);
+ html=vm.runInContext('messageHistory()',ctx);
+ assert.match(html,/Sorting this page only/);
+ assert.match(html,/1–29 of 29|1–29 of 29|1–29 of 29|1–29/);
+ assert.match(html,/data-inspect="remote"/);
+});
+test('remote saved-history API failure is explicit and preserves recently loaded records',async()=>{
+ const ctx=context();
+ vm.runInContext(`
+ S.section='history';S.historyResults={items:[{id:'stale',action:'reject'}],total:1};S.historyLoaded=true;
+ S.messages=[{id:'recent',subject:'Retained local',action:'accept'}];
+ api=async()=>{throw Error('database unavailable')};
+ `,ctx);
+ await vm.runInContext('runHistorySearch(0)',ctx);
+ assert.equal(vm.runInContext('S.historyResults',ctx),null);
+ assert.equal(vm.runInContext('S.historySearching',ctx),false);
+ const html=vm.runInContext('messageHistory()',ctx);
+ assert.match(html,/Saved-history search failed/);
+ assert.match(html,/database unavailable/);
+ assert.match(html,/data-inspect="recent"/);
+ assert.doesNotMatch(html,/data-inspect="stale"/);
+});
