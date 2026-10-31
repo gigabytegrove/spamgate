@@ -78,7 +78,7 @@ func TestSPFNoDataAndNoIP(t *testing.T) {
 	}
 	r.txt["example.org"] = []string{"v=spf1 include:nonexistent.example.org -all"}
 	got := SPFCheck(context.Background(), r, "203.0.113.4", "test@example.org", "")
-	if got.Result != "fail" || !strings.Contains(got.Explanation, "all") {
+	if got.Result != "permerror" || !strings.Contains(got.Explanation, "no SPF policy") {
 		t.Fatal(got)
 	}
 }

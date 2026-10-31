@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -75,7 +74,7 @@ func SPFCheck(ctx context.Context, resolver SPFResolver, clientIP, sender, helo 
 		domain = helo
 	} // null reverse-path: HELO identity
 	domain = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(domain)), ".")
-	if !isSubdomain(domain) {
+	if !spfValidDomain(domain) {
 		return SPFResult{Result: "none", Domain: domain, Explanation: "No valid envelope domain available"}
 	}
 	if resolver == nil {
@@ -91,26 +90,9 @@ func SPFCheck(ctx context.Context, resolver SPFResolver, clientIP, sender, helo 
 // SPF a/mx mechanisms support different IPv4 and IPv6 prefix lengths.
 // Exact-address matching silently breaks legitimate SPF a/24 or mx/24 records.
 func spfAddressMatches(client net.IP, addresses []net.IPAddr, cidr string) (bool, error) {
-	bits4, bits6 := 32, 128
-	if cidr != "" {
-		parts := strings.Split(cidr, "/")
-		if len(parts) > 2 {
-			return false, errors.New("invalid SPF dual-CIDR")
-		}
-		if parts[0] != "" {
-			v, e := strconv.Atoi(parts[0])
-			if e != nil || v < 0 || v > 32 {
-				return false, errors.New("invalid SPF IPv4 prefix length")
-			}
-			bits4 = v
-		}
-		if len(parts) == 2 {
-			v, e := strconv.Atoi(parts[1])
-			if e != nil || v < 0 || v > 128 {
-				return false, errors.New("invalid SPF IPv6 prefix length")
-			}
-			bits6 = v
-		}
+	bits4, bits6, err := parseSPFDualCIDR(cidr)
+	if err != nil {
+		return false, err
 	}
 	for _, entry := range addresses {
 		a := entry.IP
@@ -139,6 +121,11 @@ func (e *spfEval) evaluate(ctx context.Context, ip net.IP, domain string, seen m
 	defer delete(seen, domain)
 	txts, err := e.resolver.LookupTXT(ctx, domain)
 	if err != nil {
+		if spfDNSFailure(err) == "none" {
+			if voidErr := e.countVoid(err, 0); voidErr != nil {
+				return "permerror", voidErr.Error()
+			}
+		}
 		return spfDNSFailure(err), "TXT lookup: " + err.Error()
 	}
 	if err := e.countVoid(nil, len(txts)); err != nil {
@@ -157,13 +144,16 @@ func (e *spfEval) evaluate(ctx context.Context, ip net.IP, domain string, seen m
 		return "none", "No SPF TXT record"
 	}
 	fields := strings.Fields(record)
+	if err := validateSPFRecord(fields); err != nil {
+		return "permerror", err.Error()
+	}
 	redirect := ""
 	for _, term := range fields[1:] {
-		if strings.HasPrefix(term, "redirect=") {
-			redirect = strings.TrimPrefix(term, "redirect=")
-			continue
-		}
-		if strings.HasPrefix(term, "exp=") {
+		if key, value, modifier := strings.Cut(term, "="); modifier {
+			if strings.EqualFold(key, "redirect") {
+				redirect = value
+			}
+			// RFC 7208 requires unknown modifiers to be ignored.
 			continue
 		}
 		qualifier := "pass"
@@ -190,6 +180,7 @@ func (e *spfEval) evaluate(ctx context.Context, ip net.IP, domain string, seen m
 			mask = argument[idx+1:]
 			argument = argument[:idx]
 		}
+		mechanism = strings.ToLower(mechanism)
 		match := false
 		switch mechanism {
 		case "all":
@@ -214,7 +205,7 @@ func (e *spfEval) evaluate(ctx context.Context, ip net.IP, domain string, seen m
 			}
 			match = cidr.Contains(ip)
 		case "include":
-			if !isSubdomain(argument) {
+			if !spfValidDomain(argument) {
 				return "permerror", "Invalid SPF include domain"
 			}
 			if err := e.countDNS(ctx); err != nil {
@@ -224,6 +215,8 @@ func (e *spfEval) evaluate(ctx context.Context, ip net.IP, domain string, seen m
 			switch result {
 			case "pass":
 				match = true
+			case "none":
+				return "permerror", "SPF include " + argument + " has no SPF policy"
 			case "temperror", "permerror":
 				return result, "SPF include " + argument + ": " + reason
 			}
@@ -232,7 +225,7 @@ func (e *spfEval) evaluate(ctx context.Context, ip net.IP, domain string, seen m
 			if argument != "" {
 				target = strings.ToLower(argument)
 			}
-			if !isSubdomain(target) {
+			if !spfValidDomain(target) {
 				return "permerror", "Invalid SPF DNS mechanism domain"
 			}
 			if err := e.countDNS(ctx); err != nil {
@@ -241,7 +234,13 @@ func (e *spfEval) evaluate(ctx context.Context, ip net.IP, domain string, seen m
 			if mechanism == "mx" {
 				records, err := e.resolver.LookupMX(ctx, target)
 				if err != nil {
-					return spfDNSFailure(err), "SPF MX lookup: " + err.Error()
+					if spfDNSFailure(err) == "temperror" {
+						return "temperror", "SPF MX lookup: " + err.Error()
+					}
+					if voidErr := e.countVoid(err, 0); voidErr != nil {
+						return "permerror", voidErr.Error()
+					}
+					continue
 				}
 				if err := e.countVoid(nil, len(records)); err != nil {
 					return "permerror", err.Error()
@@ -257,6 +256,9 @@ func (e *spfEval) evaluate(ctx context.Context, ip net.IP, domain string, seen m
 					if err != nil {
 						if spfDNSFailure(err) == "temperror" {
 							return "temperror", err.Error()
+						}
+						if voidErr := e.countVoid(err, 0); voidErr != nil {
+							return "permerror", voidErr.Error()
 						}
 						continue
 					}
@@ -286,7 +288,13 @@ func (e *spfEval) evaluate(ctx context.Context, ip net.IP, domain string, seen m
 					return "permerror", err.Error()
 				}
 				if mechanism == "exists" {
-					match = len(ips) > 0
+					// RFC 7208 section 5.7: exists queries the A RRset only.
+					for _, addr := range ips {
+						if addr.IP.To4() != nil {
+							match = true
+							break
+						}
+					}
 				} else {
 					hit, e := spfAddressMatches(ip, ips, mask)
 					if e != nil {
@@ -305,13 +313,17 @@ func (e *spfEval) evaluate(ctx context.Context, ip net.IP, domain string, seen m
 		}
 	}
 	if redirect != "" {
-		if !isSubdomain(redirect) {
+		if !spfValidDomain(redirect) {
 			return "permerror", "Invalid SPF redirect"
 		}
 		if err := e.countDNS(ctx); err != nil {
 			return "permerror", err.Error()
 		}
-		return e.evaluate(ctx, ip, strings.ToLower(redirect), seen)
+		result, detail := e.evaluate(ctx, ip, strings.ToLower(redirect), seen)
+		if result == "none" {
+			return "permerror", "SPF redirect target has no SPF policy"
+		}
+		return result, detail
 	}
 	return "neutral", "No SPF mechanism matched"
 }
