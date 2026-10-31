@@ -125,8 +125,22 @@ func writeMilterFrame(w io.Writer, command byte, data []byte) error {
 	binary.BigEndian.PutUint32(out[:4], uint32(1+len(data)))
 	out[4] = command
 	copy(out[5:], data)
-	_, err := w.Write(out)
-	return err
+	// Short writes are legal for io.Writer; a partial Milter response
+	// must never be mistaken for a successfully transmitted frame.
+	for len(out) > 0 {
+		n, err := w.Write(out)
+		if n < 0 || n > len(out) {
+			return io.ErrShortWrite
+		}
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrShortWrite
+		}
+		out = out[n:]
+	}
+	return nil
 }
 func firstMilterString(b []byte) string {
 	if p := bytes.IndexByte(b, 0); p >= 0 {
@@ -153,14 +167,23 @@ func milterAddress(b []byte) string {
 // Parse a trusted MTA-supplied queue ID from the Sendmail Milter macro packet.
 // Macro keys are NUL-delimited, preceded by one callback-stage byte.
 func milterQueueID(data []byte) string {
-	if len(data) < 3 {
+	// Require a stage byte and complete NUL-terminated name/value pairs.
+	// Incomplete or ambiguous MTA queue evidence must never be trusted.
+	if len(data) < 4 || data[len(data)-1] != 0 {
 		return ""
 	}
-	parts := bytes.Split(data[1:], []byte{0})
-	for i := 0; i+1 < len(parts); i += 2 {
+	parts := bytes.Split(data[1:len(data)-1], []byte{0})
+	if len(parts)%2 != 0 {
+		return ""
+	}
+	var id string
+	for i := 0; i < len(parts); i += 2 {
 		name := strings.Trim(string(parts[i]), "{}")
 		if name != "i" {
 			continue
+		}
+		if id != "" {
+			return "" // duplicate queue ID macro is ambiguous
 		}
 		value := string(parts[i+1])
 		if len(value) < 1 || len(value) > 32 {
@@ -171,13 +194,13 @@ func milterQueueID(data []byte) string {
 				return ""
 			}
 		}
-		return value
+		id = value
 	}
-	return ""
+	return id
 }
 func milterHeader(data []byte) ([]byte, error) {
 	fields := bytes.SplitN(data, []byte{0}, 3)
-	if len(fields) != 3 || len(fields[0]) == 0 || bytes.ContainsAny(fields[0], "\r\n:") {
+	if len(fields) != 3 || len(fields[2]) != 0 || len(fields[0]) == 0 || bytes.ContainsAny(fields[0], "\r\n:") {
 		return nil, errors.New("invalid milter header name")
 	}
 	for _, c := range fields[0] {
