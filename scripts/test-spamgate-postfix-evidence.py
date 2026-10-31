@@ -48,6 +48,23 @@ class EvidenceTests(unittest.TestCase):
         self.assertNotIn("delivered", json.dumps(evidence))
         self.assertTrue(evidence["entries"][0]["queue_removed"])
 
+    def test_discard_transport_is_not_delivery(self):
+        self.log.write_text(f"postfix/cleanup[123]: A1B2C3: message-id=<{RID1}@spamgate-qualification.invalid>\n"
+                            f"postfix/discard[124]: A1B2C3: to=<{RECIPIENT}>, status=sent (discarded)\n"
+                            "postfix/qmgr[125]: A1B2C3: removed\n")
+        result = self.call()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        evidence = json.loads(self.output.read_text())
+        self.assertFalse(evidence["complete_transport_correlation"])
+        self.assertEqual(evidence["entries"][0]["state"], "discard_or_error_transport")
+
+    def test_evidence_is_recipient_bound(self):
+        self.log.write_text(f"postfix/cleanup[123]: A1B2C3: message-id=<{RID1}@spamgate-qualification.invalid>\n"
+                            f"postfix/lmtp[124]: A1B2C3: to=<{RECIPIENT}>, status=sent\n"
+                            "postfix/qmgr[125]: A1B2C3: removed\n")
+        self.assertEqual(self.call().returncode, 0)
+        self.assertEqual(json.loads(self.output.read_text())["recipient"], RECIPIENT)
+
     def test_missing_cleanup_is_not_inferred_from_status(self):
         self.log.write_text(f"postfix/lmtp[124]: A1B2C3: to=<{RECIPIENT}>, status=sent\n")
         self.assertEqual(self.call().returncode, 3)
