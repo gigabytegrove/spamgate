@@ -221,3 +221,40 @@ test('recipient policy UI explains uniform multi-mailbox overrides and explicit 
  assert.match(html,/1 uniform multi-mailbox overrides/);
  assert.match(html,/1 multi-recipient conflicts using global thresholds/);
 });
+
+test('updates page never falsely claims a directly launched worker before local status loads',async()=>{
+ const ctx=context();
+ vm.runInContext("S.section='updates';S.updateInfo=null;S.updateReleaseChecked=false;",ctx);
+ const initial=vm.runInContext('updatesPage()',ctx);
+ assert.match(initial,/Checking local supervisor/);
+ assert.doesNotMatch(initial,/Installation is disabled because the worker was launched directly/);
+ assert.match(initial,/Release lookup has not been run/);
+ vm.runInContext(`
+  render=()=>{};
+  api=async(path)=>{
+   if(path==='/api/v1/update/status')return {current:'0.6.0-beta.1',install_mode:'supervised',install_path:'/opt/spamgate/spamgate-worker',staged:false};
+   throw Error('Unexpected external request: '+path);
+  };
+ `,ctx);
+ await vm.runInContext('loadLocalUpdateStatus()',ctx);
+ const ready=vm.runInContext('updatesPage()',ctx);
+ assert.match(ready,/Supervisor detected/);
+ assert.match(ready,/\/opt\/spamgate\/spamgate-worker/);
+ assert.doesNotMatch(ready,/No supervising parent detected/);
+ assert.doesNotMatch(ready,/Installation is disabled because the worker was launched directly/);
+ assert.match(ready,/Release lookup has not been run/);
+});
+
+test('updates page reports local status failure without asserting worker mode',async()=>{
+ const ctx=context();
+ vm.runInContext(`
+  S.section='updates';S.updateInfo=null;S.updateReleaseChecked=false;
+  render=()=>{};
+  api=async()=>{throw Error('local status unavailable')};
+ `,ctx);
+ await vm.runInContext('loadLocalUpdateStatus()',ctx);
+ const html=vm.runInContext('updatesPage()',ctx);
+ assert.match(html,/Local supervisor check failed/);
+ assert.match(html,/local status unavailable/);
+ assert.doesNotMatch(html,/Installation is disabled because the worker was launched directly/);
+});
