@@ -46,7 +46,7 @@ esac
 set -eu
 [[ "$(cat "$FAKE_STATE")" == active ]] || exit 7
 V="$("$FAKE_ROOT/spamgate-worker" -version)"
-if [[ "\${FAKE_FAIL_HEALTH:-0}" == 1 && "$V" == 0.6.0-beta.2 ]]; then exit 7; fi
+if [[ "${FAKE_FAIL_HEALTH:-0}" == 1 && "$V" == 0.6.0-beta.2 ]]; then exit 7; fi
 printf '{"status":"ok","version":"%s"}\\n' "$V"
 ''')
         self.write_shim('ss', '''#!/bin/sh
