@@ -45,6 +45,8 @@ jobs:
           bash -n scripts/migrate-native-launcher.sh
           bash scripts/test-migrate-native-launcher.sh
           bash scripts/test-supervised-updates.sh
+          bash -n scripts/install-postfix-release-helper.sh scripts/test-install-postfix-release-helper.sh
+          bash scripts/test-install-postfix-release-helper.sh
       - name: Compile native Linux and Windows programs
         env:
           CGO_ENABLED: '0'
@@ -54,6 +56,7 @@ jobs:
           GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o dist/spamgate-worker-linux-amd64 ./cmd/spamgate
           GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o dist/spamgate-launcher-linux-amd64 ./cmd/spamgate-run
           GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o dist/spamgate-eval-linux-amd64 ./cmd/spamgate-eval
+          GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o dist/spamgate-postfix-release-linux-amd64 ./cmd/spamgate-postfix-release
           GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o dist/spamgate-spool-audit-linux-amd64 ./cmd/spamgate-spool-audit
           GOOS=windows GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w -H=windowsgui' -o dist/spamgate-windows-amd64.exe ./cmd/spamgate
           # Exercise the compiled native evaluator, not only go test fixtures.
@@ -61,7 +64,8 @@ jobs:
           printf '%s\n' '{"label":"ham","action":"accept","cohort":"direct"}' '{"label":"spam","action":"reject","cohort":"direct"}' '{"label":"ham","action":"accept","cohort":"forwarded"}' '{"label":"spam","action":"reject","cohort":"forwarded"}' > "$EVAL_TEST_DIR/labels.jsonl"
           dist/spamgate-eval-linux-amd64 --require-cohorts --min-ham=1 --min-spam=1 --max-fpr-upper=1 --min-recall-lower=0 --min-cohort-ham=1 --min-cohort-spam=1 --max-cohort-fpr-upper=1 --min-cohort-recall-lower=0 "$EVAL_TEST_DIR/labels.jsonl" | grep -q '"cohort_gate_passed":true'
           rm -rf "$EVAL_TEST_DIR"
-          chmod 0755 dist/spamgate-worker-linux-amd64 dist/spamgate-launcher-linux-amd64 dist/spamgate-spool-audit-linux-amd64
+          chmod 0755 dist/spamgate-worker-linux-amd64 dist/spamgate-launcher-linux-amd64 dist/spamgate-spool-audit-linux-amd64 dist/spamgate-postfix-release-linux-amd64
+          if dist/spamgate-postfix-release-linux-amd64 ALL > /dev/null 2>&1; then echo 'Privileged helper accepted unsafe invocation' >&2; exit 1; fi
           AUDIT_TEST_DIR="$(mktemp -d)"
           mkdir -m 0700 "$AUDIT_TEST_DIR/queue"
           dist/spamgate-spool-audit-linux-amd64 -dir "$AUDIT_TEST_DIR/queue" -json | grep -q '"published": 0'

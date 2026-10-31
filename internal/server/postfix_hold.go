@@ -148,22 +148,29 @@ func (s *Server) postfixHoldQueue(w http.ResponseWriter, r *http.Request) {
 // race between checking queue ownership and releasing a held original.
 var postfixHoldOperationMutex sync.Mutex
 
-// runPostfixRelease only executes a fixed argument vector; it never invokes a
-// shell, interprets operator-controlled command strings or accepts wildcards.
-// A non-root native deployment needs a deliberately installed, narrow sudoers
-// grant for /usr/sbin/postsuper -H; absent that grant it fails closed.
+// postfixReleaseCommand never grants the worker broad sudo access to
+// postsuper. A non-root native worker must invoke the explicitly installed,
+// root-owned narrow helper. No fallback to sudo postsuper is permitted.
+func postfixReleaseCommand(euid int, queueID string) (string, []string, error) {
+	if !validPostfixEvidenceID(queueID) || strings.EqualFold(queueID, "ALL") {
+		return "", nil, errors.New("unsafe Postfix queue identifier")
+	}
+	if euid == 0 {
+		return "/usr/sbin/postsuper", []string{"-H", queueID}, nil
+	}
+	return "/usr/bin/sudo", []string{"-n", "--", "/usr/local/libexec/spamgate/postfix-hold-release", queueID}, nil
+}
+
+// runPostfixRelease only executes fixed absolute paths and arguments. The
+// privileged helper independently validates the queue ID before invoking
+// Postfix. Command success does not prove downstream delivery.
 func runPostfixRelease(ctx context.Context, queueID string) (string, error) {
-	if !validPostfixEvidenceID(queueID) {
-		return "", errors.New("unsafe Postfix queue identifier")
+	name, args, err := postfixReleaseCommand(os.Geteuid(), queueID)
+	if err != nil {
+		return "", err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	name := "/usr/sbin/postsuper"
-	args := []string{"-H", queueID}
-	if os.Geteuid() != 0 {
-		name = "/usr/bin/sudo"
-		args = []string{"-n", "/usr/sbin/postsuper", "-H", queueID}
-	}
 	cmd := exec.CommandContext(ctx, name, args...)
 	var output, errOutput queueLimit
 	output.max = 8 << 10
