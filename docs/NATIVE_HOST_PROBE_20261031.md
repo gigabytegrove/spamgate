@@ -46,3 +46,18 @@ python3 -m unittest discover -s scripts -p 'test-spamgate-host-probe.py' -v
 ```
 
 The engineering GitHub Actions workflow runs this suite and asserts that the default invocation never attempts SMTP.
+
+
+## Isolated SMTP wire regression (new)
+
+`scripts/test-spamgate-host-probe-smtp.py` runs a temporary SMTP server bound to `127.0.0.1` with an ephemeral port. It drives the **actual Python probe process** over a socket, testing SMTP acceptance, RCPT refusal, DATA refusal, and explicitly opted-in synthetic marker transport. It verifies the message carries the correlation ID and that SMTP failures are not reported as successes.
+
+Run both safety and SMTP wire regressions:
+
+```bash
+python3 -m unittest discover -s scripts -p 'test-spamgate-host-probe*.py' -v
+```
+
+This lab deliberately does not invoke Postfix, Dovecot, or the SpamGate classifier. It validates the probe itself before that probe is used for real-host tests. The GitHub engineering workflow now runs both test files.
+
+**Acceptance evidence boundary:** A passing wire regression means the test harness can safely submit and classify SMTP transport outcomes against a fake MTA. It does not establish real spam detection, real mailbox delivery, or native beta readiness.
