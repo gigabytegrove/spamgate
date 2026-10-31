@@ -212,6 +212,7 @@ func (s *Server) Router() http.Handler {
 	m.HandleFunc("GET /assets/app.js", assetJS)
 	m.HandleFunc("GET /assets/{name}", assetImage)
 	m.HandleFunc("GET /api/v1/status", s.status)
+	m.HandleFunc("GET /api/v1/update/status", s.localUpdateStatus)
 	m.HandleFunc("GET /api/v1/update", s.checkUpdate)
 	m.HandleFunc("POST /api/v1/update/stage", s.stageUpdate)
 	m.HandleFunc("POST /api/v1/update/install", s.installUpdate)
