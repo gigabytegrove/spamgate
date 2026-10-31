@@ -131,7 +131,7 @@ if [[ "$OLD_SHA256" == "$EXPECTED_SHA256" ]]; then
   exit 0
 fi
 
-BACKUP="$ROOT/spamgate-worker.before-\${EXPECTED_VERSION}.$(date -u +%Y%m%dT%H%M%SZ).$$"
+BACKUP="$ROOT/spamgate-worker.before-${EXPECTED_VERSION}.$(date -u +%Y%m%dT%H%M%SZ).$$"
 [[ ! -e "$BACKUP" ]] || { echo 'Backup path already exists.' >&2; exit 1; }
 cp -p -- "$WORKER" "$BACKUP"
 [[ -s "$BACKUP" && "$(sha256sum "$BACKUP" | cut -d ' ' -f 1)" == "$OLD_SHA256" ]] || {
