@@ -78,4 +78,8 @@ test "$("$OUT/spamgate-launcher-linux-amd64" -version)" = "$VERSION"
 cmp -s "$OUT/spamgate-worker-linux-amd64" "$OUT/spamgate-linux-amd64"
 (cd "$OUT" && sha256sum spamgate-linux-amd64 spamgate-worker-linux-amd64 spamgate-launcher-linux-amd64 spamgate-windows-amd64.exe > SHA256SUMS.txt && sha256sum -c SHA256SUMS.txt)
 for asset in spamgate-linux-amd64 spamgate-worker-linux-amd64 spamgate-launcher-linux-amd64 spamgate-windows-amd64.exe SHA256SUMS.txt; do test -s "$OUT/$asset" || exit 1; done
+# Validate the actual release bytes, not just successful compilation.
+# The fault-injection suite must reject a substituted launcher, missing asset,
+# corrupted worker, manifest injection, wrong version and symlinked executable.
+bash "$ROOT/scripts/test-native-release-assets.sh" "$OUT" "$VERSION"
 printf 'All release gates passed. Exact assets at %s\n' "$OUT"
