@@ -474,9 +474,9 @@ test('bulk review records per-scan audits and reports partial server failures',a
   {id:'allowed',action:'accept',subject:'Not eligible'}
  ];
  render=()=>{};
- received=[];
+ S.bulkTestReceived=[];
  api=async(path,options)=>{
-  received.push({path,options});
+  S.bulkTestReceived.push({path,options});
   if(path.includes('/fails/'))throw Error('journal unavailable');
   return {message:{id:'ok',action:'tag',review_status:'correct'}};
  };
@@ -484,12 +484,12 @@ test('bulk review records per-scan audits and reports partial server failures',a
  const result=await vm.runInContext('submitBulkReviewCorrect()',ctx);
  assert.equal(result.successful.length,1);
  assert.equal(result.failures.length,1);
- assert.equal(vm.runInContext('received.length',ctx),2);
+ assert.equal(vm.runInContext('S.bulkTestReceived.length',ctx),2);
  assert.equal(vm.runInContext('S.messages.find(x=>x.id==="ok").review_status',ctx),'correct');
  assert.equal(vm.runInContext('S.reviewSelected.join(",")',ctx),'fails');
  assert.equal(vm.runInContext('S.bulkReviewErrors[0].error',ctx),'journal unavailable');
  assert.equal(vm.runInContext('S.bulkReviewBusy',ctx),false);
- const calls=vm.runInContext('received.map(x=>x.options.json.decision+":"+x.options.json.adjust_sender).join(",")',ctx);
+ const calls=vm.runInContext('S.bulkTestReceived.map(x=>x.options.json.decision+":"+x.options.json.adjust_sender).join(",")',ctx);
  assert.equal(calls,'correct:false,correct:false');
 });
 
@@ -499,12 +499,12 @@ test('bulk review bounds each execution to 25 distinct eligible messages',async(
  S.section='investigate';S.messages=Array.from({length:30},(_,i)=>({id:'scan-'+i,action:'tag'}));
  S.reviewSelected=S.messages.map(m=>m.id);
  render=()=>{};
- count=0;
- api=async(path,options)=>{count++;const id=path.split('/')[4];return {message:{id,action:'tag',review_status:'correct'}}};
+ S.bulkTestCount=0;
+ api=async(path,options)=>{S.bulkTestCount++;const id=path.split('/')[4];return {message:{id,action:'tag',review_status:'correct'}}};
  `,ctx);
  const result=await vm.runInContext('submitBulkReviewCorrect()',ctx);
  assert.equal(result.successful.length,25);
  assert.equal(result.failures.length,0);
- assert.equal(vm.runInContext('count',ctx),25);
+ assert.equal(vm.runInContext('S.bulkTestCount',ctx),25);
  assert.equal(vm.runInContext('S.messages.filter(x=>!x.review_status).length',ctx),5);
 });
