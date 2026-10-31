@@ -13,6 +13,7 @@ import stat
 import sys
 
 from spamgate_log_reader import bounded_log_lines
+from spamgate_postfix_integrity import LogChronology
 
 MAX_CASES = 1000
 MAX_LOGS = 16
@@ -95,7 +96,7 @@ def log_lines(path):
     yield from bounded_log_lines(path)
 
 
-def correlate(report, paths, recipient):
+def correlate(report, paths, recipient, chronology=None):
     attempts = accepted_runs(report)
     runs = {row["run_id"]: row for row in attempts.values()}
     queue_to_run = {}
@@ -105,12 +106,16 @@ def correlate(report, paths, recipient):
     duplicate = set()
     for path in paths:
         for line in log_lines(path):
+            if chronology is not None:
+                chronology.observe(line)
             cleanup = CLEANUP.search(line)
             if cleanup:
                 queue_id, rid = cleanup.group(1), cleanup.group(2).lower()
                 if rid in entries:
                     previous = entries[rid]["queue_id"]
-                    if previous is not None and previous != queue_id:
+                    if previous is not None:
+                        # Repeated cleanup identities can be rotation overlap or
+                        # a queue lifecycle replay; neither qualifies as unique.
                         duplicate.add(rid)
                     other = queue_to_run.get(queue_id)
                     if other is not None and other != rid:
@@ -129,6 +134,8 @@ def correlate(report, paths, recipient):
                 transport, queue_id, address, status = event.groups()
                 rid = queue_to_run.get(queue_id)
                 if rid is not None and address == recipient:
+                    if entries[rid]["queue_removed"]:
+                        duplicate.add(rid)
                     item = {"transport": transport.lower(), "status": status.lower()}
                     if item["transport"] in ("discard", "error"):
                         entries[rid]["discarded"] = True
@@ -139,11 +146,17 @@ def correlate(report, paths, recipient):
                 continue
             removed = REMOVED.search(line)
             if removed and removed.group(1) in queue_to_run:
-                entries[queue_to_run[removed.group(1)]]["queue_removed"] = True
+                rid = queue_to_run[removed.group(1)]
+                if entries[rid]["queue_removed"]:
+                    duplicate.add(rid)
+                entries[rid]["queue_removed"] = True
                 continue
             hold = HOLD.search(line)
             if hold and hold.group(1) in queue_to_run:
-                entries[queue_to_run[hold.group(1)]]["held"] = True
+                rid = queue_to_run[hold.group(1)]
+                if entries[rid]["queue_removed"]:
+                    duplicate.add(rid)
+                entries[rid]["held"] = True
     for rid, entry in entries.items():
         statuses = {event["status"] for event in entry["transport_events"]}
         if rid in duplicate:
@@ -207,16 +220,19 @@ def main(argv=None):
             raise ValueError("recipient confirmation mismatch or invalid address")
         if len(set(args.postfix_log)) != len(args.postfix_log):
             raise ValueError("duplicate log path")
-        entries = correlate(args.report, args.postfix_log, args.recipient)
+        chronology = LogChronology()
+        entries = correlate(args.report, args.postfix_log, args.recipient, chronology)
         states = {}
         for entry in entries:
             states[entry["state"]] = states.get(entry["state"], 0) + 1
         complete = all(entry["state"] == "transport_sent_not_mailbox_verified" for entry in entries)
         result = {"schema": 1, "type": "postfix_transport_evidence_only", "recipient": args.recipient, "complete_transport_correlation": complete,
                   "counts": states, "entries": entries,
+                  "log_chronology": chronology.summary(),
                   "limitations": ["Postfix status=sent does not prove Dovecot INBOX/Junk placement",
                                   "No SpamGate classifier verdicts are inferred",
-                                  "Input logs and mailbox identity are operator supplied, not cryptographically authenticated"]}
+                                  "Input logs and mailbox identity are operator supplied, not cryptographically authenticated",
+                                  "Missing or mixed-format log timestamps do not establish chronological provenance"]}
         publish(args.output, result)
         print(json.dumps({"output": args.output, "cases": len(entries), "complete_transport_correlation": complete, "counts": states}))
         return 0 if complete else 3
