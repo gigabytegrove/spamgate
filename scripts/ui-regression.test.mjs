@@ -354,3 +354,47 @@ test('remote saved-history API failure is explicit and preserves recently loaded
  assert.match(html,/data-inspect="recent"/);
  assert.doesNotMatch(html,/data-inspect="stale"/);
 });
+
+
+test('held-mail view separates saved originals from verified Postfix queue holds',()=>{
+ const ctx=context();
+ vm.runInContext(`S.section='quarantine';S.messages=[{id:'saved',delivery:'quarantined',subject:'Held original',action:'quarantine'}];
+ S.postfixHold={enabled:true,detail:'Read-only Postfix queue.',messages:[
+  {queue_id:'Q123',spamgate_scan_id:'linked-scan',sender:'sender@example.net',recipients:['alice@example.org']},
+  {queue_id:'Q999',sender:'other@example.net',recipients:['bob@example.org']}
+ ]};`,ctx);
+ const html=vm.runInContext('quarantine()',ctx);
+ assert.match(html,/Held original/);
+ assert.match(html,/Queue Q123/);
+ assert.match(html,/data-inspect="linked-scan"/);
+ assert.match(html,/aria-label="Investigate correlated Postfix hold Q123"/);
+ assert.match(html,/Queue Q999/);
+ assert.match(html,/No verified SpamGate scan correlation/);
+ assert.doesNotMatch(html,/data-inspect="Q999"/);
+ assert.match(html,/released only after confirmation/);
+});
+test('hold inventory never interprets disabled inspection as an empty queue',()=>{
+ const ctx=context();
+ vm.runInContext("S.section='quarantine';S.postfixHold={enabled:false,messages:[],detail:'disabled'}",ctx);
+ const html=vm.runInContext('quarantine()',ctx);
+ assert.match(html,/Postfix hold inspection is disabled/);
+ assert.doesNotMatch(html,/No Postfix holds reported/);
+});
+test('Postfix hold inventory errors and untrusted envelope data are escaped',()=>{
+ const ctx=context();
+ vm.runInContext(`S.section='quarantine';S.postfixHoldError='<img src=x onerror=alert(1)>';S.postfixHold=null;`,ctx);
+ let html=vm.runInContext('quarantine()',ctx);
+ assert.match(html,/Postfix inventory unavailable/);
+ assert.match(html,/&lt;img src=x/);
+ assert.doesNotMatch(html,/<img src=x/);
+ vm.runInContext(`S.postfixHoldError=null;S.postfixHold={enabled:true,messages:[{
+  queue_id:'Q123"><script>alert(1)</script>',spamgate_scan_id:'scan1',
+  sender:'<img src=x onerror=alert(2)>',recipients:['<iframe src=x>'],recipients_truncated:true
+ }]};`,ctx);
+ html=vm.runInContext('quarantine()',ctx);
+ assert.match(html,/Recipient list was truncated/);
+ assert.match(html,/&lt;iframe src=x&gt;/);
+ assert.match(html,/&lt;script&gt;/);
+ assert.doesNotMatch(html,/<iframe src=x>/);
+ assert.doesNotMatch(html,/<script>alert/);
+});
