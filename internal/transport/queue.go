@@ -434,6 +434,14 @@ func retryDelay(attempt int) time.Duration {
 func (q *DeliveryQueue) ProcessDue(ctx context.Context) error {
 	q.workerMu.Lock()
 	defer q.workerMu.Unlock()
+	// The in-memory mutex only protects this queue instance. An independent
+	// native worker using the same data root must not start a second relay
+	// pass while the first worker is between spool transitions and SMTP 250.
+	unlock, lockErr := acquireDeliveryWorkerLock(ctx, q.dir)
+	if lockErr != nil {
+		return lockErr
+	}
+	defer unlock()
 	q.mu.Lock()
 	info, e := q.snapshotLocked()
 	q.mu.Unlock()
@@ -603,7 +611,7 @@ func (q *DeliveryQueue) Run(ctx context.Context) {
 	timer := time.NewTicker(15 * time.Second)
 	defer timer.Stop()
 	for {
-		if err := q.ProcessDue(ctx); err != nil && ctx.Err() == nil {
+		if err := q.ProcessDue(ctx); err != nil && ctx.Err() == nil && !errors.Is(err, ErrDeliveryWorkerBusy) {
 			fmt.Fprintf(os.Stderr, "SpamGate delivery queue: %v\n", err)
 		}
 		select {
