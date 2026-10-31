@@ -144,6 +144,9 @@ def run_send(args, cases):
         run_id = uuid.uuid4().hex
         prepared.append((case, run_id, make_message(case, args.recipient, run_id)))
     with exclusive_output(args.output) as output:
+        # A durable plan prevents a partial accepted prefix from being
+        # mistaken for a complete qualification corpus after a crash.
+        record(output, {"event": "plan", "cases": len(prepared)})
         try:
             with smtplib.SMTP(args.host, args.port, timeout=args.timeout, local_hostname="spamgate-qualification.invalid") as smtp:
                 smtp.ehlo_or_helo_if_needed()
@@ -172,7 +175,11 @@ def run_send(args, cases):
 
 
 def reconcile(args):
-    events = load_jsonl(args.report, 2 * MAX_CASES)
+    events = load_jsonl(args.report, 2 * MAX_CASES + 1)
+    if not events or set(events[0]) != {"event", "cases"} or events[0]["event"] != "plan" or type(events[0]["cases"]) is not int or not 1 <= events[0]["cases"] <= MAX_CASES:
+        raise ValueError("missing or invalid durable batch plan")
+    planned_count = events[0]["cases"]
+    events = events[1:]
     observed = load_jsonl(args.observations, MAX_CASES)
     attempts, accepted, failed = {}, set(), set()
     for row in events:
@@ -193,7 +200,7 @@ def reconcile(args):
             (accepted if event == "smtp_accepted" else failed).add(cid)
         else:
             raise ValueError("invalid report event")
-    if not attempts or len(accepted) != len(attempts) or failed:
+    if len(attempts) != planned_count or len(accepted) != planned_count or failed:
         raise ValueError("incomplete or failed SMTP intake: no classifier qualification")
     observations = {}
     for row in observed:
