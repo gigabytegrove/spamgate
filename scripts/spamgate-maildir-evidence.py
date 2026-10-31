@@ -64,6 +64,28 @@ def read_evidence(path, recipient):
     return entries
 
 
+def read_expectations(path, entries):
+    with os.fdopen(regular_fd(path, MAX_REPORT), "rb") as handle:
+        raw = handle.read(MAX_REPORT + 1)
+    if len(raw) > MAX_REPORT:
+        raise ValueError("placement expectations exceed limit")
+    expected = {}
+    for number, line in enumerate(raw.splitlines(), 1):
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if (not isinstance(row, dict) or set(row) != {"case_id", "folder"}
+                or not isinstance(row["case_id"], str) or row["folder"] not in ("INBOX", "Junk")
+                or row["case_id"] in expected):
+            raise ValueError(f"invalid placement expectation line {number}")
+        expected[row["case_id"]] = row["folder"]
+        if len(expected) > MAX_CASES:
+            raise ValueError("too many placement expectations")
+    if set(expected) != {row["case_id"] for row in entries}:
+        raise ValueError("placement expectations must match all cases exactly")
+    return expected
+
+
 def directory(path):
     info = os.lstat(path)
     if not stat.S_ISDIR(info.st_mode):
@@ -149,6 +171,7 @@ def run(args):
     junk = pathlib.Path(args.junk_maildir)
     if inbox.resolve() == junk.resolve():
         raise ValueError("INBOX and Junk must be distinct Maildirs")
+    expected = read_expectations(args.expected_placement, entries) if args.expected_placement else None
     hits = {row["run_id"]: [] for row in entries}
     limit = [0]
     scan_maildir(inbox, "INBOX", hits, limit)
@@ -162,9 +185,18 @@ def run(args):
         counts[state] += 1
         result.append({"case_id": row["case_id"], "run_id": row["run_id"],
                        "queue_id": row["queue_id"], "state": state, "locations": locations})
-    complete = counts["missing"] == 0 and counts["duplicate"] == 0
+    mismatched = 0
+    if expected is not None:
+        for row in result:
+            row["expected_folder"] = expected[row["case_id"]]
+            row["placement_matches"] = (row["state"] in ("inbox", "junk")
+                                        and row["locations"][0]["folder"] == row["expected_folder"])
+            if not row["placement_matches"]:
+                mismatched += 1
+    complete = counts["missing"] == 0 and counts["duplicate"] == 0 and mismatched == 0
     publish(args.output, {"schema": 1, "type": "maildir_file_placement_only", "recipient": args.recipient,
-                          "complete_maildir_correlation": complete, "counts": counts,
+                          "complete_maildir_correlation": complete, "placement_expectations_checked": expected is not None,
+                          "placement_mismatches": mismatched, "counts": counts,
                           "scanned_entries": limit[0], "entries": result,
                           "limitations": ["Only operator-selected Maildir/new and cur paths were inspected",
                                           "Maildir placement does not independently prove Dovecot IMAP visibility",
@@ -180,6 +212,7 @@ def main(argv=None):
     parser.add_argument("--junk-maildir", required=True)
     parser.add_argument("--recipient", required=True)
     parser.add_argument("--confirm-recipient", required=True)
+    parser.add_argument("--expected-placement", help="optional JSONL case_id/folder expected INBOX or Junk")
     parser.add_argument("--output", required=True)
     args = parser.parse_args(argv)
     try:
