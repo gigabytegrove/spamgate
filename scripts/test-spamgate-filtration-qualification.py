@@ -167,9 +167,9 @@ class QualificationTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 events = [json.loads(x) for x in report.read_text().splitlines()]
                 events[0]['cases'] = 2  # interrupted before second attempt
-                report.write_text('\\n'.join(json.dumps(x) for x in events) + '\\n')
+                report.write_text('\n'.join(json.dumps(x) for x in events) + '\n')
                 observed = self.root / 'observed.jsonl'
-                observed.write_text(json.dumps({'run_id': events[1]['run_id'], 'action': 'accept'}) + '\\n')
+                observed.write_text(json.dumps({'run_id': events[1]['run_id'], 'action': 'accept'}) + '\n')
                 labels = self.root / 'labels.jsonl'
                 reconciled = self.call('reconcile', '--report', str(report), '--observations', str(observed), '--labels-out', str(labels))
                 self.assertEqual(reconciled.returncode, 2)
@@ -187,7 +187,7 @@ class QualificationTests(unittest.TestCase):
                 self.assertEqual(self.send(server.server_address[1], report).returncode, 0)
                 events = [json.loads(x) for x in report.read_text().splitlines()]
                 observed = self.root / 'observed.jsonl'
-                observed.write_text(json.dumps({'run_id': events[1]['run_id'], 'action': 'accept'}) + '\\n' + json.dumps({'run_id': 'unknown', 'action': 'reject'}) + '\\n')
+                observed.write_text(json.dumps({'run_id': events[1]['run_id'], 'action': 'accept'}) + '\n' + json.dumps({'run_id': 'unknown', 'action': 'reject'}) + '\n')
                 labels = self.root / 'labels.jsonl'
                 self.assertEqual(self.call('reconcile', '--report', str(report), '--observations', str(observed), '--labels-out', str(labels)).returncode, 2)
                 self.assertFalse(labels.exists())
