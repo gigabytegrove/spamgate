@@ -7,6 +7,20 @@ import (
 	"os"
 )
 
+// localUpdateStatus reports installed-worker and supervisor readiness without
+// contacting GitHub. Opening the Updates page must never imply an absent
+// supervisor merely because no release check has been requested.
+func (s *Server) localUpdateStatus(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.authorized(w, r, true, false); !ok {
+		return
+	}
+	status := updater.Status{Current: core.Version}
+	if _, _, err := updater.Pending(s.Store.DataDir()); err == nil {
+		status.Staged = true
+	}
+	jsonReply(w, http.StatusOK, s.annotateUpdateStatus(status))
+}
+
 func (s *Server) checkUpdate(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.authorized(w, r, true, false); !ok {
 		return
