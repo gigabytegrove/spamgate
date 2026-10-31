@@ -131,3 +131,71 @@ a{color:#164bbf}a:hover{color:#12399c}
   .dg-kpis>div:last-child { border-bottom:0; }
   .sg-main :where(input,select,textarea) { max-width:100%; }
 }
+
+/* 1.0 review workflow: compact filtering controls, clear queue state, no card stack. */
+.ops-review-controls {
+ display:flex;
+ flex-wrap:wrap;
+ align-items:end;
+ gap:12px 18px;
+ padding:15px 20px 12px;
+ background:#fff;
+ border-bottom:1px solid #dfe5ef;
+}
+.ops-review-controls label,
+.task-history-tools label {
+ display:flex;
+ flex-direction:column;
+ align-items:flex-start;
+ gap:6px;
+ font-size:13px;
+ font-weight:700;
+ color:#24344e;
+}
+.ops-review-controls select,
+.task-history-tools select {
+ min-width:175px;
+ min-height:42px;
+ padding:8px 28px 8px 10px;
+ background:#fff;
+ color:#18243a;
+ border:1px solid #9aa9bd;
+ border-radius:2px;
+ font:inherit;
+}
+.ops-review-results {
+ margin-left:auto;
+ padding-bottom:10px;
+ color:#3b4c65;
+ font-size:13px;
+ line-height:1.5;
+}
+.ops-review-totals {flex-wrap:wrap}
+.ops-review-totals>div {flex:1 1 165px}
+.ops-review-totals span {font-size:13px;line-height:1.5;color:#3d4e66}
+.ops-panel-heading p {font-size:13px;line-height:1.5;color:#4b5870}
+.task-history-tools {flex-wrap:wrap;font-size:13px;line-height:1.5}
+.task-history-tools select {min-width:166px}
+.task-search-error {
+ color:#84202e;
+ background:#fff0f1;
+ border-left:4px solid #a32143;
+ padding:12px 18px;
+ margin:10px 18px;
+ font-size:14px;
+}
+.ops-panel .task-empty {padding:28px 22px}
+.ops-panel .task-empty h3 {font-size:18px;margin:0 0 6px}
+.ops-panel .task-empty p {font-size:14px;color:#485973;line-height:1.6;margin:0}
+@media(max-width:700px) {
+ .ops-review-controls {padding:14px;gap:12px}
+ .ops-review-controls label {flex:1 1 145px}
+ .ops-review-controls select {width:100%;min-width:0}
+ .ops-review-results {flex-basis:100%;margin-left:0;padding:0}
+ .ops-review-totals>div {padding:12px 16px}
+ .task-history-tools {align-items:stretch}
+ .task-history-tools button {min-height:44px}
+}
+@media(prefers-reduced-motion:reduce) {
+ .ops-review-controls *, .task-history-tools * {transition:none!important}
+}
