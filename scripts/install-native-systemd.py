@@ -84,16 +84,19 @@ def restore_manual(proc: ManualProcess, launcher: Path, data: Path) -> None:
                          stdout=log, stderr=log, start_new_session=True)
 
 
+def ports_busy() -> bool:
+    for port in (38470, 38472):
+        with socket.socket() as sock:
+            sock.settimeout(0.2)
+            if sock.connect_ex(('127.0.0.1', port)) == 0:
+                return True
+    return False
+
+
 def wait_ports_free() -> None:
     deadline = time.monotonic() + 20
     while time.monotonic() < deadline:
-        busy = False
-        for port in (38470, 38472):
-            with socket.socket() as sock:
-                sock.settimeout(0.2)
-                if sock.connect_ex(('127.0.0.1', port)) == 0:
-                    busy = True
-        if not busy:
+        if not ports_busy():
             return
         time.sleep(0.2)
     raise RuntimeError('ports 38470/38472 remained occupied after stopping manual launcher')
@@ -146,7 +149,8 @@ def atomic_write(path: Path, content: bytes) -> None:
 class Installer:
     def __init__(self, install: Path, unit_dir: Path, *, runner=subprocess.run,
                  processes=find_manual, stopper=stop_manual, restorer=restore_manual,
-                 http_probe=http_health, milter_probe=milter_health):
+                 http_probe=http_health, milter_probe=milter_health,
+                 port_busy=ports_busy, port_wait=wait_ports_free):
         self.install = install
         self.unit_dir = unit_dir
         self.launcher = install / 'spamgate'
@@ -160,6 +164,8 @@ class Installer:
         self.restorer = restorer
         self.http_probe = http_probe
         self.milter_probe = milter_probe
+        self.port_busy = port_busy
+        self.port_wait = port_wait
 
     def call(self, *args: str, check: bool = True) -> subprocess.CompletedProcess:
         return self.runner(list(args), check=check, capture_output=True, text=True)
@@ -247,12 +253,8 @@ Environment="SPAMGATE_MILTER_TRUSTED_CIDRS=127.0.0.1/32"
             raise RuntimeError('manual SpamGate launcher detected; use --adopt-manual explicitly (exactly one launcher required)')
         if manual and manual[0].argv[1:] != ['-data', str(self.data), '-listen', WEB]:
             raise RuntimeError('manual launcher arguments differ from native service contract; refusing adoption')
-        if not was_active and not manual:
-            for port in (38470, 38472):
-                with socket.socket() as sock:
-                    sock.settimeout(0.2)
-                    if sock.connect_ex(('127.0.0.1', port)) == 0:
-                        raise RuntimeError(f'port {port} occupied by another service; refusing takeover')
+        if not was_active and not manual and self.port_busy():
+            raise RuntimeError('SpamGate ports 38470/38472 occupied by another service; refusing takeover')
         original_unit = self.unit.read_bytes() if self.unit.exists() else None
         original_dropin = self.dropin.read_bytes() if self.dropin.exists() else None
         changed = False
@@ -270,7 +272,7 @@ Environment="SPAMGATE_MILTER_TRUSTED_CIDRS=127.0.0.1/32"
             if manual:
                 self.stopper(manual[0])
                 stopped_manual = True
-                wait_ports_free()
+                self.port_wait()
             self.call('systemctl', 'enable', 'spamgate.service')
             self.call('systemctl', 'restart' if was_active else 'start', 'spamgate.service')
             self.http_probe(worker_version)
@@ -295,6 +297,11 @@ Environment="SPAMGATE_MILTER_TRUSTED_CIDRS=127.0.0.1/32"
                 if was_active:
                     self.call('systemctl', 'start', 'spamgate.service', check=False)
                 elif stopped_manual:
+                    if self.port_busy():
+                        raise RuntimeError(
+                            f'install failed; systemd configuration restored, but manual recovery '
+                            f'refused because ports remain occupied: {failure}'
+                        ) from failure
                     self.restorer(manual[0], self.launcher, self.data)
             raise RuntimeError(f'install failed; systemd configuration restored: {failure}') from failure
 
