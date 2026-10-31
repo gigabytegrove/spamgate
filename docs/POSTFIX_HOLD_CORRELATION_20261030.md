@@ -14,7 +14,7 @@ The inventory searches the complete retained scan history (not just the 1000-row
 candidate scan and one held queue record exist, and the connector, HOLD action,
 queue ID, sender, arrival timestamp (within 15 minutes), and complete recipient
 multiset match. Ambiguous and truncated inventories remain visible but
-uncorrelated. Release requires the same exact envelope correlation before
+uncorrelated. Release also rejects queue IDs appearing in more than one retained HOLD scan, and requires the same exact envelope correlation before
 persisting an attempt and invoking the fixed Postfix command. Case-insensitive
 address matching and the SMTP null reverse path remain supported.
 

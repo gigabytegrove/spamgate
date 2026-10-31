@@ -205,6 +205,13 @@ func (s *Server) postfixReleaseMessage(w http.ResponseWriter, r *http.Request) {
 		fail(w, 409, "This scan does not establish a Postfix Milter HOLD request for the specified queue ID")
 		return
 	}
+	// A valid scan ID is insufficient if the same Postfix queue ID also
+	// belongs to another retained HOLD scan. Refuse ambiguous ownership.
+	candidates := s.Store.PostfixHoldCandidates()[req.QueueID]
+	if len(candidates) != 1 || candidates[0].ID != m.ID {
+		fail(w, 409, "Postfix queue ID has ambiguous or missing retained scan ownership; nothing was released")
+		return
+	}
 	if m.MTAActionState == "release_submitted" || m.MTAActionState == "release_attempted" {
 		fail(w, 409, "An earlier release attempt was recorded. Refresh the Postfix queue and logs before trying again")
 		return

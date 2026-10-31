@@ -216,3 +216,58 @@ func TestPostfixHoldInventoryRefusesAmbiguousRetainedScanHistory(t *testing.T) {
         t.Fatalf("ambiguous reused queue ID was labelled as a scan: %+v", payload.Messages)
     }
 }
+
+func TestPostfixHoldReleaseRefusesReusedQueueIDAcrossScans(t *testing.T) {
+    store, err := core.Open(t.TempDir())
+    if err != nil { t.Fatal(err) }
+    if err := store.UpdateConfig(func(c *core.Config) error {
+        c.SetupComplete = true
+        c.Users = []core.User{{Name: "admin", Role: "admin"}}
+        return nil
+    }); err != nil { t.Fatal(err) }
+    first := core.Message{
+        ID: core.ID(), Timestamp: time.Now().UTC(), Connector: "milter",
+        MTAQueueID: "AB1234CD", MTAAction: "postfix_hold_requested",
+        Sender: "sender@example.org", Recipients: []string{"alice@example.org"},
+    }
+    if err := store.Save(first); err != nil { t.Fatal(err) }
+    second := first
+    second.ID = core.ID()
+    second.Timestamp = first.Timestamp.Add(-time.Hour)
+    if err := store.Save(second); err != nil { t.Fatal(err) }
+    t.Setenv("SPAMGATE_POSTFIX_HOLD_ACTIONS", "true")
+    t.Setenv("SPAMGATE_POSTFIX_HOLD_INVENTORY", "true")
+    srv := New(store, nil)
+    srv.sessions["reused-admin"] = session{
+        Identity: Identity{Name: "admin", Role: "admin", Session: true, CSRF: "csrf"},
+        Expires: time.Now().Add(time.Hour),
+    }
+    srv.PostfixHeldInventory = func(context.Context) ([]PostfixHeld, error) {
+        return []PostfixHeld{{
+            QueueID: first.MTAQueueID, Sender: first.Sender,
+            ArrivalTime: first.Timestamp.Unix(), RecipientCount: 1,
+            Recipients: []string{"alice@example.org"},
+        }}, nil
+    }
+    called := false
+    srv.PostfixReleaseHeld = func(context.Context, string) (string, error) {
+        called = true
+        return "submitted", nil
+    }
+    req := httptest.NewRequest(http.MethodPost,
+        "/api/v1/messages/"+first.ID+"/postfix-release",
+        strings.NewReader(`{"queue_id":"AB1234CD","confirm":"release Postfix hold AB1234CD","reason":"Verified legitimate message by administrator"}`))
+    req.Header.Set("Content-Type", "application/json")
+    req.Header.Set("X-CSRF-Token", "csrf")
+    req.AddCookie(&http.Cookie{Name: "spamgate_session", Value: "reused-admin"})
+    response := httptest.NewRecorder()
+    srv.Router().ServeHTTP(response, req)
+    if response.Code != http.StatusConflict || called {
+        t.Fatalf("ambiguous Postfix queue ID released: HTTP %d called=%v body=%s",
+            response.Code, called, response.Body.String())
+    }
+    saved, ok := store.Get(first.ID)
+    if !ok || saved.MTAActionState != "" {
+        t.Fatalf("refused operation changed audit state: %+v", saved)
+    }
+}
