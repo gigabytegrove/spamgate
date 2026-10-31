@@ -91,6 +91,24 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(self.call().returncode, 3)
         self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "bounced")
 
+    def test_error_transport_bounce_remains_explicit(self):
+        self.log.write_text(f"postfix/cleanup[123]: A1B2C3: message-id=<{RID1}@spamgate-qualification.invalid>\\n"
+                            f"postfix/error[124]: A1B2C3: to=<{RECIPIENT}>, status=bounced (undeliverable)\\n"
+                            "postfix/qmgr[125]: A1B2C3: removed\\n")
+        self.assertEqual(self.call().returncode, 3)
+        evidence = json.loads(self.output.read_text())
+        self.assertFalse(evidence["complete_transport_correlation"])
+        self.assertEqual(evidence["entries"][0]["state"], "bounced")
+
+    def test_error_transport_sent_cannot_qualify(self):
+        self.log.write_text(f"postfix/cleanup[123]: A1B2C3: message-id=<{RID1}@spamgate-qualification.invalid>\\n"
+                            f"postfix/error[124]: A1B2C3: to=<{RECIPIENT}>, status=sent (discarded by policy)\\n"
+                            "postfix/qmgr[125]: A1B2C3: removed\\n")
+        self.assertEqual(self.call().returncode, 3)
+        evidence = json.loads(self.output.read_text())
+        self.assertFalse(evidence["complete_transport_correlation"])
+        self.assertEqual(evidence["entries"][0]["state"], "discard_or_error_transport")
+
     def test_queue_identity_collision_is_ambiguous(self):
         self.write_report([(RID1, "ham1"), (RID2, "ham2")])
         self.log.write_text(f"postfix/cleanup[123]: A1B2C3: message-id=<{RID1}@spamgate-qualification.invalid>\n"
