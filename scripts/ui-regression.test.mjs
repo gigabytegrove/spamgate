@@ -274,7 +274,7 @@ test('review queue uses actual review status and does not mistake allowed mail f
  assert.match(initial,/Awaiting review/);
  assert.match(initial,/Pending low/);
  assert.match(initial,/Pending high/);
- assert.doesNotMatch(initial,/Allowed mail/);
+ assert.doesNotMatch(initial,/data-inspect="a"/);
  assert.doesNotMatch(initial,/data-inspect="c"/);
  assert.match(initial,/2 matching/);
  vm.runInContext("S.reviewStatus='reviewed'",ctx);
