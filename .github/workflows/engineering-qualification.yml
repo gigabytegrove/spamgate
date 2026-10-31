@@ -49,7 +49,7 @@ jobs:
           bash scripts/test-install-postfix-release-helper.sh
           bash -n scripts/install-dovecot-sieve.sh scripts/test-install-dovecot-sieve.sh
           bash scripts/test-install-dovecot-sieve.sh
-      - name: Compile native Linux and Windows programs
+      - name: Native host probe safety regression\n        run: |\n          set -Eeuo pipefail\n          python3 -m unittest discover -s scripts -p 'test-spamgate-host-probe.py' -v\n          python3 scripts/spamgate-host-probe.py > /tmp/spamgate-preflight.json\n          python3 -c 'import json; r=json.load(open("/tmp/spamgate-preflight.json")); assert r["status"] == "preflight_only" and not r["smtp"]["attempted"]'\n      - name: Compile native Linux and Windows programs
         env:
           CGO_ENABLED: '0'
         run: |
