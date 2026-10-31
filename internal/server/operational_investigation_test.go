@@ -87,7 +87,7 @@ func TestPostfixReleaseAuthorizationCorrelationAndDurableAudit(t *testing.T) {
 	t.Setenv("SPAMGATE_POSTFIX_HOLD_INVENTORY", "true")
 	t.Setenv("SPAMGATE_POSTFIX_HOLD_ACTIONS", "true")
 	s := New(st, nil)
-	held := []PostfixHeld{{QueueID: "AF123", Sender: "sender@example.net", Recipients: []string{"user@example.org"}, ArrivalTime: msg.Timestamp.Unix()}}
+	held := []PostfixHeld{{QueueID: "AF123", Sender: "sender@example.net", Recipients: []string{"user@example.org"}, RecipientCount: 1, ArrivalTime: msg.Timestamp.Unix()}}
 	s.PostfixHeldInventory = func(context.Context) ([]PostfixHeld, error) { return held, nil }
 	calls := 0
 	s.PostfixReleaseHeld = func(ctx context.Context, id string) (string, error) {

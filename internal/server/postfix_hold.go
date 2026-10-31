@@ -117,6 +117,13 @@ func (s *Server) postfixHoldQueue(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, "Postfix hold inventory unavailable. Check that postqueue -j is supported and the SpamGate process has permission; no queue was changed.")
 		return
 	}
+	// Do not mutate an inventory provider's backing slice: a cached result
+	// could otherwise retain an earlier scan correlation after the queue
+	// changes. Always recompute labels from independent evidence.
+	messages = append([]PostfixHeld{}, messages...)
+	for i := range messages {
+		messages[i].SpamGateScanID = ""
+	}
 	// A queue ID alone is not ownership evidence: Postfix may reuse it.
 	// Correlate only one unambiguous scan to one inventory entry, including
 	// its arrival time, complete recipient multiset, and reverse path.

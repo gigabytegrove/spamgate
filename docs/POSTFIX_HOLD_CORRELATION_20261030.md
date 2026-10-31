@@ -35,3 +35,14 @@ queue identity, and real Postfix/Dovecot mailbox evidence remain outstanding
 under issues #1 and #9. Fail closed when identity is ambiguous. No service
 configuration, Milter ports, data layout, or default Postfix failure action
 changes in this patch.
+
+## Regression found during CI
+
+The first qualification run identified a cached inventory-slice mutation: an
+annotated scan ID remained on the provider's backing slice even after the held
+recipient set changed. The handler now copies the inventory and clears all
+incoming annotations before independent correlation. An existing authorization
+test fixture also lacked the new mandatory recipient count; it now models the
+actual `postqueue -j` parser output. The failing run must not be considered
+qualified; only a later exact-commit successful run establishes regression
+status.
