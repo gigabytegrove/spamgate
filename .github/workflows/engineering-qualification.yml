@@ -54,6 +54,8 @@ jobs:
         run: |
           set -Eeuo pipefail
           # unittest discover silently skips hyphenated filenames: invoke each directly.
+          python3 -m py_compile scripts/install-native-systemd.py
+          python3 scripts/test-native-systemd.py -v
           python3 scripts/test-spamgate-host-probe.py -v
           python3 scripts/test-spamgate-host-probe-smtp.py -v
           python3 scripts/test-spamgate-filtration-qualification.py -v
