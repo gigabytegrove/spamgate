@@ -184,8 +184,12 @@ func dkimParsePublicKey(txts []string, algorithm string) (crypto.PublicKey, erro
 	if tags["v"] != "" && !strings.EqualFold(tags["v"], "DKIM1") {
 		return nil, errors.New("unknown DKIM key version")
 	}
-	if tags["v"] != "" && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(record)), "v=dkim1;") && !strings.EqualFold(strings.TrimSpace(record), "v=DKIM1") {
-		return nil, errors.New("DKIM key version must be the first tag")
+	if tags["v"] != "" {
+		first, _, _ := strings.Cut(record, ";")
+		name, value, ok := strings.Cut(strings.TrimSpace(first), "=")
+		if !ok || !strings.EqualFold(strings.TrimSpace(name), "v") || !strings.EqualFold(strings.TrimSpace(value), "DKIM1") {
+			return nil, errors.New("DKIM key version must be the first tag")
+		}
 	}
 	if tags["p"] == "" {
 		return nil, errors.New("DKIM key revoked or missing")

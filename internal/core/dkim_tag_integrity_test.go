@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"crypto/rand"
 	"encoding/base64"
 	"strings"
@@ -37,7 +38,9 @@ func TestDKIMRejectsAmbiguousSignatureTagsBeforeDNS(t *testing.T) {
 }
 
 func TestDKIMMustSignExistingFrom(t *testing.T) {
-	raw := []byte("Subject: no from\r\nDKIM-Signature: v=1; a=ed25519-sha256; d=example.org; s=primary; h=from; bh=AA==; b=AA==\r\n\r\nhello\r\n")
+	body := []byte("hello\r\n")
+	digest := sha256.Sum256(dkimCanonBody(body, "simple"))
+	raw := []byte("Subject: no from\r\nDKIM-Signature: v=1; a=ed25519-sha256; d=example.org; s=primary; h=from; bh=" + base64.StdEncoding.EncodeToString(digest[:]) + "; b=AA==\r\n\r\n" + string(body))
 	got := DKIMVerify(context.Background(), stubDNS{}, raw)
 	if len(got) != 1 || got[0].Result != "fail" || !strings.Contains(got[0].Detail, "existing From") {
 		t.Fatalf("missing signed From was not rejected: %+v", got)
@@ -64,7 +67,7 @@ func TestDKIMRejectsAmbiguousAndUnauthorizedDNSKeys(t *testing.T) {
 			}
 		})
 	}
-	for _, record := range []string{base, base + "; h=sha256", base + "; s=*:other", base + "; s=email"} {
+	for _, record := range []string{base, base + "; h=sha256", base + "; s=*:other", base + "; s=email", "v=DKIM1 ; k=ed25519; p=" + p} {
 		if _, err := dkimParsePublicKey([]string{record}, "ed25519-sha256"); err != nil {
 			t.Fatalf("rejected valid Ed25519 key %q: %v", record, err)
 		}
