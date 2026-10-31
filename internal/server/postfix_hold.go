@@ -203,6 +203,16 @@ func (s *Server) postfixReleaseMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	postfixHoldOperationMutex.Lock()
 	defer postfixHoldOperationMutex.Unlock()
+	// The in-process mutex does not protect a second SpamGate worker or
+	// supervisor instance sharing this data directory. Keep a Linux advisory
+	// lock across inventory correlation, the durable intent audit, and
+	// postsuper execution. An unavailable lock fails closed.
+	unlock, lockErr := acquirePostfixHoldReleaseLock(r.Context(), s.Store.DataDir())
+	if lockErr != nil {
+		fail(w, http.StatusServiceUnavailable, "Cannot obtain exclusive Postfix hold release lock; no queue was changed: "+lockErr.Error())
+		return
+	}
+	defer unlock()
 	m, exists := s.Store.Get(r.PathValue("id"))
 	if !exists {
 		fail(w, 404, "Message not found")
