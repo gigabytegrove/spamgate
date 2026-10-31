@@ -42,6 +42,7 @@ jobs:
           set -Eeuo pipefail
           node --check internal/server/assets/app.js
           node --test scripts/ui-regression.test.mjs
+          bash -n scripts/build-github-assets.sh
           bash -n scripts/migrate-native-launcher.sh
           bash scripts/test-migrate-native-launcher.sh
           bash scripts/test-supervised-updates.sh
