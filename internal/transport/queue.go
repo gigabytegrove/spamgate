@@ -188,6 +188,14 @@ func (q *DeliveryQueue) put(rec spoolRecord) error {
 		return e
 	}
 	complete = true
+ // Preserve synced unpublished evidence rather than overwrite an unsafe destination.
+ if existing, inspectErr := os.Lstat(q.path(rec.ID)); inspectErr == nil {
+  if inspectErr = validateSpoolMetadata(q.path(rec.ID), existing); inspectErr != nil {
+   return fmt.Errorf("durable unpublished spool retained at %s: unsafe existing destination: %w", filepath.Base(tmp), inspectErr)
+  }
+ } else if !errors.Is(inspectErr, os.ErrNotExist) {
+  return fmt.Errorf("durable unpublished spool retained at %s: inspect destination: %w", filepath.Base(tmp), inspectErr)
+ }
 	if e = os.Rename(tmp, q.path(rec.ID)); e != nil {
 		return fmt.Errorf("durable unpublished spool retained at %s: %w", filepath.Base(tmp), e)
 	}
@@ -213,6 +221,7 @@ func readSpoolFile(path string, inspected os.FileInfo) ([]byte, error) {
  if !opened.Mode().IsRegular() || !os.SameFile(inspected, opened) {
   return nil, errors.New("queue record changed between inspection and open")
  }
+ if err := validateSpoolMetadata(path, opened); err != nil { return nil, fmt.Errorf("unsafe queue record metadata: %w", err) }
  if opened.Size() < 2 || opened.Size() > maxRecordSize {
   return nil, errors.New("queue record size changed or exceeds limit")
  }
@@ -276,6 +285,7 @@ func (q *DeliveryQueue) snapshotLocked() (QueueSummary, error) {
 			if !meta.Mode().IsRegular() || meta.Size() < 0 || meta.Size() > 20<<20 {
 				return QueueSummary{}, fmt.Errorf("unsafe unpublished spool file: %s", entry.Name())
 			}
+			if err := validateSpoolMetadata(filepath.Join(q.dir, entry.Name()), meta); err != nil { return QueueSummary{}, fmt.Errorf("unsafe unpublished spool file %s: %w", entry.Name(), err) }
 			info.PendingTemps++
 			info.PendingTempBytes += meta.Size()
 			continue
@@ -329,7 +339,8 @@ func (q *DeliveryQueue) Enqueue(m core.Message, raw []byte) error {
 	if e != nil {
 		return e
 	}
-	if summary.Total >= MaxQueueJobs || summary.Bytes+int64(len(raw)) > MaxQueueBytes {
+	// Unpublished originals still reserve forensic spool capacity.
+ if summary.Total+summary.PendingTemps >= MaxQueueJobs || summary.Bytes+summary.PendingTempBytes+int64(len(raw)) > MaxQueueBytes {
 		return errors.New("queue capacity reached")
 	}
 	now := q.now()
