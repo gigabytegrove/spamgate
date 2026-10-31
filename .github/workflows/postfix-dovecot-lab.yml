@@ -128,6 +128,42 @@ jobs:
           fi
           printf '%s\n' "$INBOX_STATUS" "$JUNK_STATUS" > lab-evidence/dovecot-mailbox-counts.txt
 
+      - name: Validate opt-in least-privilege HOLD helper on disposable Postfix host
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if ! id spamgate >/dev/null 2>&1; then
+            sudo useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin spamgate
+          fi
+          CGO_ENABLED=0 go build -trimpath -buildvcs=false -o scripts/spamgate-postfix-release ./cmd/spamgate-postfix-release
+          chmod 0755 scripts/spamgate-postfix-release
+          bash scripts/install-postfix-release-helper.sh --preview
+          sudo bash scripts/install-postfix-release-helper.sh --apply --confirm POSTFIX-HOLD-RELEASE
+          test "$(stat -c '%U:%G:%a' /usr/local/libexec/spamgate/postfix-hold-release)" = root:root:755
+          test "$(stat -c '%U:%G:%a' /etc/sudoers.d/spamgate-postfix-release)" = root:root:440
+          sudo visudo -cf /etc/sudoers.d/spamgate-postfix-release
+          # Verify sudoers does not grant broad postsuper access.
+          if sudo -u spamgate sudo -n -- /usr/sbin/postsuper -H ALL >/dev/null 2>&1; then
+            echo 'Unsafe: broad postsuper privilege was granted' >&2
+            exit 1
+          fi
+          # Verify the helper refuses the reserved all-queue command and
+          # argument injection even when invoked through the real sudoers grant.
+          if sudo -u spamgate sudo -n -- /usr/local/libexec/spamgate/postfix-hold-release ALL >/dev/null 2>&1; then
+            echo 'Unsafe: helper accepted all-queue release' >&2
+            exit 1
+          fi
+          if sudo -u spamgate sudo -n -- /usr/local/libexec/spamgate/postfix-hold-release 'A123;id' >/dev/null 2>&1; then
+            echo 'Unsafe: helper accepted argument injection' >&2
+            exit 1
+          fi
+          # The helper must also refuse a direct unprivileged invocation.
+          if sudo -u spamgate /usr/local/libexec/spamgate/postfix-hold-release A123 >/dev/null 2>&1; then
+            echo 'Unsafe: unprivileged helper invocation succeeded' >&2
+            exit 1
+          fi
+          printf 'Native privileged helper boundary smoke passed; no production host changed.\n' | tee lab-evidence/postfix-privilege-helper.txt
+
       - name: Postfix queue and delivery diagnostics
         if: always()
         shell: bash
