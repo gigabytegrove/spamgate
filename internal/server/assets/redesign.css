@@ -199,3 +199,75 @@ a{color:#164bbf}a:hover{color:#12399c}
 @media(prefers-reduced-motion:reduce) {
  .ops-review-controls *, .task-history-tools * {transition:none!important}
 }
+
+/* Mail ledger — one scannable table, not stacked message cards. */
+.sg-history-scroll {max-width:100%;overflow-x:auto;overscroll-behavior-x:contain}
+.sg-audit-table {
+ border-collapse:collapse;
+ table-layout:auto;
+ min-width:920px;
+ width:100%;
+ font-size:13px;
+ line-height:1.45;
+ white-space:normal;
+}
+.sg-audit-table th {
+ font-size:12px;
+ text-transform:none;
+ letter-spacing:0;
+ padding:13px 12px;
+ font-weight:750;
+ border-bottom:2px solid #aebbd0;
+ text-align:left;
+}
+.sg-audit-table td {
+ padding:13px 12px;
+ border-bottom:1px solid #e4e9f0;
+ vertical-align:middle;
+ color:#25344b;
+}
+.sg-audit-table tbody tr:hover {background:#f5f8fd}
+.sg-audit-table tbody tr:focus-within {background:#edf3ff}
+.sg-audit-table .sg-audit-subject {min-width:175px;max-width:290px}
+.sg-audit-table .sg-audit-party {min-width:200px;max-width:310px}
+.sg-audit-table .sg-audit-subject strong,
+.sg-audit-table .sg-audit-party strong {
+ display:block;
+ font-size:13px;
+ line-height:1.45;
+ overflow-wrap:anywhere;
+}
+.sg-audit-table td small {
+ display:block;
+ color:#4c5e77;
+ font-size:12px;
+ line-height:1.5;
+ overflow-wrap:anywhere;
+ margin-top:3px;
+}
+.sg-audit-table .ops-number {font-variant-numeric:tabular-nums;font-weight:760}
+.sg-audit-table .ops-inspect {min-width:75px;min-height:40px}
+.sg-audit-table .sg-review-mark {color:#20523d;font-weight:760}
+.sg-audit-table .sg-unreviewed {color:#6b4c20}
+.sg-audit-table .ops-time {min-width:145px}
+.task-pagination {flex-wrap:wrap;font-size:13px}
+.task-pagination button {min-height:40px}
+.ops-hold-row {
+ display:flex!important;
+ flex-direction:row!important;
+ align-items:center;
+ justify-content:space-between;
+ flex-wrap:wrap;
+ gap:12px 18px;
+ padding:14px 0!important;
+}
+.ops-hold-row>div {min-width:0;flex:1}
+.ops-hold-row small {display:block;overflow-wrap:anywhere;line-height:1.5;margin-top:4px}
+.ops-hold-row button {min-height:40px}
+@media(max-width:650px) {
+ .sg-history-scroll {margin:0}
+ .sg-audit-table {min-width:790px}
+ .sg-audit-table td,.sg-audit-table th {padding:11px 9px}
+ .task-pagination {padding:13px 15px;gap:10px}
+ .ops-hold-row button {width:100%}
+}
