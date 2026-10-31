@@ -62,7 +62,8 @@ class EvidenceTests(unittest.TestCase):
     def test_deferred_then_sent_tracks_both_without_delivery_claim(self):
         self.log.write_text(f"postfix/cleanup[123]: A1B2C3: message-id=<{RID1}@spamgate-qualification.invalid>\n"
                             f"postfix/smtp[124]: A1B2C3: to=<{RECIPIENT}>, status=deferred\n"
-                            f"postfix/lmtp[124]: A1B2C3: to=<{RECIPIENT}>, status=sent\n")
+                            f"postfix/lmtp[124]: A1B2C3: to=<{RECIPIENT}>, status=sent\n"
+                            "postfix/qmgr[125]: A1B2C3: removed\n")
         self.assertEqual(self.call().returncode, 0)
         self.assertEqual(len(json.loads(self.output.read_text())["entries"][0]["transport_events"]), 2)
 
@@ -88,6 +89,20 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(self.call().returncode, 3)
         self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "ambiguous_queue_identity")
 
+    def test_queue_reuse_with_unrelated_message_id_is_ambiguous(self):
+        self.log.write_text(f"postfix/cleanup[123]: A1B2C3: message-id=<{RID1}@spamgate-qualification.invalid>\n"
+                            "postfix/qmgr[125]: A1B2C3: removed\n"
+                            "postfix/cleanup[123]: A1B2C3: message-id=<unrelated@example.org>\n"
+                            f"postfix/lmtp[124]: A1B2C3: to=<{RECIPIENT}>, status=sent\n")
+        self.assertEqual(self.call().returncode, 3)
+        self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "ambiguous_queue_identity")
+
+    def test_sent_without_queue_removal_not_complete(self):
+        self.log.write_text(f"postfix/cleanup[123]: A1B2C3: message-id=<{RID1}@spamgate-qualification.invalid>\n"
+                            f"postfix/lmtp[124]: A1B2C3: to=<{RECIPIENT}>, status=sent\n")
+        self.assertEqual(self.call().returncode, 3)
+        self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "sent_but_queue_removal_unobserved")
+
     def test_incomplete_report_is_refused(self):
         self.report.write_text(json.dumps({"event": "plan", "cases": 1}) + "\n")
         self.log.write_text("")
@@ -110,7 +125,8 @@ class EvidenceTests(unittest.TestCase):
     def test_rotated_log_order(self):
         old = self.root / "mail.log.1"
         old.write_text(f"postfix/cleanup[123]: A1B2C3: message-id=<{RID1}@spamgate-qualification.invalid>\n")
-        self.log.write_text(f"postfix/lmtp[124]: A1B2C3: to=<{RECIPIENT}>, status=sent\n")
+        self.log.write_text(f"postfix/lmtp[124]: A1B2C3: to=<{RECIPIENT}>, status=sent\n"
+                            "postfix/qmgr[125]: A1B2C3: removed\n")
         result = self.call("--postfix-log", str(old))
         self.assertEqual(result.returncode, 3)
         self.output.unlink()
