@@ -88,7 +88,7 @@ This work is **not** a 10/10 classifier or beta qualification. It does not autom
 
 After an explicitly approved corpus submission, the separate **scripts/spamgate-postfix-evidence.py** utility correlates each accepted run's unique Message-ID with actual Postfix cleanup queue IDs and per-recipient delivery-agent status. It does **not** submit mail, change the Milter, alter /opt/spamgate, or touch Postfix/Dovecot configuration.
 
-Export the relevant Postfix journal window to a **private** text file. Choose a window covering the complete submission and all retries. On hosts with traditional mail logs, supply those files directly. For multiple rotated logs, provide repeated --postfix-log arguments **oldest first**, with the current log last. The tool refuses symlink log inputs, overlong lines, oversized files (>64 MiB each), more than 16 inputs, incomplete submission journals, missing cleanup correlations, queue-ID reuse, recipient mismatch, and overwritten output paths.
+Export the relevant Postfix journal window to a **private** text file. Choose a window covering the complete submission and all retries. On hosts with traditional mail logs, supply those files directly. For multiple rotated logs, provide repeated --postfix-log arguments **oldest first**, with the current log last. The tool refuses symlink log inputs, overlong lines, oversized files (>64 MiB each), more than 16 inputs, incomplete submission journals, missing cleanup correlations, queue-ID reuse, duplicate sent events (potential duplicate deliveries or overlapping log exports), recipient mismatch, and overwritten output paths.
 
 ~~~bash
 umask 077
@@ -103,7 +103,7 @@ python3 scripts/spamgate-postfix-evidence.py \
   --output /root/spamgate-corpus/postfix-evidence.json
 ~~~
 
-The timestamp window above is an **example**; replace it with the actual submission window. Output contains run ID, case ID, queue ID, limited transport status, queue-removal flag and summary counts, **not** raw message content or mail log lines. Output is created exclusively with mode 0600 and synced. Exit 0 means each accepted case has one unambiguous cleanup correlation, a matching recipient status=sent, and observed queue removal. Exit 3 means evidence was written but one or more cases are incomplete, deferred, bounced, held, or ambiguous. Exit 2 indicates input validation or I/O refusal.
+The timestamp window above is an **example**; replace it with the actual submission window. Output contains run ID, case ID, queue ID, limited transport status, observed sent-event count, queue-removal flag and summary counts, **not** raw message content or mail log lines. Output is created exclusively with mode 0600 and synced. Exit 0 means each accepted case has one unambiguous cleanup correlation, a matching recipient status=sent, and observed queue removal. Exit 3 means evidence was written but one or more cases are incomplete, deferred, bounced, held, or ambiguous. Exit 2 indicates input validation or I/O refusal.
 
 **Do not interpret exit 0 as mail delivered.** Postfix status=sent may mean acceptance by another transport or next-hop; even LMTP success does not independently prove Dovecot INBOX/Junk placement. This script deliberately never generates spamgate-eval classifier verdicts, because transport logs are not classifier evidence. Dovecot mailbox placement, SpamGate verdicts, HOLD/release and final end-to-end delivery remain separate required checks before issue #1 can close.
 
