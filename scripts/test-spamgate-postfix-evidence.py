@@ -109,6 +109,27 @@ class EvidenceTests(unittest.TestCase):
         self.assertFalse(evidence["complete_transport_correlation"])
         self.assertEqual(evidence["entries"][0]["state"], "discard_or_error_transport")
 
+    def test_symlink_report_refused_without_output(self):
+        real = self.root / "original-report.jsonl"
+        self.report.rename(real)
+        self.report.symlink_to(real)
+        self.log.write_text("")
+        self.assertEqual(self.call().returncode, 2)
+        self.assertFalse(self.output.exists())
+
+    def test_oversized_report_line_refused_without_output(self):
+        self.report.write_bytes(b"A" * 65537 + b"\\n")
+        self.log.write_text("")
+        self.assertEqual(self.call().returncode, 2)
+        self.assertFalse(self.output.exists())
+
+    def test_directory_report_refused_without_output(self):
+        self.report.unlink()
+        self.report.mkdir()
+        self.log.write_text("")
+        self.assertEqual(self.call().returncode, 2)
+        self.assertFalse(self.output.exists())
+
     def test_queue_identity_collision_is_ambiguous(self):
         self.write_report([(RID1, "ham1"), (RID2, "ham2")])
         self.log.write_text(f"postfix/cleanup[123]: A1B2C3: message-id=<{RID1}@spamgate-qualification.invalid>\n"
