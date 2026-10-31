@@ -49,6 +49,10 @@ echo "QUALIFYING source $(git rev-parse HEAD 2>/dev/null || echo source-tree) / 
 go test -count=1 ./...
 go test -race -count=1 ./...
 go vet ./...
+# Run hyphenated unittest files directly: unittest discovery silently reports 0 tests.
+python3 scripts/test-spamgate-host-probe.py -v
+python3 scripts/test-spamgate-host-probe-smtp.py -v
+python3 scripts/test-spamgate-filtration-qualification.py -v
 node --check internal/server/assets/app.js
 node --test scripts/ui-regression.test.mjs
 bash -n scripts/bootstrap-foreground.sh
