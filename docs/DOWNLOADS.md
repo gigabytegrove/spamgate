@@ -1,3 +1,5 @@
+> **Native beta release publication (2026-10-31):** The previous manual GitHub Actions release workflow could not publish the split native layout: it compared the executable version to the `main` branch name and omitted the permanent launcher and dedicated worker. The corrected workflow now qualifies and uploads artifacts only; `scripts/publish-native-release.sh` is the explicit local `gh` publication path after full `scripts/build-github-assets.sh` qualification. The exact four binaries and `SHA256SUMS.txt` are required, and normal updates are performed in **Software Updates** without overwriting `/opt/spamgate/spamgate`. See [native release qualification](NATIVE_RELEASE_QUALIFICATION.md). Source changes are not a published release.
+
 # Download and install SpamGate (Linux AMD64)
 
 ## Native foreground installation — alpha.16+
