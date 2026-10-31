@@ -101,7 +101,7 @@ def correlate(report, paths, recipient):
     queue_to_run = {}
     entries = {rid: {"case_id": row["case_id"], "run_id": rid,
                      "queue_id": None, "transport_events": [], "queue_removed": False,
-                     "held": False, "state": "unobserved"} for rid, row in runs.items()}
+                     "held": False, "sent_count": 0, "state": "unobserved"} for rid, row in runs.items()}
     duplicate = set()
     for path in paths:
         for line in log_lines(path):
@@ -130,6 +130,8 @@ def correlate(report, paths, recipient):
                 rid = queue_to_run.get(queue_id)
                 if rid is not None and address == recipient:
                     item = {"transport": transport.lower(), "status": status.lower()}
+                    if item["status"] == "sent":
+                        entries[rid]["sent_count"] += 1
                     if item not in entries[rid]["transport_events"]:
                         entries[rid]["transport_events"].append(item)
                 continue
@@ -148,6 +150,8 @@ def correlate(report, paths, recipient):
             entry["state"] = "no_cleanup_correlation"
         elif entry["held"]:
             entry["state"] = "held_unverified"
+        elif entry["sent_count"] > 1:
+            entry["state"] = "duplicate_transport_sent"
         elif "bounced" in statuses:
             entry["state"] = "bounced"
         elif "sent" in statuses and entry["queue_removed"]:
