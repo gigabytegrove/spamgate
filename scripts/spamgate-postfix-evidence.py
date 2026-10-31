@@ -152,12 +152,15 @@ def correlate(report, paths, recipient):
             entry["state"] = "no_cleanup_correlation"
         elif entry["held"]:
             entry["state"] = "held_unverified"
-        elif entry["discarded"]:
-            entry["state"] = "discard_or_error_transport"
         elif entry["sent_count"] > 1:
             entry["state"] = "duplicate_transport_sent"
         elif "bounced" in statuses:
+            # A definitive bounced recipient must not be hidden by the
+            # postfix/error transport classification. Both are failures,
+            # but bounce is the more specific actionable terminal state.
             entry["state"] = "bounced"
+        elif entry["discarded"]:
+            entry["state"] = "discard_or_error_transport"
         elif "sent" in statuses and entry["queue_removed"]:
             entry["state"] = "transport_sent_not_mailbox_verified"
         elif "sent" in statuses:
