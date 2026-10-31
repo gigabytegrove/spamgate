@@ -82,3 +82,33 @@ go test -count=1 ./cmd/spamgate-eval
 **Critical CI correction:** Earlier `python3 -m unittest discover -p 'test-spamgate-host-probe*.py'` silently reported **0 tests** because hyphenated filenames are not valid Python module identifiers for discovery. The engineering CI and native asset builder now run these files directly. Prior claims of successful host-probe regression based on that discovery command were unsupported.
 
 This work is **not** a 10/10 classifier or beta qualification. It does not automatically obtain actual SpamGate verdicts, establish Postfix queue disposition, test SMTP AUTH or SPF/DKIM/DMARC, measure representative false positives without an independent corpus, simulate power loss, or validate native update/rollback on the real host. Those gates remain open.
+
+
+## Read-only Postfix transport correlation (issue #1/#6)
+
+After an explicitly approved corpus submission, the separate **scripts/spamgate-postfix-evidence.py** utility correlates each accepted run's unique Message-ID with actual Postfix cleanup queue IDs and per-recipient delivery-agent status. It does **not** submit mail, change the Milter, alter /opt/spamgate, or touch Postfix/Dovecot configuration.
+
+Export the relevant Postfix journal window to a **private** text file. Choose a window covering the complete submission and all retries. On hosts with traditional mail logs, supply those files directly. For multiple rotated logs, provide repeated --postfix-log arguments **oldest first**, with the current log last. The tool refuses symlink log inputs, overlong lines, oversized files (>64 MiB each), more than 16 inputs, incomplete submission journals, missing cleanup correlations, queue-ID reuse, recipient mismatch, and overwritten output paths.
+
+~~~bash
+umask 077
+journalctl --since '2026-10-31 08:00:00' --until '2026-10-31 10:00:00' \
+  --no-pager -o short-iso > /root/spamgate-corpus/postfix-window.log
+
+python3 scripts/spamgate-postfix-evidence.py \
+  --report /root/spamgate-corpus/submission-20261031.jsonl \
+  --postfix-log /root/spamgate-corpus/postfix-window.log \
+  --recipient spambox@gigabytegrove.com \
+  --confirm-recipient spambox@gigabytegrove.com \
+  --output /root/spamgate-corpus/postfix-evidence.json
+~~~
+
+The timestamp window above is an **example**; replace it with the actual submission window. Output contains run ID, case ID, queue ID, limited transport status, queue-removal flag and summary counts, **not** raw message content or mail log lines. Output is created exclusively with mode 0600 and synced. Exit 0 means each accepted case has one unambiguous cleanup correlation, a matching recipient status=sent, and observed queue removal. Exit 3 means evidence was written but one or more cases are incomplete, deferred, bounced, held, or ambiguous. Exit 2 indicates input validation or I/O refusal.
+
+**Do not interpret exit 0 as mail delivered.** Postfix status=sent may mean acceptance by another transport or next-hop; even LMTP success does not independently prove Dovecot INBOX/Junk placement. This script deliberately never generates spamgate-eval classifier verdicts, because transport logs are not classifier evidence. Dovecot mailbox placement, SpamGate verdicts, HOLD/release and final end-to-end delivery remain separate required checks before issue #1 can close.
+
+The isolated synthetic-log regressions are run by engineering CI and the native release builder:
+
+~~~bash
+python3 scripts/test-spamgate-postfix-evidence.py -v
+~~~
