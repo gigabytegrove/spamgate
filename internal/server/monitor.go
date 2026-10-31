@@ -72,6 +72,8 @@ type operationsMonitor struct {
 	state     monitorState
 	loadError error
 	now       func() time.Time
+	// Injectable per instance for deterministic post-rename failure tests.
+	syncDirectory func(string) error
 }
 
 // Monitor history is bounded before allocation and never follows a symlink
@@ -99,20 +101,29 @@ func readMonitorFile(path string) ([]byte, error) {
     if len(data) > 2<<20 {
         return nil, errors.New("operations history exceeds 2 MiB limit")
     }
+    after, err := file.Stat()
+    if err != nil { return nil, err }
+    if int64(len(data)) != opened.Size() || after.Size() != opened.Size() ||
+        !after.ModTime().Equal(opened.ModTime()) || !os.SameFile(opened, after) {
+        return nil, errors.New("operations history changed during read")
+    }
     return data, nil
 }
 
 func monitorDirectorySafe(dir string) error {
     info, err := os.Lstat(dir)
     if err != nil { return err }
-    if !info.IsDir() {
+    if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
         return errors.New("operations history directory must not be a symlink or non-directory")
+    }
+    if info.Mode().Perm()&0022 != 0 {
+        return errors.New("operations history directory must not be group/world writable")
     }
     return nil
 }
 
 func newOperationsMonitor(dataDir string) *operationsMonitor {
-	m := &operationsMonitor{path: filepath.Join(dataDir, "operations", "monitor.json"), bootID: core.ID(), now: func() time.Time { return time.Now().UTC() }}
+	m := &operationsMonitor{path: filepath.Join(dataDir, "operations", "monitor.json"), bootID: core.ID(), now: func() time.Time { return time.Now().UTC() }, syncDirectory: syncMonitorDirectory}
 	m.state = monitorState{Schema: 1, Samples: []monitorSample{}, Alerts: []monitorAlert{}}
 	// A pre-existing symlinked operations directory must never redirect
 	// private monitoring writes outside the persistent SpamGate data tree.
@@ -156,6 +167,11 @@ func (m *operationsMonitor) save(next monitorState) error {
 	if err := monitorDirectorySafe(filepath.Dir(m.path)); err != nil {
 		return err
 	}
+	// Persist the newly created operations/ directory entry before publishing
+	// evidence inside it. A crash must not erase an otherwise synced history.
+	if err := syncMonitorDirectory(filepath.Dir(filepath.Dir(m.path))); err != nil {
+		return fmt.Errorf("cannot sync operations parent directory: %w", err)
+	}
 	raw, err := json.Marshal(next)
 	if err != nil {
 		return err
@@ -169,7 +185,11 @@ func (m *operationsMonitor) save(next monitorState) error {
 	}
 	defer os.Remove(tmp.Name())
 	if err = tmp.Chmod(0600); err == nil {
-		_, err = tmp.Write(raw)
+		var n int
+		n, err = tmp.Write(raw)
+		if err == nil && n != len(raw) {
+			err = io.ErrShortWrite
+		}
 	}
 	if err == nil {
 		err = tmp.Sync()
@@ -183,10 +203,15 @@ func (m *operationsMonitor) save(next monitorState) error {
 	if err = os.Rename(tmp.Name(), m.path); err != nil {
 		return err
 	}
-	// Windows does not support opening directories as regular sync targets.
-	if d, e := os.Open(filepath.Dir(m.path)); e == nil {
-		_ = d.Sync()
-		_ = d.Close()
+	// Once rename succeeds, the on-disk state may differ from memory if
+	// directory sync fails. Freeze writes instead of replaying stale alerts.
+	syncDir := m.syncDirectory
+	if syncDir == nil {
+		syncDir = syncMonitorDirectory
+	}
+	if err := syncDir(filepath.Dir(m.path)); err != nil {
+		m.loadError = fmt.Errorf("monitor history published but directory sync unconfirmed; restart and inspect before further writes: %w", err)
+		return m.loadError
 	}
 	return nil
 }
