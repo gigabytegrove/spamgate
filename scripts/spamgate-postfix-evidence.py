@@ -26,9 +26,25 @@ RUN_ID = re.compile(r"[a-f0-9]{32}\Z")
 
 
 def read_jsonl(path, limit):
+    # A qualification report is untrusted operator-supplied input. Never
+    # follow a symlink, and never read an arbitrarily large line into memory
+    # before applying the JSONL size limit.
+    target = pathlib.Path(path)
+    before = target.lstat()
+    if not stat.S_ISREG(before.st_mode) or before.st_size > limit * MAX_LINE_BYTES:
+        raise ValueError("report must be a bounded regular file")
+    fd = os.open(target, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
     result = []
-    with open(path, "rb") as handle:
-        for number, raw in enumerate(handle, 1):
+    with os.fdopen(fd, "rb") as handle:
+        opened = os.fstat(handle.fileno())
+        if not stat.S_ISREG(opened.st_mode) or not os.path.samestat(before, opened):
+            raise ValueError("report identity changed during open")
+        number = 0
+        while True:
+            raw = handle.readline(MAX_LINE_BYTES + 1)
+            if not raw:
+                break
+            number += 1
             if len(raw) > MAX_LINE_BYTES:
                 raise ValueError(f"JSONL line {number} exceeds size limit")
             if not raw.strip():
@@ -40,7 +56,6 @@ def read_jsonl(path, limit):
                 raise ValueError(f"JSONL line {number} must be an object")
             result.append(value)
     return result
-
 
 def accepted_runs(path):
     rows = read_jsonl(path, 2 * MAX_CASES + 1)
