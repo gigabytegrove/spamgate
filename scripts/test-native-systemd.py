@@ -75,6 +75,7 @@ class NativeSystemdTests(unittest.TestCase):
             restorer=lambda proc, *_: self.restored.append(proc.pid),
             http_probe=lambda version: self.http(version),
             milter_probe=lambda: self.milter(),
+            port_busy=lambda: False, port_wait=lambda: None,
         )
         self.root_patch = mock.patch.object(mod.os, 'geteuid', return_value=0)
         self.root_patch.start()
@@ -153,6 +154,21 @@ class NativeSystemdTests(unittest.TestCase):
         self.assertFalse(self.installer.unit.exists())
         self.assertFalse(self.installer.dropin.exists())
         self.assertFalse(self.commands.active)
+
+    def test_unrelated_listener_refuses_takeover(self):
+        self.installer.port_busy = lambda: True
+        with self.assertRaisesRegex(RuntimeError, 'occupied'):
+            self.installer.apply()
+        self.assertFalse(self.installer.unit.exists())
+
+    def test_manual_adoption_refuses_orphaned_worker_listener(self):
+        self.manual = [mod.ManualProcess(1005, ['./spamgate', '-data', str(self.install / 'data'), '-listen', mod.WEB], {}, str(self.install))]
+        self.installer.port_wait = lambda: (_ for _ in ()).throw(RuntimeError('orphan worker port'))
+        self.installer.port_busy = lambda: True
+        with self.assertRaisesRegex(RuntimeError, 'manual recovery refused because ports remain occupied'):
+            self.installer.apply(adopt_manual=True)
+        self.assertEqual(self.restored, [])
+        self.assertFalse(self.installer.unit.exists())
 
     def test_new_service_rolls_back_on_health_failure(self):
         self.http = lambda _: (_ for _ in ()).throw(RuntimeError('HTTP failed'))
