@@ -141,6 +141,19 @@ class NativeSystemdTests(unittest.TestCase):
             self.installer.apply(adopt_manual=True)
         self.assertFalse(self.stopped)
 
+    def test_dropin_write_failure_rolls_back_new_unit(self):
+        real_write = mod.atomic_write
+        def fail_dropin(path, content):
+            if path == self.installer.dropin:
+                raise OSError('injected drop-in disk failure')
+            return real_write(path, content)
+        with mock.patch.object(mod, 'atomic_write', side_effect=fail_dropin):
+            with self.assertRaisesRegex(RuntimeError, 'configuration restored'):
+                self.installer.apply()
+        self.assertFalse(self.installer.unit.exists())
+        self.assertFalse(self.installer.dropin.exists())
+        self.assertFalse(self.commands.active)
+
     def test_new_service_rolls_back_on_health_failure(self):
         self.http = lambda _: (_ for _ in ()).throw(RuntimeError('HTTP failed'))
         with self.assertRaisesRegex(RuntimeError, 'configuration restored'):
