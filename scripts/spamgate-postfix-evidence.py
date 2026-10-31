@@ -12,6 +12,8 @@ import re
 import stat
 import sys
 
+from spamgate_log_reader import bounded_log_lines
+
 MAX_CASES = 1000
 MAX_LOGS = 16
 MAX_LOG_BYTES = 64 * 1024 * 1024
@@ -90,24 +92,7 @@ def accepted_runs(path):
 
 
 def log_lines(path):
-    target = pathlib.Path(path)
-    info = target.lstat()
-    if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_LOG_BYTES:
-        raise ValueError("log must be a regular file within 64 MiB")
-    fd = os.open(target, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
-    with os.fdopen(fd, "rb") as handle:
-        opened = os.fstat(handle.fileno())
-        if not stat.S_ISREG(opened.st_mode) or opened.st_size > MAX_LOG_BYTES:
-            raise ValueError("log changed or exceeds 64 MiB")
-        total = 0
-        while True:
-            raw = handle.readline(MAX_LINE_BYTES + 1)
-            if not raw:
-                break
-            total += len(raw)
-            if len(raw) > MAX_LINE_BYTES or total > MAX_LOG_BYTES:
-                raise ValueError("oversized Postfix log line or file")
-            yield raw.decode("utf-8", "replace")
+    yield from bounded_log_lines(path)
 
 
 def correlate(report, paths, recipient):
