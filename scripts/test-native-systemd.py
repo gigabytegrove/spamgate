@@ -219,6 +219,14 @@ class NativeSystemdTests(unittest.TestCase):
             self.installer.apply()
         self.assertFalse(self.installer.unit.exists())
 
+    def test_symlinked_dropin_directory_refused(self):
+        external = self.root / 'external'
+        external.mkdir()
+        self.installer.dropin.parent.symlink_to(external, target_is_directory=True)
+        with self.assertRaisesRegex(RuntimeError, 'symlinked systemd configuration'):
+            self.installer.apply()
+        self.assertEqual(list(external.iterdir()), [])
+
     def test_unprivileged_apply_refused(self):
         with mock.patch.object(mod.os, 'geteuid', return_value=1000):
             with self.assertRaisesRegex(RuntimeError, 'requires root'):
