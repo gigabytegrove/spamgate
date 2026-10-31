@@ -22,9 +22,16 @@ func (s *Store) refreshHistoryLocked() error {
  if !before.Mode().IsRegular()||before.Mode().Perm()&0022!=0 {
   return errors.New("history journal must be a private regular file")
  }
- if s.journalKnown&&s.journalInfo!=nil&&os.SameFile(before,s.journalInfo)&&
-  before.Size()==s.journalSize&&before.ModTime().Equal(s.journalInfo.ModTime()) {
-  return nil
+ if s.journalKnown&&s.journalInfo!=nil&&os.SameFile(before,s.journalInfo) {
+  if before.Size()<s.journalSize {
+   return errors.New("history journal truncated in place; refusing append or compaction")
+  }
+  if before.Size()==s.journalSize {
+   if !before.ModTime().Equal(s.journalInfo.ModTime()) {
+    return errors.New("history journal rewritten in place; refusing uncertain evidence")
+   }
+   return nil
+  }
  }
  f,err:=os.Open(path);if err!=nil{return err};defer f.Close()
  opened,err:=f.Stat();if err!=nil{return err}
