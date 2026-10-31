@@ -47,6 +47,8 @@ jobs:
           bash scripts/test-supervised-updates.sh
           bash -n scripts/install-postfix-release-helper.sh scripts/test-install-postfix-release-helper.sh
           bash scripts/test-install-postfix-release-helper.sh
+          bash -n scripts/install-dovecot-sieve.sh scripts/test-install-dovecot-sieve.sh
+          bash scripts/test-install-dovecot-sieve.sh
       - name: Compile native Linux and Windows programs
         env:
           CGO_ENABLED: '0'
