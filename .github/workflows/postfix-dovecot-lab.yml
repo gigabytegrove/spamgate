@@ -70,10 +70,11 @@ jobs:
           # the Sieve rule is exercised on the real SMTP -> Milter -> LDA path.
           # This is NOT an installer or a production MTA configuration change.
           sudo test -x /usr/lib/dovecot/dovecot-lda
-          sudo install -d -m 0755 /etc/dovecot/sieve
-          sudo install -m 0644 scripts/fixtures/spamgate-junk.sieve /etc/dovecot/sieve/spamgate-ci.sieve
-          sudo sievec /etc/dovecot/sieve/spamgate-ci.sieve
-          printf '%s\n' 'protocol lda {' '  mail_plugins = $mail_plugins sieve' '}' 'plugin {' '  sieve_before = /etc/dovecot/sieve/spamgate-ci.sieve' '}' | sudo tee /etc/dovecot/conf.d/99-spamgate-ci-sieve.conf >/dev/null
+          # Exercise the same opt-in tool shipped for native operators,
+          # but ONLY inside this disposable GitHub Actions VM.
+          sudo bash scripts/install-dovecot-sieve.sh --preview
+          sudo bash scripts/install-dovecot-sieve.sh --apply --confirm DOVECOT-SIEVE
+          sudo doveconf -n | grep -F 'sieve_before = /etc/dovecot/sieve/spamgate-junk.sieve'
           sudo systemctl restart dovecot
           sudo doveadm user spamgatebeta
           sudo doveadm mailbox create -u spamgatebeta Junk
@@ -127,6 +128,21 @@ jobs:
             exit 1
           fi
           printf '%s\n' "$INBOX_STATUS" "$JUNK_STATUS" > lab-evidence/dovecot-mailbox-counts.txt
+
+      - name: Validate Sieve removal and Dovecot configuration rollback
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo bash scripts/install-dovecot-sieve.sh --remove --confirm REMOVE-DOVECOT-SIEVE
+          sudo doveconf -n > lab-evidence/dovecot-after-sieve-removal.txt
+          if grep -Fq 'sieve_before = /etc/dovecot/sieve/spamgate-junk.sieve' lab-evidence/dovecot-after-sieve-removal.txt; then
+            echo 'SpamGate Sieve rule remained active after rollback' >&2
+            exit 1
+          fi
+          sudo systemctl restart dovecot
+          sudo doveadm mailbox status -u spamgatebeta messages INBOX
+          sudo doveadm mailbox status -u spamgatebeta messages Junk
+          printf 'Dovecot Sieve native install and rollback passed on disposable host.\n' | tee lab-evidence/dovecot-sieve-rollback.txt
 
       - name: Validate opt-in least-privilege HOLD helper on disposable Postfix host
         shell: bash
