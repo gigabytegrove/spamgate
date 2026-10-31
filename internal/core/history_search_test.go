@@ -56,3 +56,45 @@ func TestSearchHistoryPaginationPrivacyAndFilters(t *testing.T) {
 		t.Fatal("cross-mailbox search leak")
 	}
 }
+
+func TestSearchHistoryDeferredVerdictsRespectMailboxIsolation(t *testing.T) {
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []struct {
+		id, action, mailbox string
+	}{
+		{"deferred-alice", "soft_reject", "alice@example.org"},
+		{"deferred-bob", "soft_reject", "bob@example.org"},
+		{"accepted-alice", "accept", "alice@example.org"},
+	} {
+		if err := store.Save(Message{
+			ID: item.id, Timestamp: time.Now(), Sender: "sender@example.net",
+			Recipients: []string{item.mailbox}, Subject: item.id, Action: item.action,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	query := HistoryQuery{Action: "soft_reject", Limit: 50}
+	all, err := store.SearchHistory(query, "")
+	if err != nil {
+		t.Fatalf("deferred verdict should be a supported action: %v", err)
+	}
+	if all.Total != 2 || len(all.Items) != 2 {
+		t.Fatalf("unexpected global deferred totals: %+v", all)
+	}
+	alice, err := store.SearchHistory(query, "alice@example.org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if alice.Total != 1 || len(alice.Items) != 1 || alice.Items[0].ID != "deferred-alice" {
+		t.Fatalf("mailbox data leakage or invalid deferred filtering: %+v", alice)
+	}
+	if len(alice.Items[0].Recipients) != 1 || alice.Items[0].Recipients[0] != "alice@example.org" {
+		t.Fatalf("unexpected recipient exposure: %+v", alice.Items[0].Recipients)
+	}
+	if _, err := store.SearchHistory(HistoryQuery{Action: "invented", Limit: 50}, ""); err == nil {
+		t.Fatal("invalid actions must not bypass search validation")
+	}
+}
