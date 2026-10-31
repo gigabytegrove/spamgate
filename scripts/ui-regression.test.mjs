@@ -334,7 +334,7 @@ test('history sorting distinguishes paged remote results from loaded records',()
  vm.runInContext(`S.historyResults={total:29,items:[{id:'remote',action:'tag',score:8}]};S.historyOffset=0;`,ctx);
  html=vm.runInContext('messageHistory()',ctx);
  assert.match(html,/Sorting this page only/);
- assert.match(html,/1–29 of 29|1–29 of 29|1–29 of 29|1–29/);
+ assert.match(html,/1–1 of 29 retained matches/);
  assert.match(html,/data-inspect="remote"/);
 });
 test('remote saved-history API failure is explicit and preserves recently loaded records',async()=>{
@@ -397,4 +397,44 @@ test('Postfix hold inventory errors and untrusted envelope data are escaped',()=
  assert.match(html,/&lt;script&gt;/);
  assert.doesNotMatch(html,/<iframe src=x>/);
  assert.doesNotMatch(html,/<script>alert/);
+});
+
+
+test('history audit table keeps operational columns and escapes scan data',()=>{
+ const ctx=context();
+ vm.runInContext(`S.section='history';S.messages=[{
+  id:'<script>x</script>',action:'soft_reject',score:8.5,
+  subject:'<img src=x onerror=alert(1)>',sender:'notify@example.net',
+  recipients:['ops@example.net'],timestamp:'2026-10-31T15:35:00Z'
+ }];`,ctx);
+ const html=vm.runInContext('messageHistory()',ctx);
+ for(const title of ['Received','Message','Sender and recipients','Decision','Score','Feedback','Investigation'])
+  assert.match(html,new RegExp('>'+title+'</th>'));
+ assert.match(html,/Temporarily deferred/);
+ assert.match(html,/&lt;script&gt;x&lt;\/script&gt;/);
+ assert.match(html,/&lt;img src=x/);
+ assert.doesNotMatch(html,/<img src=x/);
+ assert.match(html,/role="region" aria-label="Message history results"/);
+});
+test('large retained history is paginated locally without truncating the search count',()=>{
+ const ctx=context();
+ vm.runInContext(`S.section='history';S.historySort='newest';S.messages=Array.from({length:205},(_,i)=>({
+   id:'scan-'+i,action:'accept',subject:'Mail '+i,score:i,
+   timestamp:new Date(Date.UTC(2026,9,31,0,0,0)+i*1000).toISOString()
+ }));`,ctx);
+ let html=vm.runInContext('messageHistory()',ctx);
+ assert.match(html,/1–100 of 205 loaded matches/);
+ assert.equal((html.match(/data-inspect=/g)||[]).length,100);
+ assert.match(html,/id="history-local-next"/);
+ vm.runInContext('S.historyPage=1',ctx);
+ html=vm.runInContext('messageHistory()',ctx);
+ assert.match(html,/101–200 of 205 loaded matches/);
+ assert.equal((html.match(/data-inspect=/g)||[]).length,100);
+ vm.runInContext('S.historyPage=2',ctx);
+ html=vm.runInContext('messageHistory()',ctx);
+ assert.match(html,/201–205 of 205 loaded matches/);
+ assert.equal((html.match(/data-inspect=/g)||[]).length,5);
+ vm.runInContext('S.historyPage=999',ctx);
+ html=vm.runInContext('messageHistory()',ctx);
+ assert.match(html,/201–205 of 205 loaded matches/);
 });
