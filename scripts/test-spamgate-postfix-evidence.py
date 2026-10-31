@@ -140,6 +140,16 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(self.call().returncode, 3)
         self.assertEqual(json.loads(self.output.read_text())["counts"]["no_cleanup_correlation"], 1)
 
+    def test_duplicate_transport_sent_is_not_certified(self):
+        self.log.write_text(f"postfix/cleanup[123]: A1B2C3: message-id=<{RID1}@spamgate-qualification.invalid>\n"
+                            f"postfix/lmtp[124]: A1B2C3: to=<{RECIPIENT}>, status=sent\n"
+                            f"postfix/lmtp[125]: A1B2C3: to=<{RECIPIENT}>, status=sent\n"
+                            "postfix/qmgr[125]: A1B2C3: removed\n")
+        self.assertEqual(self.call().returncode, 3)
+        evidence = json.loads(self.output.read_text())
+        self.assertEqual(evidence["entries"][0]["state"], "duplicate_transport_sent")
+        self.assertEqual(evidence["entries"][0]["sent_count"], 2)
+
     def test_incomplete_report_is_refused(self):
         self.report.write_text(json.dumps({"event": "plan", "cases": 1}) + "\n")
         self.log.write_text("")
