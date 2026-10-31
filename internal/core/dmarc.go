@@ -45,9 +45,9 @@ func dmarcTXT(ctx context.Context, resolver SPFResolver, name string) (string, e
 	}
 	var record string
 	for _, s := range txts {
-		if strings.EqualFold(dkimTags(s)["v"], "DMARC1") {
+		if dmarcCandidate(s) {
 			if record != "" {
-				return "", fmt.Errorf("multiple DMARC1 policy TXT records")
+				return "", fmt.Errorf("%w: multiple DMARC1 policy TXT records", errDMARCPolicy)
 			}
 			record = s
 		}
@@ -82,6 +82,9 @@ func DMARCCheck(ctx context.Context, resolver SPFResolver, headerFrom string, sp
 	record, err := dmarcTXT(dnsCtx, resolver, domain)
 	if err != nil {
 		result.Result = "temperror"
+		if errors.Is(err, errDMARCPolicy) {
+			result.Result = "permerror"
+		}
 		result.Detail = "DMARC policy lookup failed: " + err.Error()
 		return result
 	}
@@ -95,6 +98,9 @@ func DMARCCheck(ctx context.Context, resolver SPFResolver, headerFrom string, sp
 		record, err = dmarcTXT(dnsCtx, resolver, org)
 		if err != nil {
 			result.Result = "temperror"
+			if errors.Is(err, errDMARCPolicy) {
+				result.Result = "permerror"
+			}
 			result.Detail = "Organizational DMARC policy lookup failed: " + err.Error()
 			return result
 		}
@@ -105,7 +111,12 @@ func DMARCCheck(ctx context.Context, resolver SPFResolver, headerFrom string, sp
 		policyDomain = org
 		inherited = true
 	}
-	tags := dkimTags(record)
+	tags, err := parseDMARCRecord(record)
+	if err != nil {
+		result.Result = "permerror"
+		result.Detail = "Invalid DMARC policy record: " + err.Error()
+		return result
+	}
 	policy := strings.ToLower(tags["p"])
 	if policy != "none" && policy != "quarantine" && policy != "reject" {
 		result.Result = "permerror"
