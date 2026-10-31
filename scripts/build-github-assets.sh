@@ -54,6 +54,7 @@ python3 scripts/test-spamgate-host-probe.py -v
 python3 scripts/test-spamgate-host-probe-smtp.py -v
 python3 scripts/test-spamgate-filtration-qualification.py -v
 python3 scripts/test-spamgate-postfix-evidence.py -v
+python3 scripts/test-spamgate-maildir-evidence.py -v
 node --check internal/server/assets/app.js
 node --test scripts/ui-regression.test.mjs
 bash -n scripts/bootstrap-foreground.sh
