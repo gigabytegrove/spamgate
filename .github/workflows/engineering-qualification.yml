@@ -56,6 +56,7 @@ jobs:
           python3 scripts/test-spamgate-host-probe.py -v
           python3 scripts/test-spamgate-host-probe-smtp.py -v
           python3 scripts/test-spamgate-filtration-qualification.py -v
+          python3 scripts/test-spamgate-postfix-evidence.py -v
           python3 scripts/spamgate-host-probe.py > /tmp/spamgate-preflight.json
           python3 -c 'import json; r=json.load(open("/tmp/spamgate-preflight.json")); assert r["status"] == "preflight_only" and not r["smtp"]["attempted"]'
       - name: Compile native Linux and Windows programs
