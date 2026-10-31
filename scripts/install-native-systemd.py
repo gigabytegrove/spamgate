@@ -260,8 +260,11 @@ Environment="SPAMGATE_MILTER_TRUSTED_CIDRS=127.0.0.1/32"
         try:
             if original_unit is None:
                 atomic_write(self.unit, self.unit_text())
-            atomic_write(self.dropin, self.dropin_text())
+                changed = True
+            # The drop-in write can fail after creating/replacing a file.
+            # Mark rollback required before attempting it.
             changed = True
+            atomic_write(self.dropin, self.dropin_text())
             self.call('systemd-analyze', 'verify', str(self.unit))
             self.call('systemctl', 'daemon-reload')
             if manual:
