@@ -55,9 +55,14 @@ The engineering GitHub Actions workflow runs this suite and asserts that the def
 Run both safety and SMTP wire regressions:
 
 ```bash
-python3 -m unittest discover -s scripts -p 'test-spamgate-host-probe*.py' -v
+python3 scripts/test-spamgate-host-probe.py -v
+python3 scripts/test-spamgate-host-probe-smtp.py -v
+python3 scripts/test-spamgate-filtration-qualification.py -v
 ```
 
 This lab deliberately does not invoke Postfix, Dovecot, or the SpamGate classifier. It validates the probe itself before that probe is used for real-host tests. The GitHub engineering workflow now runs both test files.
 
 **Acceptance evidence boundary:** A passing wire regression means the test harness can safely submit and classify SMTP transport outcomes against a fake MTA. It does not establish real spam detection, real mailbox delivery, or native beta readiness.
+
+
+**Regression correction (October 31):** The earlier `unittest discover` command silently executed **zero** tests because the test filenames contain hyphens. The build and engineering workflow now invoke each script directly and fail on assertion errors. This correction supersedes any earlier claim that the host-probe tests passed merely because discovery returned exit code zero.
