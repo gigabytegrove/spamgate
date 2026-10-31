@@ -8,7 +8,7 @@ It addresses two previously unverified failure modes:
 1. **Inflated classifier confidence** from repeated corpus examples. `spamgate-eval --require-unique-ids` rejects duplicate SHA-256 message identities, including duplicates crossing cohorts. The legacy evaluator format remains readable, but strict qualification must use the new flag.
 2. **False success from unobserved mail**. `reconcile` refuses to produce evaluator labels unless every SMTP-accepted message has an independently recorded SpamGate verdict. A successful SMTP 250 response is never silently interpreted as a classifier accept or mailbox delivery.
 
-The runner limits each session to 1,000 fixtures, each no more than 128 KiB, a single confirmed recipient, one SMTP session, and at least 250 ms between submissions. It uses IP-literal SMTP targets to prevent DNS rebinding, requires explicit `--allow-remote` for non-loopback addresses, and refuses to overwrite reports. Each attempt is fsynced to a private JSONL journal before transmission and each SMTP outcome is fsynced afterward. Crashes or incomplete journals fail reconciliation.
+The runner limits each session to 1,000 fixtures, each no more than 128 KiB, a single confirmed recipient, one SMTP session, and at least 250 ms between submissions. It uses IP-literal SMTP targets to prevent DNS rebinding, requires explicit `--allow-remote` for non-loopback addresses, and refuses to overwrite reports. A batch plan with the total expected case count is fsynced before connecting; each attempt is fsynced to a private JSONL journal before transmission and each SMTP outcome is fsynced afterward. Crashes or incomplete journals fail reconciliation, including a crash between otherwise accepted cases.
 
 ## Prepare an independently labelled corpus
 
