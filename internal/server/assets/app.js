@@ -1,5 +1,5 @@
 'use strict';
-const S={authenticated:false,setup:false,me:null,config:null,messages:[],stats:null,bayesStats:null,fuzzyStats:null,fuzzyEntries:[],neuralStats:null,signals:[],runtime:null,hostReport:null,section:'overview',inspect:null,search:'',filterAction:'all',reviewStatus:'pending',reviewSort:'newest',historySort:'newest',historyPage:0,historySearchError:null,historySearching:false,onceToken:null,menu:false,deliveryQueue:null,postfixHold:null,postfixHoldError:null,postfixHoldCheckedAt:null,investigation:null,historyResults:null,historyOffset:0,editRule:null,preview:null,diagnostics:null,readiness:null,wizardLoaded:false,wizardStep:0,wizardServer:'testing',wizardMode:'test',wizardPolicy:'balanced',livePollBusy:false,liveLastCheck:null,liveError:null,liveNewCount:0,overviewWindow:'24h',headerView:null,updateInfo:null,updateReleaseChecked:false,updateError:null,telemetry:null,telemetryError:null,diagnosticsCheckedAt:null,diagnosticsBusy:false,monitorData:null,monitorError:null,policyPreview:null,policyPreviewError:null,sgtubeCatalog:null,sgtubeSelected:null,sgtubeMessages:null,sgtubeResult:null,sgtubeError:null,historyAudit:null,historyAuditError:null,historyAuditBusy:false,historyLoaded:false,historyRefreshError:null};
+const S={authenticated:false,setup:false,me:null,config:null,messages:[],stats:null,bayesStats:null,fuzzyStats:null,fuzzyEntries:[],neuralStats:null,signals:[],runtime:null,hostReport:null,section:'overview',inspect:null,search:'',filterAction:'all',reviewStatus:'pending',reviewSort:'newest',reviewSelected:[],bulkReviewBusy:false,bulkReviewErrors:[],historySort:'newest',historyPage:0,historySearchError:null,historySearching:false,onceToken:null,menu:false,deliveryQueue:null,postfixHold:null,postfixHoldError:null,postfixHoldCheckedAt:null,investigation:null,historyResults:null,historyOffset:0,editRule:null,preview:null,diagnostics:null,readiness:null,wizardLoaded:false,wizardStep:0,wizardServer:'testing',wizardMode:'test',wizardPolicy:'balanced',livePollBusy:false,liveLastCheck:null,liveError:null,liveNewCount:0,overviewWindow:'24h',headerView:null,updateInfo:null,updateReleaseChecked:false,updateError:null,telemetry:null,telemetryError:null,diagnosticsCheckedAt:null,diagnosticsBusy:false,monitorData:null,monitorError:null,policyPreview:null,policyPreviewError:null,sgtubeCatalog:null,sgtubeSelected:null,sgtubeMessages:null,sgtubeResult:null,sgtubeError:null,historyAudit:null,historyAuditError:null,historyAuditBusy:false,historyLoaded:false,historyRefreshError:null};
 const $=q=>document.querySelector(q);
 const esc=v=>String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const n=v=>Number(v||0).toLocaleString();
@@ -74,7 +74,7 @@ const navigation=[
 const primarySections=new Set(['overview','investigate','quarantine','history','settings']);
 function permitted(id){return S.me?.role==='admin'||!['users','tokens','lists','settings','updates','policy','connect','learning','threats','delivery','welcome','diagnostics','categories'].includes(id)}
 function sectionFromLocation(){return navigation.find(r=>r[2]===window.location.pathname)?.[0]||'overview'}
-function routeTo(id,replace=false){if(!navigation.some(r=>r[0]===id)||!permitted(id))return;S.section=id;S.menu=false;S.inspect=null;S.search='';S.filterAction='all';S.historyResults=null;S.historyOffset=0;S.historyPage=0;S.historySearchError=null;const path=navigation.find(r=>r[0]===id)[2];if(window.location.pathname!==path)window.history[replace?'replaceState':'pushState']({section:id},'',path);render();window.scrollTo(0,0);if(id==='diagnostics'){void loadDiagnostics();void loadMonitor()}if(id==='updates')void loadLocalUpdateStatus();if(id==='categories')void loadCategoryCatalog();if(id==='history'&&S.me?.role==='admin')void loadHistoryAudit() }
+function routeTo(id,replace=false){if(!navigation.some(r=>r[0]===id)||!permitted(id))return;S.section=id;S.menu=false;S.inspect=null;S.search='';S.filterAction='all';S.historyResults=null;S.historyOffset=0;S.historyPage=0;S.historySearchError=null;S.reviewSelected=[];S.bulkReviewErrors=[];const path=navigation.find(r=>r[0]===id)[2];if(window.location.pathname!==path)window.history[replace?'replaceState':'pushState']({section:id},'',path);render();window.scrollTo(0,0);if(id==='diagnostics'){void loadDiagnostics();void loadMonitor()}if(id==='updates')void loadLocalUpdateStatus();if(id==='categories')void loadCategoryCatalog();if(id==='history'&&S.me?.role==='admin')void loadHistoryAudit() }
 
 function authLayout(){const first=S.setup;return `<div class="auth-layout"><aside class="auth-brand"><a class="brand-lockup" href="/overview"><img class="auth-logo-image" src="/assets/spamgate-logo.png" alt="SpamGate"></a><div><div class="hero-rule" style="color:#E7BE58">YOUR EMAIL, YOUR RULES</div><h1>Less junk. More control.</h1><p>Spot spam, fix wrong decisions, and stay in control of your inbox.</p></div><div><div class="auth-graphic" aria-hidden="true"><div class="line"></div><div class="line"></div><div class="line"></div><div class="line"></div></div><small>NO HIDDEN SCORING · NO DEFAULT ADMIN PASSWORD</small></div></aside><main id="main" class="auth-side"><section class="auth-panel"><div class="overline">${first?'CREATE YOUR ACCOUNT':'WELCOME BACK'}</div><h1>${first?'First, create your account.':'Welcome back.'}</h1><p>${first?'Create your login. The setup guide comes next — no mail server changes yet.':'Sign in to review messages and manage protection.'}</p><form id="${first?'setup-form':'login-form'}">${first?`<div class="field"><label for="setupkey">First-run claim key</label><input id="setupkey" name="setup_key" required autocomplete="off" placeholder="Paste the claim key from SpamGate" spellcheck="false"></div>`:''}<div class="field"><label for="username">Administrator username</label><input id="username" name="username" required minlength="3" maxlength="48" autocomplete="username"></div><div class="field"><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="${first?'new-password':'current-password'}" required ${first?'minlength="12"':''}></div><button type="submit" class="primary">${first?'Create administrator':'Sign in'} ↗</button></form><div class="auth-foot">${first?'The claim key is unique to the current startup. Choose a password of at least 12 characters.':'Sessions expire after 12 hours. Repeated failed sign-in attempts are rate-limited.'}</div></section></main></div>`}
 
@@ -290,6 +290,49 @@ function reviewMailRows(items, search='', actionFilter='all', status='pending', 
   .filter(m=>status==='all'||(status==='reviewed'?!!m.review_status:!m.review_status))
   .filter(m=>!text||[m.sender,m.subject,m.client_ip,m.id,(m.recipients||[]).join(' ')].join(' ').toLowerCase().includes(text)),order);
 }
+// Bulk classification feedback is deliberately limited to 25 unreviewed
+// flagged scans. The server's existing per-scan audit endpoint checks admin
+// permissions and CSRF, persists feedback, and NEVER changes mail delivery.
+function reviewSelectionList(rows){
+ if(!rows.length)return '';
+ const admin=S.me?.role==='admin';
+ return '<div class="task-message-list sg-review-list" role="list">'+rows.map(m=>{
+  const score=Number(m.score||0),reviewed=!!m.review_status,selectable=admin&&!reviewed;
+  const verdict=m.action==='quarantine'?'Hold requested':m.action==='tag'?'Flagged':m.action==='reject'?'Rejected':'Deferred';
+  const select=admin?(selectable?
+   '<label class="sg-review-selector"><input type="checkbox" data-review-select="'+esc(m.id)+'" '+(S.reviewSelected.includes(m.id)?'checked':'')+' aria-label="Select '+esc(m.subject||m.id)+' for classification confirmation"><span class="sr-only">Select message</span></label>':
+   '<span class="sg-review-check-spacer" aria-hidden="true"></span>'):'';
+  return '<div class="task-message sg-review-row '+(admin?'with-selection':'')+'" role="listitem"><span class="task-message-indicator '+esc(m.action)+'"></span>'+select+
+  '<div class="task-message-main"><strong>'+esc(m.subject||'(No subject)')+'</strong><span>'+esc(m.sender||'Unknown sender')+'</span><small>To '+esc((m.recipients||[]).join(', ')||'unknown')+' · '+esc(fmtDate(m.timestamp))+'</small></div>'+
+  '<div class="task-message-decision"><span class="task-action '+esc(m.action)+'">'+verdict+'</span><small>'+(reviewed?'Reviewed':'Not reviewed')+'</small></div>'+
+  '<div class="task-message-score"><strong class="'+(score>=0?'hot':'good')+'">'+(score>=0?'+':'')+score.toFixed(1)+'</strong><small>'+n((m.findings||[]).filter(f=>Number(f.score)>0).length)+' concerns</small></div>'+
+  '<button class="task-open" type="button" data-inspect="'+esc(m.id)+'" aria-label="Inspect '+esc(m.subject||m.id)+'">See why <span aria-hidden="true">→</span></button></div>';
+ }).join('')+'</div>';
+}
+async function submitBulkReviewCorrect(){
+ if(S.bulkReviewBusy)return {successful:[],failures:[]};
+ const allowed=new Set((S.messages||[]).filter(m=>['tag','quarantine','reject','soft_reject'].includes(m.action)&&!m.review_status).map(m=>m.id));
+ const ids=[...new Set(S.reviewSelected)].filter(id=>allowed.has(id)).slice(0,25);
+ if(!ids.length)return {successful:[],failures:[]};
+ const successful=[],failures=[];
+ S.bulkReviewBusy=true;S.bulkReviewErrors=[];render();
+ try{
+  for(const id of ids){
+   try{
+    const reply=await api('/api/v1/messages/'+encodeURIComponent(id)+'/review',{method:'POST',json:{decision:'correct',adjust_sender:false}});
+    if(!reply?.message||reply.message.id!==id||reply.message.review_status!=='correct')throw Error('Review response could not be verified');
+    successful.push(id);
+    S.messages=S.messages.map(m=>m.id===id?reply.message:m);
+   }catch(e){failures.push({id,error:e?.message||'Unknown error'})}
+  }
+ }finally{
+  S.bulkReviewBusy=false;
+  S.reviewSelected=failures.map(x=>x.id);
+  S.bulkReviewErrors=failures;
+  render();
+ }
+ return {successful,failures};
+}
 function investigate(){
  const sample=S.messages||[];
  const flagged=sample.filter(m=>['tag','quarantine','reject','soft_reject'].includes(m.action));
@@ -305,7 +348,9 @@ function investigate(){
  '<label for="review-sort">Order by<select id="review-sort">'+sortChoices.map(([id,label])=>'<option value="'+id+'" '+(S.reviewSort===id?'selected':'')+'>'+label+'</option>').join('')+'</select></label>'+
  '<span class="ops-review-results" role="status">'+n(selected.length)+' matching · '+esc(statusLabel)+'</span></div>'+
  taskSearch('Find subject, sender, recipient, IP or message ID')+
- (selected.length?quickMessageList(selected,1000):'<div class="task-empty" role="status"><h3>No matching messages</h3><p>'+(S.reviewStatus==='pending'&&pending===0?'All flagged messages in the loaded sample have been reviewed.':'Change review status, decision or search to inspect another message.')+'</p></div>')+
+ (S.me?.role==='admin'?'<div class="sg-bulk-tools"><button type="button" class="secondary" id="review-select-visible" '+(S.bulkReviewBusy?'disabled':'')+'>Select up to 25 visible pending</button><button type="button" class="secondary" id="review-clear-selection" '+(!S.reviewSelected.length||S.bulkReviewBusy?'disabled':'')+'>Clear selection</button><button type="button" class="primary" id="review-bulk-correct" '+(!S.reviewSelected.length||S.bulkReviewBusy?'disabled':'')+'>Confirm selected classifications ('+n(S.reviewSelected.length)+')</button><small>Records feedback only; does not release or change mail. Each selected message is audited individually.</small></div>':'')+
+ (S.bulkReviewErrors.length?'<p role="alert" class="task-search-error">'+n(S.bulkReviewErrors.length)+' review(s) failed: '+S.bulkReviewErrors.map(x=>esc(x.id)+': '+esc(x.error)).join('; ')+'</p>':'')+
+ (selected.length?reviewSelectionList(selected):'<div class="task-empty" role="status"><h3>No matching messages</h3><p>'+(S.reviewStatus==='pending'&&pending===0?'All flagged messages in the loaded sample have been reviewed.':'Change review status, decision or search to inspect another message.')+'</p></div>')+
  '</section><p class="ops-review-footer">Allowed mail can also be investigated and reported as missed spam from <a href="/messages" data-route="history">All messages</a>. Saved scan verdicts do not certify final Postfix or Dovecot delivery.</p>';
 }
 
@@ -846,6 +891,17 @@ document.addEventListener('click',async event=>{const el=event.target.closest('b
   }
   if(id==='reload'){await refresh();alertUser('Message history refreshed');return}
   if(id==='history-audit'){await loadHistoryAudit();return}
+  if(id==='review-select-visible'){S.reviewSelected=reviewMailRows(S.messages,S.search,S.filterAction,S.reviewStatus,S.reviewSort).filter(m=>!m.review_status).slice(0,25).map(m=>m.id);S.bulkReviewErrors=[];render();return}
+  if(id==='review-clear-selection'){S.reviewSelected=[];S.bulkReviewErrors=[];render();return}
+  if(id==='review-bulk-correct'){
+   const count=S.reviewSelected.filter(id=>S.messages.some(m=>m.id===id&&!m.review_status&&['tag','quarantine','reject','soft_reject'].includes(m.action))).length;
+   if(!count||S.bulkReviewBusy)return;
+   if(!confirm('Record "correctly classified" feedback for '+count+' selected messages? Each scan will be audited separately. No message will be released, rejected, deleted or delivered.'))return;
+   const result=await submitBulkReviewCorrect();
+   await refresh();
+   alertUser(result.successful.length+' reviews saved; '+result.failures.length+' failed.'+(result.failures.length?' See review errors on this screen.':''),result.failures.length>0);
+   return
+  }
   if(id==='search-full'){await runHistorySearch(0);return}
   if(id==='sgtube-refresh'){await loadCategoryCatalog();return}
   if(el.dataset.sgtubeCopy){const c=S.sgtubeCatalog?.categories?.find(x=>x.id===el.dataset.sgtubeCopy);if(!c)throw Error('Unknown category');await navigator.clipboard.writeText(c.test_marker);alertUser('SGTUBE category test signature copied');return}
@@ -881,8 +937,17 @@ document.addEventListener('click',async event=>{const el=event.target.closest('b
   const deletion=[['delete-rule','rules'],['delete-dns','dns-lists'],['delete-user','users'],['delete-token','tokens']].find(([attr])=>el.dataset[attr]!==undefined);
   if(deletion){const [attr,path]=deletion;const target=el.dataset[attr];if(!confirm(`Remove ${target}? This action cannot be undone.`))return;await api('/api/v1/'+path+'/'+encodeURIComponent(target),{method:'DELETE'});await refresh();alertUser('Removed successfully')}
 }catch(e){alertUser(e.message,true)}});
-document.addEventListener('change',event=>{if(event.target.id==='overview-window'){S.overviewWindow=event.target.value;render();return}if(event.target.name==='server-choice'){S.wizardServer=event.target.value;if(S.wizardServer==='testing')S.wizardMode='test';render();return}if(event.target.name==='mode-choice'){S.wizardMode=event.target.value;render();return}if(event.target.name==='policy-choice'){S.wizardPolicy=event.target.value;render();return}if(event.target.id==='wizard-delivered'){const b=$('#wizard-activate');if(b)b.disabled=!event.target.checked;return}if(event.target.id==='review-status'){S.reviewStatus=event.target.value;render();$('#review-status')?.focus();return}if(event.target.id==='review-sort'){S.reviewSort=event.target.value;render();$('#review-sort')?.focus();return}if(event.target.id==='history-sort'){S.historySort=event.target.value;S.historyPage=0;render();$('#history-sort')?.focus();return}if(event.target.id==='action-filter'){S.filterAction=event.target.value;S.historyResults=null;S.historySearchError=null;S.historyPage=0;render();$('#action-filter')?.focus();return}});
-document.addEventListener('input',event=>{if(event.target.id==='search'){const pos=event.target.selectionStart;S.search=event.target.value;S.historyResults=null;S.historySearchError=null;S.historyPage=0;render();const el=$('#search');if(el){el.focus();el.setSelectionRange(pos,pos)}}});
+document.addEventListener('change',event=>{if(event.target.dataset.reviewSelect){
+ const id=event.target.dataset.reviewSelect;
+ const row=S.messages.find(m=>m.id===id);
+ if(!row||row.review_status||!['tag','quarantine','reject','soft_reject'].includes(row.action)||S.bulkReviewBusy){event.target.checked=false;return}
+ if(event.target.checked){if(S.reviewSelected.length>=25){event.target.checked=false;alertUser('Select at most 25 messages per review batch',true);return}S.reviewSelected=[...new Set([...S.reviewSelected,id])]}
+ else S.reviewSelected=S.reviewSelected.filter(x=>x!==id);
+ const bulk=$('#review-bulk-correct');if(bulk){bulk.disabled=!S.reviewSelected.length;bulk.textContent='Confirm selected classifications ('+n(S.reviewSelected.length)+')'}
+ const clear=$('#review-clear-selection');if(clear)clear.disabled=!S.reviewSelected.length;
+ return
+}if(event.target.id==='overview-window'){S.overviewWindow=event.target.value;render();return}if(event.target.name==='server-choice'){S.wizardServer=event.target.value;if(S.wizardServer==='testing')S.wizardMode='test';render();return}if(event.target.name==='mode-choice'){S.wizardMode=event.target.value;render();return}if(event.target.name==='policy-choice'){S.wizardPolicy=event.target.value;render();return}if(event.target.id==='wizard-delivered'){const b=$('#wizard-activate');if(b)b.disabled=!event.target.checked;return}if(event.target.id==='review-status'){S.reviewStatus=event.target.value;S.reviewSelected=[];S.bulkReviewErrors=[];render();$('#review-status')?.focus();return}if(event.target.id==='review-sort'){S.reviewSort=event.target.value;render();$('#review-sort')?.focus();return}if(event.target.id==='history-sort'){S.historySort=event.target.value;S.historyPage=0;render();$('#history-sort')?.focus();return}if(event.target.id==='action-filter'){S.reviewSelected=[];S.bulkReviewErrors=[];S.filterAction=event.target.value;S.historyResults=null;S.historySearchError=null;S.historyPage=0;render();$('#action-filter')?.focus();return}});
+document.addEventListener('input',event=>{if(event.target.id==='search'){const pos=event.target.selectionStart;S.search=event.target.value;S.reviewSelected=[];S.bulkReviewErrors=[];S.historyResults=null;S.historySearchError=null;S.historyPage=0;render();const el=$('#search');if(el){el.focus();el.setSelectionRange(pos,pos)}}});
 function restoreInspectionFocus(){const target=[...document.querySelectorAll('[data-inspect]')].find(el=>el.dataset.inspect===S.lastInspectedId);target?.focus()}
 document.addEventListener('keydown',event=>{
   if(!S.inspect)return;
