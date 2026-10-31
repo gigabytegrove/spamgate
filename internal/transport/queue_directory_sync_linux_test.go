@@ -17,8 +17,14 @@ func TestSpoolDirectorySyncBeforeAndAfterRename(t *testing.T) {
     q.syncDirForTest = func() error {
         calls++
         pending, err := filepath.Glob(filepath.Join(q.dir, ".pending-*"))
-        if err != nil || len(pending) != 1 {
-            t.Fatalf("sync %d must retain exactly one pending original: %v %v", calls, pending, err)
+        if err != nil {
+            t.Fatalf("sync %d pending inventory failed: %v", calls, err)
+        }
+        if calls == 1 && len(pending) != 1 {
+            t.Fatalf("pre-rename sync must retain pending original: %v", pending)
+        }
+        if calls == 2 && len(pending) != 0 {
+            t.Fatalf("post-rename sync must have published pending original: %v", pending)
         }
         _, publishedErr := os.Stat(q.path(msg.ID))
         if calls == 1 && !errors.Is(publishedErr, os.ErrNotExist) {
