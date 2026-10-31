@@ -89,6 +89,36 @@ class MaildirEvidenceTests(unittest.TestCase):
         self.message(RID2, self.junk)
         self.assertEqual(self.call().returncode, 0)
 
+    def test_expected_folder_passes(self):
+        self.message(RID1, self.junk)
+        expected = self.root / "expected.jsonl"
+        expected.write_text(json.dumps({"case_id": "case0", "folder": "Junk"}) + "\n")
+        result = self.call("--expected-placement", str(expected))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(json.loads(self.output.read_text())["entries"][0]["placement_matches"])
+
+    def test_wrong_expected_folder_fails(self):
+        self.message(RID1)
+        expected = self.root / "expected.jsonl"
+        expected.write_text(json.dumps({"case_id": "case0", "folder": "Junk"}) + "\n")
+        self.assertEqual(self.call("--expected-placement", str(expected)).returncode, 3)
+        result = json.loads(self.output.read_text())
+        self.assertEqual(result["placement_mismatches"], 1)
+        self.assertFalse(result["complete_maildir_correlation"])
+
+    def test_incomplete_expectations_refused(self):
+        self.write_evidence([RID1, RID2])
+        expected = self.root / "expected.jsonl"
+        expected.write_text(json.dumps({"case_id": "case0", "folder": "INBOX"}) + "\n")
+        self.assertEqual(self.call("--expected-placement", str(expected)).returncode, 2)
+        self.assertFalse(self.output.exists())
+
+    def test_duplicate_expectations_refused(self):
+        expected = self.root / "expected.jsonl"
+        row = json.dumps({"case_id": "case0", "folder": "INBOX"}) + "\n"
+        expected.write_text(row + row)
+        self.assertEqual(self.call("--expected-placement", str(expected)).returncode, 2)
+
     def test_reject_incomplete_transport_evidence(self):
         self.write_evidence([RID1], complete_transport_correlation=False)
         self.assertEqual(self.call().returncode, 2)
