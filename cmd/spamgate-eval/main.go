@@ -6,6 +6,7 @@ import (
  "bufio"
  "bytes"
  "encoding/json"
+ "encoding/hex"
  "errors"
  "flag"
  "fmt"
@@ -53,7 +54,15 @@ func readLabels(r io.Reader)(counts,error){
 // readLabelledCorpus accepts only category names, never message identifiers or
 // raw mail. The legacy two-field format remains valid and unstratified.
 func readLabelledCorpus(r io.Reader)(counts,map[string]counts,int,error){
+ return readLabelledCorpusWithOptions(r,false)
+}
+
+// With strict IDs enabled, a privacy-preserving SHA-256 digest must identify
+// each independently adjudicated message exactly once across all cohorts.
+// This prevents repeated examples from inflating sample sizes and confidence.
+func readLabelledCorpusWithOptions(r io.Reader,requireUniqueIDs bool)(counts,map[string]counts,int,error){
  var c counts
+ seen:=map[string]struct{}{}
  cohorts:=map[string]counts{}
  unspecified:=0
  scanner:=bufio.NewScanner(r)
@@ -67,6 +76,7 @@ func readLabelledCorpus(r io.Reader)(counts,map[string]counts,int,error){
    Label string `json:"label"`
    Action string `json:"action"`
    Cohort string `json:"cohort,omitempty"`
+   ID string `json:"id,omitempty"`
   }
   d:=json.NewDecoder(bytes.NewReader(raw))
   d.DisallowUnknownFields()
@@ -74,6 +84,13 @@ func readLabelledCorpus(r io.Reader)(counts,map[string]counts,int,error){
   var extra any
   if err:=d.Decode(&extra);err!=io.EOF{return counts{},nil,0,fmt.Errorf("line %d: trailing JSON content",line)}
   if record.Label!="ham"&&record.Label!="spam"{return counts{},nil,0,fmt.Errorf("line %d: label must be ham or spam",line)}
+  if record.ID=="" && requireUniqueIDs {return counts{},nil,0,fmt.Errorf("line %d: strict corpus requires a SHA-256 id for every message",line)}
+  if record.ID!="" {
+   if len(record.ID)!=64 || strings.ToLower(record.ID)!=record.ID {return counts{},nil,0,fmt.Errorf("line %d: id must be 64 lowercase hexadecimal characters",line)}
+   if _,err:=hex.DecodeString(record.ID);err!=nil{return counts{},nil,0,fmt.Errorf("line %d: invalid SHA-256 id",line)}
+   if _,exists:=seen[record.ID];exists{return counts{},nil,0,fmt.Errorf("line %d: duplicate corpus id",line)}
+   seen[record.ID]=struct{}{}
+  }
   flagged:=false
   switch record.Action{
   case "accept":flagged=false
@@ -135,6 +152,7 @@ func run(args []string,output,errorsOut io.Writer)int{
  maxFPR:=fs.Float64("max-fpr-upper",0.01,"maximum Wilson 95% upper bound for false-positive rate")
  minRecall:=fs.Float64("min-recall-lower",0.90,"minimum Wilson 95% lower bound for recall")
  requireCohorts:=fs.Bool("require-cohorts",false,"require at least two sufficiently powered independently labelled cohorts")
+ requireUniqueIDs:=fs.Bool("require-unique-ids",false,"require distinct SHA-256 message IDs to prevent repeated samples from inflating confidence")
  minCohortHam:=fs.Int("min-cohort-ham",100,"minimum ham per cohort when required")
  minCohortSpam:=fs.Int("min-cohort-spam",100,"minimum spam per cohort when required")
  maxCohortFPR:=fs.Float64("max-cohort-fpr-upper",0.05,"maximum Wilson upper false-positive bound per cohort")
@@ -149,7 +167,7 @@ func run(args []string,output,errorsOut io.Writer)int{
  file,err:=os.Open(name)
  if err!=nil{fmt.Fprintln(errorsOut,"cannot open corpus:",err);return 2}
  defer file.Close()
- c,cohorts,unspecified,err:=readLabelledCorpus(file)
+ c,cohorts,unspecified,err:=readLabelledCorpusWithOptions(file,*requireUniqueIDs)
  if err!=nil{fmt.Fprintln(errorsOut,"invalid corpus:",err);return 2}
  result:=evaluate(c,*minHam,*minSpam,*maxFPR,*minRecall)
  result.Cohorts,result.CohortGatePassed=evaluateCohorts(cohorts,unspecified,*minCohortHam,*minCohortSpam,*maxCohortFPR,*minCohortRecall)
