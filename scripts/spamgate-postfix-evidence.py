@@ -101,7 +101,7 @@ def correlate(report, paths, recipient):
     queue_to_run = {}
     entries = {rid: {"case_id": row["case_id"], "run_id": rid,
                      "queue_id": None, "transport_events": [], "queue_removed": False,
-                     "held": False, "sent_count": 0, "state": "unobserved"} for rid, row in runs.items()}
+                     "held": False, "sent_count": 0, "discarded": False, "state": "unobserved"} for rid, row in runs.items()}
     duplicate = set()
     for path in paths:
         for line in log_lines(path):
@@ -130,6 +130,8 @@ def correlate(report, paths, recipient):
                 rid = queue_to_run.get(queue_id)
                 if rid is not None and address == recipient:
                     item = {"transport": transport.lower(), "status": status.lower()}
+                    if item["transport"] in ("discard", "error"):
+                        entries[rid]["discarded"] = True
                     if item["status"] == "sent":
                         entries[rid]["sent_count"] += 1
                     if item not in entries[rid]["transport_events"]:
@@ -150,6 +152,8 @@ def correlate(report, paths, recipient):
             entry["state"] = "no_cleanup_correlation"
         elif entry["held"]:
             entry["state"] = "held_unverified"
+        elif entry["discarded"]:
+            entry["state"] = "discard_or_error_transport"
         elif entry["sent_count"] > 1:
             entry["state"] = "duplicate_transport_sent"
         elif "bounced" in statuses:
@@ -205,7 +209,7 @@ def main(argv=None):
         for entry in entries:
             states[entry["state"]] = states.get(entry["state"], 0) + 1
         complete = all(entry["state"] == "transport_sent_not_mailbox_verified" for entry in entries)
-        result = {"schema": 1, "type": "postfix_transport_evidence_only", "complete_transport_correlation": complete,
+        result = {"schema": 1, "type": "postfix_transport_evidence_only", "recipient": args.recipient, "complete_transport_correlation": complete,
                   "counts": states, "entries": entries,
                   "limitations": ["Postfix status=sent does not prove Dovecot INBOX/Junk placement",
                                   "No SpamGate classifier verdicts are inferred",
