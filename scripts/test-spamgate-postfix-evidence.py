@@ -103,6 +103,43 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(self.call().returncode, 3)
         self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "sent_but_queue_removal_unobserved")
 
+    def test_deferred_only_is_incomplete(self):
+        self.log.write_text(f"postfix/cleanup[123]: A1B2C3: message-id=<{RID1}@spamgate-qualification.invalid>\n"
+                            f"postfix/smtp[124]: A1B2C3: to=<{RECIPIENT}>, status=deferred\n")
+        self.assertEqual(self.call().returncode, 3)
+        self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "deferred")
+
+    def test_hold_is_not_a_delivery(self):
+        self.log.write_text(f"postfix/cleanup[123]: A1B2C3: message-id=<{RID1}@spamgate-qualification.invalid>\n"
+                            "postfix/cleanup[123]: A1B2C3: hold: synthetic policy\n")
+        self.assertEqual(self.call().returncode, 3)
+        self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "held_unverified")
+
+    def test_oversized_log_line_refused(self):
+        self.log.write_bytes(b"A" * 65537 + b"\n")
+        self.assertEqual(self.call().returncode, 2)
+        self.assertFalse(self.output.exists())
+
+    def test_duplicate_attempt_refused(self):
+        rows = [json.loads(x) for x in self.report.read_text().splitlines()]
+        self.report.write_text("\n".join(json.dumps(x) for x in [rows[0], rows[1], rows[1], rows[2]]) + "\n")
+        self.log.write_text("")
+        self.assertEqual(self.call().returncode, 2)
+        self.assertFalse(self.output.exists())
+
+    def test_mismatched_confirmation_refused(self):
+        self.log.write_text("")
+        self.assertEqual(self.call("--confirm-recipient", "wrong@example.org").returncode, 2)
+        self.assertFalse(self.output.exists())
+
+    def test_two_cases_both_required(self):
+        self.write_report([(RID1, "ham1"), (RID2, "ham2")])
+        self.log.write_text(f"postfix/cleanup[123]: A1B2C3: message-id=<{RID1}@spamgate-qualification.invalid>\n"
+                            f"postfix/lmtp[124]: A1B2C3: to=<{RECIPIENT}>, status=sent\n"
+                            "postfix/qmgr[125]: A1B2C3: removed\n")
+        self.assertEqual(self.call().returncode, 3)
+        self.assertEqual(json.loads(self.output.read_text())["counts"]["no_cleanup_correlation"], 1)
+
     def test_incomplete_report_is_refused(self):
         self.report.write_text(json.dumps({"event": "plan", "cases": 1}) + "\n")
         self.log.write_text("")
