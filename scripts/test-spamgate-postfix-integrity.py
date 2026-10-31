@@ -130,6 +130,12 @@ class QueueLifecycleTests(unittest.TestCase):
         self.assertEqual(run.returncode, 3, run.stderr)
         self.assertEqual(self.state(), "ambiguous_queue_identity")
 
+    def test_other_recipient_after_removal_is_queue_reuse_risk(self):
+        other = f"postfix/lmtp[2]: {QUEUE}: to=<other@example.org>, status=sent"
+        run = self.invoke([self.cleanup(), self.sent(), self.removed(), other])
+        self.assertEqual(run.returncode, 3, run.stderr)
+        self.assertEqual(self.state(), "ambiguous_queue_identity")
+
     def test_hold_after_removal_refused(self):
         hold = f"postfix/cleanup[1]: {QUEUE}: hold: synthetic"
         run = self.invoke([self.cleanup(), self.sent(), self.removed(), hold])
