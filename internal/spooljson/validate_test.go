@@ -22,6 +22,10 @@ func TestValidateSpoolJSON(t *testing.T) {
         {"token exhaustion", `{"items":[` + strings.Repeat("0,", maxJSONTokens) + `0]}`, "budget"},
         {"deep nesting", `{"x":` + strings.Repeat("[", 65) + `0` + strings.Repeat("]", 65) + `}`, "depth"},
     }
+    // Never include attacker-controlled key names in audit diagnostics.
+    if err := Validate([]byte(`{"secret-address@example.invalid":1,"secret-address@example.invalid":2}`)); err == nil || strings.Contains(err.Error(), "secret-address") {
+        t.Fatalf("duplicate-key diagnostic leaked an untrusted field name: %v", err)
+    }
     for _, tc := range tests {
         t.Run(tc.name, func(t *testing.T) {
             err := Validate([]byte(tc.data))

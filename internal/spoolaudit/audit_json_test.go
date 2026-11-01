@@ -19,6 +19,11 @@ func TestAuditRejectsDuplicateKeysWithMatchingDecodedDigest(t *testing.T) {
     ambiguous := bytes.Replace(b, old, []byte(`"state":"dead","state":"queued"`), 1)
     path := filepath.Join(dir, idA+".json")
     if err := os.WriteFile(path, ambiguous, 0600); err != nil { t.Fatal(err) }
+    var decoded record
+    if err := json.Unmarshal(ambiguous, &decoded); err != nil { t.Fatal(err) }
+    if decoded.IntegritySHA256 != immutableDigest(decoded) || decoded.StateSHA256 != stateDigest(decoded) {
+        t.Fatal("fixture did not reproduce a matching-digest ambiguous record")
+    }
     report, err := Audit(dir)
     if err != nil { t.Fatal(err) }
     if !hasCode(report, "unreadable_record") || report.States["queued"] != 0 {

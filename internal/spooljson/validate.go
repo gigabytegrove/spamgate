@@ -76,7 +76,7 @@ func validateValue(decoder *json.Decoder, value json.Token, depth int, budget *i
             }
             folded := strings.ToLower(key)
             if _, duplicate := seen[folded]; duplicate {
-                return fmt.Errorf("spool JSON contains duplicate object key %q", key)
+                return errors.New("spool JSON contains duplicate object key")
             }
             seen[folded] = struct{}{}
             child, err := decoder.Token()

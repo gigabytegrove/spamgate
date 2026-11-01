@@ -3,6 +3,7 @@ package transport
 import (
     "bytes"
     "context"
+    "encoding/json"
     "os"
     "strings"
     "testing"
@@ -40,6 +41,13 @@ func TestQueueAmbiguousJSONNeverReachesRelay(t *testing.T) {
             if !bytes.Contains(original, tc.old) { t.Fatalf("fixture missing %q", tc.old) }
             mutated := bytes.Replace(original, tc.old, tc.replacement, 1)
             if err := os.WriteFile(path, mutated, 0600); err != nil { t.Fatal(err) }
+            // The ordinary decoder still sees matching digests after the
+            // last-value-wins parse, proving the original bypass.
+            var decoded spoolRecord
+            if err := json.Unmarshal(mutated, &decoded); err != nil { t.Fatal(err) }
+            if decoded.IntegritySHA256 != spoolDigest(decoded) || decoded.StateSHA256 != spoolStateDigest(decoded) {
+                t.Fatal("fixture did not reproduce a matching-digest ambiguous record")
+            }
             if _, err := q.Snapshot(); err == nil || !strings.Contains(err.Error(), "duplicate") {
                 t.Fatalf("ambiguous spool accepted: %v", err)
             }
