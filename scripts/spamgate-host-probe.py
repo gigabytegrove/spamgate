@@ -19,7 +19,7 @@ import sys
 import uuid
 from email.message import EmailMessage
 from spamgate_probe_json import decode_health_response
-from spamgate_milter_probe import verify_milter_protocol, MilterProtocolError
+from spamgate_milter_probe import verify_milter_protocol
 
 MAX_MESSAGE_BYTES = 128 * 1024
 
@@ -46,7 +46,7 @@ def parse_args(argv):
     p.add_argument("--output", help="write JSON report, exclusive create")
     p.add_argument("--check-services", action="store_true", help="opt-in read-only loopback HTTP health and Milter TCP checks")
     p.add_argument("--verify-milter-protocol", action="store_true", help="opt-in bounded Milter option negotiation; no mail callbacks")
-    p.add_argument("--require-milter-actions", default="", help="comma-separated required capabilities: add_header,change_header,quarantine")
+    p.add_argument("--require-milter-actions", default=None, help="comma-separated required capabilities: add_header,change_header,quarantine")
     p.add_argument("--health-port", type=int, default=38470, help="loopback health port (default 38470)")
     p.add_argument("--milter-port", type=int, default=38472, help="loopback Milter TCP port (default 38472)")
     p.add_argument("--expect-version", help="require the /healthz worker version to match exactly")
@@ -57,9 +57,9 @@ def parse_args(argv):
         p.error("--expect-version requires --check-services and a safe version token")
     if a.verify_milter_protocol and not a.check_services:
         p.error("--verify-milter-protocol requires --check-services")
-    if a.require_milter_actions and not a.verify_milter_protocol:
+    if a.require_milter_actions is not None and not a.verify_milter_protocol:
         p.error("--require-milter-actions requires --verify-milter-protocol")
-    required = a.require_milter_actions.split(",") if a.require_milter_actions else []
+    required = a.require_milter_actions.split(",") if a.require_milter_actions is not None else []
     if len(required) != len(set(required)) or any(
             action not in ("add_header", "change_header", "quarantine") for action in required):
         p.error("invalid or duplicate --require-milter-actions value")

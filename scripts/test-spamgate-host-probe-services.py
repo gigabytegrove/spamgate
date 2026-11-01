@@ -148,7 +148,7 @@ class ServiceProbeTests(unittest.TestCase):
         self.assertEqual(process.returncode, 2)
 
     def test_milter_action_list_rejects_duplicates_and_unknown(self):
-        for actions in ("quarantine,quarantine", "quarantine,unknown", ",add_header"):
+        for actions in ("", "quarantine,quarantine", "quarantine,unknown", ",add_header"):
             process = subprocess.run([sys.executable, str(SCRIPT), "--check-services",
                                       "--verify-milter-protocol", "--require-milter-actions", actions],
                                      text=True, capture_output=True, timeout=8)
