@@ -173,8 +173,7 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          # This config is created ONLY on this disposable GitHub-hosted VM.
-          # A dedicated Postfix-owned socket avoids ambiguity with direct LMTP.
+          # Disposable runner ONLY. Never apply to a production mail host.
           sudo tee /etc/dovecot/conf.d/99-spamgate-postfix-lmtp-lab.conf >/dev/null <<'DOVECOT'
           service lmtp {
             unix_listener /var/spool/postfix/private/dovecot-lmtp {
@@ -187,8 +186,7 @@ jobs:
           sudo doveconf -n >/dev/null
           sudo systemctl restart dovecot
           sudo test -S /var/spool/postfix/private/dovecot-lmtp
-          # Make the original LDA path intentionally unusable: successful
-          # mailbox delivery now requires the Postfix -> Dovecot LMTP route.
+          # Disable the LDA fallback to make the LMTP route independently necessary.
           sudo postconf -e 'mailbox_transport = lmtp:unix:private/dovecot-lmtp'
           sudo postconf -e 'mailbox_command = /bin/false'
           sudo postfix check
@@ -197,84 +195,7 @@ jobs:
             python3 scripts/spamgate-postfix-lmtp-lab.py --snapshot \
             --confirm DISPOSABLE-POSTFIX-LMTP-QUALIFICATION \
             > lab-evidence/postfix-lmtp-before.json
-          go test -count=1 -v -run '^TestRealPostfixMilterLocalDeliveryAndTempfail
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          sudo bash scripts/install-dovecot-sieve.sh --remove --confirm REMOVE-DOVECOT-SIEVE
-          sudo doveconf -n > lab-evidence/dovecot-after-sieve-removal.txt
-          # Removal must make the read-only evidence gate fail, without
-          # attempting SMTP or touching mailboxes.
-          if sudo python3 scripts/spamgate-host-probe.py --check-dovecot-sieve > lab-evidence/dovecot-sieve-after-rollback.json; then
-            echo 'Unsafe: Dovecot probe still qualified removed Sieve integration' >&2
-            exit 1
-          fi
-          python3 -c 'import json; r=json.load(open("lab-evidence/dovecot-sieve-after-rollback.json")); assert r["status"] == "dovecot_sieve_failed" and not r["smtp"]["attempted"]'
-          if grep -Fq 'sieve_before = /etc/dovecot/sieve/spamgate-junk.sieve' lab-evidence/dovecot-after-sieve-removal.txt; then
-            echo 'SpamGate Sieve rule remained active after rollback' >&2
-            exit 1
-          fi
-          sudo systemctl restart dovecot
-          sudo doveadm mailbox status -u spamgatebeta messages INBOX
-          sudo doveadm mailbox status -u spamgatebeta messages Junk
-          printf 'Dovecot Sieve native install and rollback passed on disposable host.\n' | tee lab-evidence/dovecot-sieve-rollback.txt
-
-      - name: Validate opt-in least-privilege HOLD helper on disposable Postfix host
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          if ! id spamgate >/dev/null 2>&1; then
-            sudo useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin spamgate
-          fi
-          CGO_ENABLED=0 go build -trimpath -buildvcs=false -o scripts/spamgate-postfix-release ./cmd/spamgate-postfix-release
-          chmod 0755 scripts/spamgate-postfix-release
-          bash scripts/install-postfix-release-helper.sh --preview
-          sudo bash scripts/install-postfix-release-helper.sh --apply --confirm POSTFIX-HOLD-RELEASE
-          test "$(stat -c '%U:%G:%a' /usr/local/libexec/spamgate/postfix-hold-release)" = root:root:755
-          test "$(sudo stat -c '%U:%G:%a' /etc/sudoers.d/spamgate-postfix-release)" = root:root:440
-          sudo visudo -cf /etc/sudoers.d/spamgate-postfix-release
-          # Verify sudoers does not grant broad postsuper access.
-          if sudo -u spamgate sudo -n -- /usr/sbin/postsuper -H ALL >/dev/null 2>&1; then
-            echo 'Unsafe: broad postsuper privilege was granted' >&2
-            exit 1
-          fi
-          # Verify the helper refuses the reserved all-queue command and
-          # argument injection even when invoked through the real sudoers grant.
-          if sudo -u spamgate sudo -n -- /usr/local/libexec/spamgate/postfix-hold-release ALL >/dev/null 2>&1; then
-            echo 'Unsafe: helper accepted all-queue release' >&2
-            exit 1
-          fi
-          if sudo -u spamgate sudo -n -- /usr/local/libexec/spamgate/postfix-hold-release 'A123;id' >/dev/null 2>&1; then
-            echo 'Unsafe: helper accepted argument injection' >&2
-            exit 1
-          fi
-          # The helper must also refuse a direct unprivileged invocation.
-          if sudo -u spamgate /usr/local/libexec/spamgate/postfix-hold-release A123 >/dev/null 2>&1; then
-            echo 'Unsafe: unprivileged helper invocation succeeded' >&2
-            exit 1
-          fi
-          printf 'Native privileged helper boundary smoke passed; no production host changed.\n' | tee lab-evidence/postfix-privilege-helper.txt
-
-      - name: Postfix queue and delivery diagnostics
-        if: always()
-        shell: bash
-        run: |
-          sudo postqueue -p || true
-          sudo postfix status || true
-          sudo ls -la /home/spamgatebeta/Maildir/new || true
-          sudo ls -la /home/spamgatebeta/Maildir/cur || true
-          sudo ls -la /home/spamgatebeta/Maildir/.Junk/new || true
-          sudo ls -la /home/spamgatebeta/Maildir/.Junk/cur || true
-
-      - name: Preserve exact-commit integration evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: spamgate-postfix-dovecot-${{ github.sha }}
-          path: lab-evidence/*
-          if-no-files-found: warn
-          retention-days: 7
- \
+          go test -count=1 -v -run '^TestRealPostfixMilterLocalDeliveryAndTempfail$' \
             ./internal/transport | tee lab-evidence/postfix-lmtp-milter-test.log
           sudo env CI=true GITHUB_ACTIONS=true SPAMGATE_DISPOSABLE_POSTFIX_LMTP_LAB=1 \
             python3 scripts/spamgate-postfix-lmtp-lab.py --snapshot \
