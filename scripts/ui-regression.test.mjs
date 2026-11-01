@@ -115,7 +115,17 @@ test('durable operations panel escapes alerts and provides actual actions',()=>{
  assert.match(html,/data-monitor-ack="alert-id"/);
  assert.match(html,/&lt;img src=x/);
  assert.doesNotMatch(html,/<img src=x/);
- assert.match(html,/SMTP outbox not enabled/);
+ assert.match(html,/SMTP outbox disabled; prior queue alerts remain open until verified/);
+});
+test('operations panel distinguishes active, pending discard and unavailable queue evidence',()=>{
+ const ctx=context();
+ vm.runInContext("S.monitorData={samples:[{at:'2026-11-01T13:00:00Z',scan_total:3,scan_errors:0,queue_enabled:true,queue_available:true,queue_queued:2,queue_delivering:1,queue_dead:1,queue_discard_pending:3,queue_delivered:2,queue_due_jobs:4,queue_pending_temps:1}],alerts:[]}",ctx);
+ const html=vm.runInContext('monitorPanel()',ctx);
+ for(const expected of ['2 queued','1 delivering','1 dead','3 pending discard','2 awaiting finalization','4 due','1 unpublished spool file(s)']){
+  assert.ok(html.includes(expected),'missing queue evidence '+expected);
+ }
+ vm.runInContext("S.monitorData={samples:[{at:'2026-11-01T13:05:00Z',scan_total:4,scan_errors:0,queue_enabled:true,queue_available:false}],alerts:[]}",ctx);
+ assert.match(vm.runInContext('monitorPanel()',ctx),/Queue inventory unavailable; previous queue alerts remain open until verified/);
 });
 test('policy preview panel shows hypothetical results without save controls',()=>{
  const ctx=context();
