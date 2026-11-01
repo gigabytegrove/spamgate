@@ -41,6 +41,7 @@ type Release struct {
 type Status struct {
 	Current     string        `json:"current"`
  CurrentBuild string        `json:"current_build"`
+ RequiresLauncherUpgrade bool `json:"requires_launcher_upgrade,omitempty"`
  LatestBuild string        `json:"latest_build,omitempty"`
 	Latest      string        `json:"latest,omitempty"`
 	Available   bool          `json:"available"`
