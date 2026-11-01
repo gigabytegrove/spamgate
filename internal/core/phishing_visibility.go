@@ -10,6 +10,15 @@ func phishingRenderedHTML(input string, coverage *mimeCoverage) string {
 		name   string
 		hidden bool
 	}
+	// ASCII-only case folding preserves byte offsets for Unicode HTML and
+	// avoids quadratic allocations across many raw-text elements.
+	lowerBytes := []byte(input)
+	for i, b := range lowerBytes {
+		if b >= 'A' && b <= 'Z' {
+			lowerBytes[i] = b + ('a' - 'A')
+		}
+	}
+	lowerInput := string(lowerBytes)
 	var out strings.Builder
 	out.Grow(len(input))
 	var stack []frame
@@ -74,7 +83,7 @@ func phishingRenderedHTML(input string, coverage *mimeCoverage) string {
 		hidden = nextHidden
 		// Raw-text elements are not parsed as markup by HTML renderers.
 		if name == "script" || name == "style" || name == "textarea" || name == "title" {
-			lower := strings.ToLower(input[i:])
+			lower := lowerInput[i:]
 			needle := "</" + name
 			position := 0
 			found := false
