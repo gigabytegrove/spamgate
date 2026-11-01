@@ -20,6 +20,7 @@ import uuid
 from email.message import EmailMessage
 from spamgate_probe_json import decode_health_response
 from spamgate_milter_probe import verify_milter_protocol
+from spamgate_postfix_config_probe import probe_postfix_config
 
 MAX_MESSAGE_BYTES = 128 * 1024
 
@@ -45,6 +46,7 @@ def parse_args(argv):
     p.add_argument("--category-marker", help="optional harmless SGTUBE marker, test mailbox only")
     p.add_argument("--output", help="write JSON report, exclusive create")
     p.add_argument("--check-services", action="store_true", help="opt-in read-only loopback HTTP health and Milter TCP checks")
+    p.add_argument("--check-postfix-config", action="store_true", help="opt-in read-only postconf SMTP Milter configuration audit")
     p.add_argument("--verify-milter-protocol", action="store_true", help="opt-in bounded Milter option negotiation; no mail callbacks")
     p.add_argument("--require-milter-actions", default=None, help="comma-separated required capabilities: add_header,change_header,quarantine")
     p.add_argument("--health-port", type=int, default=38470, help="loopback health port (default 38470)")
@@ -178,16 +180,23 @@ def run(a):
               "timestamp_utc": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
               "host": a.host, "port": a.port, "send_requested": a.send,
               "preflight": preflight(), "services": {"attempted": False},
+              "postfix_config": {"attempted": False},
               "smtp": {"attempted": False},
               "limitations": ["SMTP 250 is not proof of mailbox delivery",
                               "Synthetic marker results do not measure real-world classifier accuracy",
                               "Read-only preflight cannot establish production safety",
                               "Milter TCP acceptance does not verify protocol negotiation or message disposition",
-                              "Milter option negotiation does not verify Postfix action enforcement or mailbox placement"]}
+                              "Milter option negotiation does not verify Postfix action enforcement or mailbox placement",
+                              "Postfix configuration inspection cannot prove active service settings or actual mail disposition"]}
     if a.check_services:
         report["services"] = probe_services(a)
         if not report["services"]["ok"]:
             report["status"] = "service_probe_failed"
+            return report
+    if a.check_postfix_config:
+        report["postfix_config"] = probe_postfix_config()
+        if not report["postfix_config"]["ok"]:
+            report["status"] = "postfix_config_failed"
             return report
     if not a.send:
         report["status"] = "preflight_only"
