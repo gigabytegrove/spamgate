@@ -67,6 +67,7 @@ jobs:
           python3 scripts/test-spamgate-dovecot-config-probe.py -v
           python3 scripts/test-spamgate-lmtp-listener-probe.py -v
           python3 scripts/test-spamgate-lmtp-delivery-lab.py -v
+          python3 scripts/test-spamgate-postfix-lmtp-lab.py -v
           python3 scripts/test-spamgate-probe-json.py -v
           python3 scripts/test-spamgate-host-probe-smtp.py -v
           python3 scripts/test-spamgate-filtration-qualification.py -v
