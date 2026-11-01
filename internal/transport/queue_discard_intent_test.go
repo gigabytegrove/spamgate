@@ -43,9 +43,10 @@ func TestLegacyJournalFirstDiscardIsReconciled(t *testing.T) {
  send := func(context.Context,core.Message,[]byte) error { sends++; return nil }
  q,store,dir := newRecoveryQueue(t,send)
  id := core.ID()
- msg := core.Message{ID:id,Sender:"sender@example.invalid",Recipients:[]string{"user@example.invalid"},Delivery:"discard_requested"}
+ msg := core.Message{ID:id,Sender:"sender@example.invalid",Recipients:[]string{"user@example.invalid"},Delivery:"discard_requested",Timestamp:time.Now().UTC()}
  if err := q.Enqueue(msg,[]byte("Subject: legacy\r\n\r\noriginal")); err != nil { t.Fatal(err) }
  if err := store.Save(msg); err != nil { t.Fatal(err) }
+ if persisted, ok := store.Get(id); !ok || persisted.Delivery != "discard_requested" { t.Fatalf("legacy history fixture missing: %+v, found=%t", persisted, ok) }
  if err := q.ProcessDue(context.Background()); err != nil { t.Fatal(err) }
  rec,err := q.get(id)
  if err != nil || rec.State != "discard_pending" || rec.Attempts != 0 { t.Fatalf("legacy intent not reconciled: %+v %v",rec.QueuedMessage,err) }
