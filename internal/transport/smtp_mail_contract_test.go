@@ -58,6 +58,9 @@ func TestSMTPDATAContractPreventsUndeclaredContent(t *testing.T) {
   {"explicit_7bit_rejects_8bit", smtpMailParameters{DeclaredSize:-1, EightBit:false}, "caf\u00e9", errSMTPBody7Bit},
   {"eightbit_accepts_8bit", smtpMailParameters{DeclaredSize:-1, EightBit:true}, "caf\u00e9", nil},
   {"eightbit_still_checks_size", smtpMailParameters{DeclaredSize:3, EightBit:true}, "caf\u00e9", errSMTPDeclaredSize},
+  {"utf8_header_requires_smtputf8", smtpMailParameters{DeclaredSize:-1, EightBit:true}, "Subject: caf\u00e9\\r\\n\\r\\nbody", errSMTPHeaderUTF8},
+  {"invalid_utf8_header_rejected", smtpMailParameters{DeclaredSize:-1, EightBit:true}, "Subject: \\xff\\r\\n\\r\\nbody", errSMTPHeaderUTF8},
+  {"encoded_header_eightbit_body", smtpMailParameters{DeclaredSize:-1, EightBit:true}, "Subject: =?UTF-8?Q?caf=C3=A9?=\\r\\n\\r\\ncaf\u00e9", nil},
  }
  for _, tc := range tests {
   t.Run(tc.name, func(t *testing.T) {
@@ -114,6 +117,11 @@ func TestSMTPMailContractWireRefusesBeforeDurableAcceptance(t *testing.T) {
  if _, err := fmt.Fprint(conn, "Subject: test\r\n\r\ncaf\u00e9\r\n.\r\n"); err != nil { t.Fatal(err) }
  read("554 ")
  send("DATA", "503 ")
+ send("MAIL FROM:<sender@example.org> BODY=8BITMIME", "250 ")
+ send("RCPT TO:<recipient@example.org>", "250 ")
+ send("DATA", "354 ")
+ if _, err := fmt.Fprint(conn, "Subject: caf\u00e9\\r\\n\\r\\nbody\\r\\n.\\r\\n"); err != nil { t.Fatal(err) }
+ read("554 ")
  send("MAIL FROM:<büro@example.org>", "501 ")
  send("RCPT TO:<recipient@example.org>", "503 ")
  send("MAIL FROM:<sender@example.org>", "250 ")

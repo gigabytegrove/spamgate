@@ -500,8 +500,10 @@ func (s *SMTP) handle(conn net.Conn) {
 			if contractErr := validateSMTPDataContract(mailParams, raw.Bytes()); contractErr != nil {
 				if errors.Is(contractErr, errSMTPDeclaredSize) {
 					reply(552, "5.3.4 Message exceeds declared MAIL SIZE")
-				} else {
+				} else if errors.Is(contractErr, errSMTPBody7Bit) {
 					reply(554, "5.6.0 8-bit DATA requires BODY=8BITMIME")
+				} else {
+					reply(554, "5.6.0 SMTPUTF8 header fields not supported")
 				}
 				resetEnvelope()
 				continue

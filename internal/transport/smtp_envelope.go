@@ -55,6 +55,7 @@ type smtpMailParameters struct {
 var (
  errSMTPDeclaredSize = errors.New("SMTP DATA exceeds declared SIZE")
  errSMTPBody7Bit = errors.New("SMTP DATA contains 8-bit bytes without BODY=8BITMIME")
+ errSMTPHeaderUTF8 = errors.New("SMTPUTF8 header fields not advertised")
 )
 
 func parseSMTPMailParameters(line string) (string, smtpMailParameters, error) {
@@ -107,5 +108,9 @@ func parseSMTPRecipient(line string) (string, error) {
 func validateSMTPDataContract(params smtpMailParameters, raw []byte) error {
  if params.DeclaredSize >= 0 && int64(len(raw)) > params.DeclaredSize { return errSMTPDeclaredSize }
  if !params.EightBit && containsEightBit(raw) { return errSMTPBody7Bit }
+ // BODY=8BITMIME permits eight-bit body octets, not RFC 6532 UTF-8
+ // header fields. This listener does not advertise SMTPUTF8.
+ headerUTF8, headerErr := inspectRelayHeader(raw)
+ if headerErr != nil || headerUTF8 { return errSMTPHeaderUTF8 }
  return nil
 }

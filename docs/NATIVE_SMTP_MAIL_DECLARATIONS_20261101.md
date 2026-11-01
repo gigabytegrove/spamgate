@@ -40,3 +40,11 @@ STARTTLS, AUTH, SPF/DKIM/DMARC/ARC and Milter conformance evidence. A native
 relay may still be unable to deliver mail to an incompatible next hop. Issues
 #1–#9 remain open until real mail-host, durability, classifier, tenant, UI,
 diagnostic and backup/update/rollback gates are independently qualified.
+
+## RFC 6532 header boundary
+
+Even when BODY=8BITMIME is declared, unencoded UTF-8 header fields and
+invalid UTF-8 header octets are refused with 554 before scanning or queue
+publication. BODY=8BITMIME alone does not authorize SMTPUTF8; encoded-word
+ASCII headers and eight-bit body content remain supported. The implementation
+uses the existing bounded relay header inspector and does not modify MIME.
