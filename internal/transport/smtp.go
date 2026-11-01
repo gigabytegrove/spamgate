@@ -269,6 +269,7 @@ func (s *SMTP) handle(conn net.Conn) {
 	greeted := false
 	heloName := ""
 	mailIssued := false
+	mailParams := smtpMailParameters{DeclaredSize: -1}
 	forwardedIP := ""
 	forwardedHelo := ""
 	seenForwardedIP := false
@@ -279,6 +280,7 @@ func (s *SMTP) handle(conn net.Conn) {
 		sender = ""
 		recipients = nil
 		mailIssued = false
+		mailParams = smtpMailParameters{DeclaredSize: -1}
 		forwardedIP = ""
 		forwardedHelo = ""
 		seenForwardedIP = false
@@ -412,16 +414,18 @@ func (s *SMTP) handle(conn net.Conn) {
    sender = ""
    recipients = nil
    mailIssued = false
-   addr, declaredSize, e := parseSMTPMail(line)
+   mailParams = smtpMailParameters{DeclaredSize: -1}
+   addr, parsedParams, e := parseSMTPMailParameters(line)
    if e != nil {
     reply(501, "5.5.4 Invalid MAIL FROM path or unsupported ESMTP parameter")
     continue
    }
-   if declaredSize > 10<<20 {
+   if parsedParams.DeclaredSize > 10<<20 {
     reply(552, "5.3.4 Declared message size exceeds 10485760 bytes")
     continue
    }
    sender = addr
+   mailParams = parsedParams
 			mailIssued = true
 			recipients = nil
 			reply(250, "2.1.0 Sender accepted")
@@ -489,6 +493,17 @@ func (s *SMTP) handle(conn net.Conn) {
 			seenForwardedHelo = false
 				forwardedHelo = ""
 				recipients = nil
+				continue
+			}
+			// SIZE and BODY declarations are part of the accepted SMTP
+			// transaction. Refuse violations before scanning or durable 250.
+			if contractErr := validateSMTPDataContract(mailParams, raw.Bytes()); contractErr != nil {
+				if errors.Is(contractErr, errSMTPDeclaredSize) {
+					reply(552, "5.3.4 Message exceeds declared MAIL SIZE")
+				} else {
+					reply(554, "5.6.0 8-bit DATA requires BODY=8BITMIME")
+				}
+				resetEnvelope()
 				continue
 			}
 			clientIP, _, _ := net.SplitHostPort(conn.RemoteAddr().String())

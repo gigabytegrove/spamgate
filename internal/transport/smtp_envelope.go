@@ -31,6 +31,11 @@ func parseSMTPPath(line, prefix string, allowNull bool) (string, string, error) 
  if len(address) > 254 || strings.ContainsAny(address, "<>\r\n\t ") {
   return "", "", errors.New("invalid SMTP address")
  }
+ // The listener does not advertise SMTPUTF8. Accepting a UTF-8 mailbox
+ // would acknowledge an envelope the next hop may be unable to relay.
+ for _, c := range address {
+  if c > 0x7f { return "", "", errors.New("SMTPUTF8 mailbox not advertised") }
+ }
  if address != "" {
   parsed, err := mail.ParseAddress(address)
   if err != nil || parsed.Address != address {
@@ -40,32 +45,51 @@ func parseSMTPPath(line, prefix string, allowNull bool) (string, string, error) 
  return address, strings.TrimSpace(suffix), nil
 }
 
-func parseSMTPMail(line string) (string, int64, error) {
- address, params, err := parseSMTPPath(line, "MAIL FROM:", true)
- if err != nil { return "", 0, err }
- size := int64(-1)
+// smtpMailParameters preserves the MAIL transaction's ESMTP declarations.
+// SIZE is a maximum, not merely a diagnostic hint; the default BODY is 7BIT.
+type smtpMailParameters struct {
+ DeclaredSize int64
+ EightBit bool
+}
+
+var (
+ errSMTPDeclaredSize = errors.New("SMTP DATA exceeds declared SIZE")
+ errSMTPBody7Bit = errors.New("SMTP DATA contains 8-bit bytes without BODY=8BITMIME")
+)
+
+func parseSMTPMailParameters(line string) (string, smtpMailParameters, error) {
+ params := smtpMailParameters{DeclaredSize: -1}
+ address, options, err := parseSMTPPath(line, "MAIL FROM:", true)
+ if err != nil { return "", params, err }
  seenBody := false
- for _, param := range strings.Fields(params) {
-  upper := strings.ToUpper(param)
+ for _, option := range strings.Fields(options) {
+  upper := strings.ToUpper(option)
   switch {
   case strings.HasPrefix(upper, "SIZE="):
-   if size >= 0 { return "", 0, errors.New("duplicate SIZE") }
-   digits := param[len("SIZE="):]
-   if digits == "" { return "", 0, errors.New("empty SIZE") }
+   if params.DeclaredSize >= 0 { return "", params, errors.New("duplicate SIZE") }
+   digits := option[len("SIZE="):]
+   if digits == "" { return "", params, errors.New("empty SIZE") }
    for _, c := range digits {
-    if c < '0' || c > '9' { return "", 0, errors.New("non-numeric SIZE") }
+    if c < '0' || c > '9' { return "", params, errors.New("non-numeric SIZE") }
    }
    n, e := strconv.ParseInt(digits, 10, 64)
-   if e != nil { return "", 0, errors.New("SIZE overflow") }
-   size = n
+   if e != nil { return "", params, errors.New("SIZE overflow") }
+   params.DeclaredSize = n
   case upper == "BODY=7BIT" || upper == "BODY=8BITMIME":
-   if seenBody { return "", 0, errors.New("duplicate BODY") }
+   if seenBody { return "", params, errors.New("duplicate BODY") }
    seenBody = true
+   params.EightBit = upper == "BODY=8BITMIME"
   default:
-   return "", 0, errors.New("unsupported ESMTP MAIL parameter")
+   return "", params, errors.New("unsupported ESMTP MAIL parameter")
   }
  }
- return address, size, nil
+ return address, params, nil
+}
+
+// Retain the original parser contract for existing callers and tests.
+func parseSMTPMail(line string) (string, int64, error) {
+ address, params, err := parseSMTPMailParameters(line)
+ return address, params.DeclaredSize, err
 }
 
 func parseSMTPRecipient(line string) (string, error) {
@@ -75,4 +99,13 @@ func parseSMTPRecipient(line string) (string, error) {
  // discard NOTIFY/ORCPT or other recipient-specific delivery requests.
  if params != "" { return "", errors.New("unsupported RCPT parameter") }
  return address, nil
+}
+
+// validateSMTPDataContract is deliberately called after dot unstuffing and
+// before scan, quarantine, relay or durable queue publication. A rejected
+// transaction never transfers delivery responsibility to SpamGate.
+func validateSMTPDataContract(params smtpMailParameters, raw []byte) error {
+ if params.DeclaredSize >= 0 && int64(len(raw)) > params.DeclaredSize { return errSMTPDeclaredSize }
+ if !params.EightBit && containsEightBit(raw) { return errSMTPBody7Bit }
+ return nil
 }
