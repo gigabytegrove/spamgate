@@ -28,16 +28,16 @@ non-existent subdomains; `sp` (or `p`) governs existing subdomains.
   status query. `t=y` still downgrades the selected `np` policy.
 - No new service, privileged helper, Docker runtime or mail-server changes.
 
-## Remaining blocker and qualification
+## Opt-in RCODE backend and remaining qualification
 
-The default `net.Resolver` and existing `SPFResolver` expose no DNS
-RCODE for an arbitrary Author Domain. This change intentionally does **not**
-pretend that `LookupTXT`, `LookupIPAddr` or `LookupMX` returning
-`net.DNSError.IsNotFound` distinguishes NXDOMAIN from NODATA. Production
-`np` enforcement remains blocked until a bounded DNS RCODE-capable backend
-is integrated and independently verified against NXDOMAIN, NOERROR/NODATA,
-wildcards, SERVFAIL, timeouts and DNSSEC denial variants. That is a
-**production gate #3 blocker**, not a beta acceptance claim.
+The earlier default-resolver blocker now has a working **opt-in** DNS wire backend,
+documented in [RFC 9989 RCODE backend](DMARC_RFC9989_RCODE_BACKEND_20261101.md).
+Set `SPAMGATE_DMARC_NP_DNS=system` only on a validated host. It is disabled by
+default and never overrides a custom resolver. It distinguishes NXDOMAIN from
+NOERROR/NODATA using bounded DNS response-code queries and refuses ambiguous
+responses. Production qualification remains blocked on independent resolver,
+DNSSEC, wildcard and live-host evidence; do not treat this implementation as
+beta certification.
 
 Tests cover existing/nonexistent names, resolver absence, SERVFAIL, direct
 policy, authentication pass/tempfail, equivalent dispositions and test mode.
