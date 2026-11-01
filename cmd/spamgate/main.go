@@ -96,7 +96,9 @@ func execute(args []string) error {
 	web := flags.String("listen", defaultListen(), "Management HTTP listener (use an HTTPS reverse proxy for remote access)")
 	logPath := flags.String("log-file", "", "Optional append-only application log (useful for Windows services)")
 	logLevel := flags.String("log-level", os.Getenv("SPAMGATE_LOG_LEVEL"), "Logging verbosity: debug, info (default), warn, error")
-	version := flags.Bool("version", false, "Print version")
+	version := flags.Bool("version", false, "Print source version")
+	buildVersion := flags.Bool("build-version", false, "Print immutable compiled build ID")
+	buildInfo := flags.Bool("build-info", false, "Print source, build and commit identity as JSON")
 	backupFile := flags.String("backup-file", "", "Offline backup: write a ZIP of the stopped SpamGate data directory to a new file")
 	verifyBackup := flags.String("verify-backup", "", "Verify SHA-256 hashes and structure of an offline backup ZIP")
 	restoreBackup := flags.String("restore-backup", "", "Restore a verified backup ZIP to a new, nonexistent -data directory (server must be stopped)")
@@ -111,6 +113,13 @@ func execute(args []string) error {
 	if *version {
 		fmt.Println(core.Version)
 		return nil
+	}
+	if *buildVersion {
+		fmt.Println(core.BuildVersion)
+		return nil
+	}
+	if *buildInfo {
+		return json.NewEncoder(os.Stdout).Encode(map[string]string{"version":core.Version, "build_version":core.BuildVersion, "source_commit":core.SourceCommit})
 	}
 	if *mailReport {
 		return json.NewEncoder(os.Stdout).Encode(hostinspect.Detect(context.Background()))
