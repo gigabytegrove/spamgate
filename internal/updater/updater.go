@@ -23,32 +23,7 @@ import (
 const Endpoint = "https://api.github.com/repos/gigabytegrove/spamgate/releases?per_page=30"
 const maxBinary = 80 << 20
 
-var releaseTag = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(?:-alpha\.[0-9]+|-beta\.[0-9]+|-rc\.[0-9]+)?(?:\+[0-9]{8}-(?:[01][0-9]|2[0-3])[a-z]?)?package updater
-
-import (
-	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-	"net/http"
-	"os"
-	"path/filepath"
-	"regexp"
-	"runtime"
-	"strconv"
-	"strings"
-	"time"
-
- "github.com/gigabytegrove/spamgate/internal/core"
-)
-
-const Endpoint = "https://api.github.com/repos/gigabytegrove/spamgate/releases?per_page=30"
-const maxBinary = 80 << 20
-
-)
+var releaseTag = regexp.MustCompile("^v[0-9]+\\.[0-9]+\\.[0-9]+(?:-alpha\\.[0-9]+|-beta\\.[0-9]+|-rc\\.[0-9]+)?(?:\\+[0-9]{8}-(?:[01][0-9]|2[0-3])[a-z]?)?$")
 var hexDigest = regexp.MustCompile(`^[a-fA-F0-9]{64}$`)
 
 type Asset struct {
