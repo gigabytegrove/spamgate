@@ -14,7 +14,7 @@ func (s *Server) localUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.authorized(w, r, true, false); !ok {
 		return
 	}
-	status := updater.Status{Current: core.Version}
+	status := updater.Status{Current: core.Version, CurrentBuild: core.BuildVersion}
 	if _, _, err := updater.Pending(s.Store.DataDir()); err == nil {
 		status.Staged = true
 	}
@@ -38,7 +38,8 @@ func (s *Server) checkUpdate(w http.ResponseWriter, r *http.Request) {
 }
 // annotateUpdateStatus preserves supervisor capability in check and stage responses.
 func (s *Server) annotateUpdateStatus(result updater.Status) updater.Status {
-	result.InstallMode = "requires_supervisor"
+	if result.CurrentBuild=="" {result.CurrentBuild=core.BuildVersion}
+ result.InstallMode = "requires_supervisor"
 	if os.Getenv(updater.SupervisedEnv) == "1" { result.InstallMode = "supervised"
 		result.InstallPath = updater.ActiveBinaryPath(s.Store.DataDir())
 	}
