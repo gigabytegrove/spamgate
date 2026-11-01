@@ -518,3 +518,25 @@ test('bulk review bounds each execution to 25 distinct eligible messages',async(
  assert.equal(vm.runInContext('S.bulkTestCount',ctx),25);
  assert.equal(vm.runInContext('S.messages.filter(x=>!x.review_status).length',ctx),5);
 });
+
+
+test('software updates distinguishes source version and numbered build identity',()=>{
+ const ctx=context();
+ vm.runInContext(`
+ S.section='updates';S.updateReleaseChecked=true;
+ S.updateInfo={current:'0.6.0-beta.2',current_build:'20261101-10',latest:'v0.6.0-beta.2+20261101-11',latest_build:'20261101-11',available:true,install_mode:'supervised',staged:false};
+ `,ctx);
+ const html=vm.runInContext('updatesPage()',ctx);
+ assert.match(html,/Source version: <strong>0\.6\.0-beta\.2<\/strong>/);
+ assert.match(html,/Installed build: <strong>20261101-10<\/strong>/);
+ assert.match(html,/Build <strong>20261101-11<\/strong>/);
+ assert.match(html,/id="stage-update"/);
+});
+
+test('legacy workers clearly show an unnumbered build without changing source version',()=>{
+ const ctx=context();
+ vm.runInContext(`S.section='updates';S.updateInfo={current:'0.6.0-beta.2',current_build:'unversioned',available:false,install_mode:'supervised'};`,ctx);
+ const html=vm.runInContext('updatesPage()',ctx);
+ assert.match(html,/Source version: <strong>0\.6\.0-beta\.2/);
+ assert.match(html,/Installed build: <strong>unversioned/);
+});
