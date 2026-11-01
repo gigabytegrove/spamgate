@@ -69,7 +69,7 @@ func TestExecutableBuildVersionLegacyEmptyAndInvalid(t *testing.T) {
         t.Fatalf("legacy worker with silent unsupported build flag: %q %v", got, err)
     }
     invalid := filepath.Join(dir, "invalid")
-    script := "#!/bin/sh\\nif [ \\"$1\\" = \\"-build-version\\" ]; then echo invalid-build-id; else echo 0.6.0-alpha.11; fi\\n"
+    script := "#!/bin/sh\nif [ \"$1\" = \"-build-version\" ]; then echo invalid-build-id; else echo 0.6.0-alpha.11; fi\n"
     if err := os.WriteFile(invalid, []byte(script), 0700); err != nil { t.Fatal(err) }
     if got, err := executableBuildVersion(invalid); err == nil {
         t.Fatalf("malformed explicit build identity accepted: %q", got)
