@@ -6,8 +6,8 @@ import (
 
 var errInvalidUnicodeEscape = errors.New("spool JSON contains invalid Unicode escape")
 
-// validateUnicodeEscapes enforces RFC 8259's requirement that escaped UTF-16
-// surrogate code units form valid pairs. encoding/json deliberately replaces
+// validateUnicodeEscapes rejects unpaired escaped UTF-16 surrogate code
+// units, which RFC 8259 section 8.2 warns can cause unpredictable behavior. encoding/json deliberately replaces
 // lone surrogates with U+FFFD, so two different on-disk records can decode to
 // the same struct and pass a digest over the decoded fields. Durable mail
 // evidence must not silently undergo that lossy normalization.
