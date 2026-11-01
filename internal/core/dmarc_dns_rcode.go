@@ -50,8 +50,7 @@ func (c dmarcDNSClient) servers() ([]string, error) {
  if err != nil { return nil, err }
  if len(b) > dmarcDNSMaxConfig { return nil, errors.New("system DNS configuration exceeds limit") }
  var servers []string
- for _, line := range strings.Split(string(b), "
-") {
+ for _, line := range strings.Split(string(b), "\n") {
   line, _, _ = strings.Cut(line, "#")
   fields := strings.Fields(line)
   if len(fields) == 0 || fields[0] != "nameserver" { continue }
