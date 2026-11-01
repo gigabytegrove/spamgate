@@ -23,6 +23,9 @@ func Validate(data []byte) error {
     if !utf8.Valid(data) {
         return errors.New("spool JSON contains invalid UTF-8")
     }
+    if err := validateUnicodeEscapes(data); err != nil {
+        return err
+    }
     decoder := json.NewDecoder(bytes.NewReader(data))
     decoder.UseNumber()
     budget := maxJSONTokens
