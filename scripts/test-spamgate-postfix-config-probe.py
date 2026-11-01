@@ -62,7 +62,7 @@ class PostfixConfigProbeTests(unittest.TestCase):
         self.assertIn("milter_failure_action_not_tempfail", report["findings"])
 
     def test_invalid_protocol_is_not_qualified(self):
-        for protocol in ("0", "7", "invalid", "-1"):
+        for protocol in ("0", "7", "invalid", "-1", "9" * 5000):
             with self.subTest(protocol=protocol):
                 self.assertFalse(inspect_config(dict(BASE, milter_protocol=protocol), "")["ok"])
 
