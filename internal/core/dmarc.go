@@ -1,9 +1,8 @@
 package core
 
 // DMARC policy discovery and organizational-domain alignment. This is a
-// transitional implementation: RFC 9989 t=y test mode is honored, but full
-// DNS Tree Walk and PSD discovery are still outstanding. Public suffix rules
-// may be overridden using SPAMGATE_PUBLIC_SUFFIX_FILE.
+// RFC 9989 policy discovery uses bounded DNS Tree Walk and explicit PSD
+// boundaries; unresolved DNS failures never become authentication failures.
 
 import (
 	"context"
@@ -84,45 +83,19 @@ func DMARCCheck(ctx context.Context, resolver SPFResolver, headerFrom string, sp
 	}
 	dnsCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	policyDomain := domain
-	record, err := dmarcTXT(dnsCtx, resolver, domain)
+	walk := newDMARCDNSWalk(dnsCtx, resolver)
+	policyDomain, fromOrg, tags, err := walk.discover(domain)
 	if err != nil {
 		result.Result = "temperror"
-		if errors.Is(err, errDMARCPolicy) {
-			result.Result = "permerror"
-		}
-		result.Detail = "DMARC policy lookup failed: " + err.Error()
+		if errors.Is(err, errDMARCPolicy) { result.Result = "permerror" }
+		result.Detail = "DMARC DNS Tree Walk failed: " + err.Error()
 		return result
 	}
-	inherited := false
-	if record == "" {
-		org := organizationalDomain(domain)
-		if org == "" || org == domain {
-			result.Detail = "No DMARC policy found"
-			return result
-		}
-		record, err = dmarcTXT(dnsCtx, resolver, org)
-		if err != nil {
-			result.Result = "temperror"
-			if errors.Is(err, errDMARCPolicy) {
-				result.Result = "permerror"
-			}
-			result.Detail = "Organizational DMARC policy lookup failed: " + err.Error()
-			return result
-		}
-		if record == "" {
-			result.Detail = "No DMARC policy at From domain or organizational domain"
-			return result
-		}
-		policyDomain = org
-		inherited = true
-	}
-	tags, err := parseDMARCRecord(record)
-	if err != nil {
-		result.Result = "permerror"
-		result.Detail = "Invalid DMARC policy record: " + err.Error()
+	if tags == nil {
+		result.Detail = "No applicable DMARC policy discovered by DNS Tree Walk"
 		return result
 	}
+	inherited := policyDomain != domain
 	policy := strings.ToLower(tags["p"])
 	if policy != "none" && policy != "quarantine" && policy != "reject" {
 		result.Result = "permerror"
@@ -147,17 +120,31 @@ func DMARCCheck(ctx context.Context, resolver SPFResolver, headerFrom string, sp
 	}
 	result.Policy = policy
 	result.Testing = tags["t"] == "y"
-	if spf.Result == "pass" && dmarcAligned(spf.Domain, domain, tags["aspf"]) {
-		result.Result = "pass"
-		result.Detail = "SPF authenticated an aligned organizational domain"
-		return result
+	var alignmentErr error
+	if spf.Result == "pass" {
+		aligned, alignErr := walk.aligned(spf.Domain, domain, fromOrg, tags["aspf"])
+		if aligned {
+			result.Result = "pass"
+			result.Detail = "SPF authenticated an aligned organizational domain"
+			return result
+		}
+		alignmentErr = alignErr
 	}
 	for _, sig := range dkim {
-		if sig.Result == "pass" && dmarcAligned(sig.Domain, domain, tags["adkim"]) {
+		if sig.Result != "pass" { continue }
+		aligned, alignErr := walk.aligned(sig.Domain, domain, fromOrg, tags["adkim"])
+		if aligned {
 			result.Result = "pass"
 			result.Detail = "DKIM authenticated an aligned organizational domain"
 			return result
 		}
+		if alignErr != nil { alignmentErr = alignErr }
+	}
+	if alignmentErr != nil {
+		result.Result = "temperror"
+		if errors.Is(alignmentErr, errDMARCPolicy) { result.Result = "permerror" }
+		result.Detail = "DMARC identifier alignment DNS lookup failed: " + alignmentErr.Error()
+		return result
 	}
 	// A network failure is not a verified authentication failure. Avoid
 	// turning intermittent DNS failures into actionable false positives.
