@@ -34,6 +34,7 @@ jobs:
       - name: Go unit and race tests
         run: |
           set -Eeuo pipefail
+          python3 scripts/test-spamgate-build-id.py -v
           go test -count=1 ./...
           CGO_ENABLED=1 go test -race -p 1 -count=1 -timeout=15m ./...
           go vet ./...
@@ -76,17 +77,32 @@ jobs:
           python3 scripts/spamgate-host-probe.py > /tmp/spamgate-preflight.json
           python3 -c 'import json; r=json.load(open("/tmp/spamgate-preflight.json")); assert r["status"] == "preflight_only" and not r["smtp"]["attempted"]'
       - name: Compile native Linux and Windows programs
+        id: compiled
         env:
           CGO_ENABLED: '0'
         run: |
           set -Eeuo pipefail
           mkdir -p dist
-          GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o dist/spamgate-worker-linux-amd64 ./cmd/spamgate
-          GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o dist/spamgate-launcher-linux-amd64 ./cmd/spamgate-run
-          GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o dist/spamgate-eval-linux-amd64 ./cmd/spamgate-eval
-          GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o dist/spamgate-postfix-release-linux-amd64 ./cmd/spamgate-postfix-release
-          GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o dist/spamgate-spool-audit-linux-amd64 ./cmd/spamgate-spool-audit
-          GOOS=windows GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w -H=windowsgui' -o dist/spamgate-windows-amd64.exe ./cmd/spamgate
+          BUILD_VERSION="$(python3 scripts/spamgate-build-id.py --mode automatic --out dist)"
+          SOURCE_SHA="$(git rev-parse HEAD)"
+          echo "build_version=$BUILD_VERSION" >> "$GITHUB_OUTPUT"
+          LDFLAGS="-s -w -X github.com/gigabytegrove/spamgate/internal/core.BuildVersion=$BUILD_VERSION -X github.com/gigabytegrove/spamgate/internal/core.SourceCommit=$SOURCE_SHA"
+          echo "Compiling source $SOURCE_SHA, build $BUILD_VERSION"
+          GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="$LDFLAGS" -o dist/spamgate-worker-linux-amd64 ./cmd/spamgate
+          GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="$LDFLAGS" -o dist/spamgate-launcher-linux-amd64 ./cmd/spamgate-run
+          GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="$LDFLAGS" -o dist/spamgate-eval-linux-amd64 ./cmd/spamgate-eval
+          GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="$LDFLAGS" -o dist/spamgate-postfix-release-linux-amd64 ./cmd/spamgate-postfix-release
+          GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="$LDFLAGS" -o dist/spamgate-spool-audit-linux-amd64 ./cmd/spamgate-spool-audit
+          GOOS=windows GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="$LDFLAGS -H=windowsgui" -o dist/spamgate-windows-amd64.exe ./cmd/spamgate
+          python3 - "$BUILD_VERSION" "$SOURCE_SHA" <<'PY'
+          import datetime, json, pathlib, sys
+          build,commit=sys.argv[1:]
+          record={"version":__import__("subprocess").check_output(["dist/spamgate-worker-linux-amd64","-version"],text=True).strip(),"build_version":build,"source_commit":commit,"build_kind":"automatic","time_zone":"America/New_York","qualified_at_utc":datetime.datetime.now(datetime.timezone.utc).isoformat()}
+          pathlib.Path("dist/BUILD-INFO.json").write_text(json.dumps(record,indent=2,sort_keys=True)+"\\n")
+          PY
+          test "$(dist/spamgate-worker-linux-amd64 -build-version)" = "$BUILD_VERSION"
+          test "$(dist/spamgate-launcher-linux-amd64 -build-version)" = "$BUILD_VERSION"
+          test "$(dist/spamgate-worker-linux-amd64 -build-info | python3 -c 'import json,sys; print(json.load(sys.stdin)["source_commit"])')" = "$SOURCE_SHA"
           # Exercise the compiled native evaluator, not only go test fixtures.
           EVAL_TEST_DIR="$(mktemp -d)"
           printf '%s\n' '{"label":"ham","action":"accept","cohort":"direct","id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}' '{"label":"spam","action":"reject","cohort":"direct","id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}' '{"label":"ham","action":"accept","cohort":"forwarded","id":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}' '{"label":"spam","action":"reject","cohort":"forwarded","id":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}' > "$EVAL_TEST_DIR/labels.jsonl"
@@ -104,7 +120,7 @@ jobs:
       - name: Preserve unreleased qualification artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: spamgate-engineering-${{ github.sha }}
+          name: spamgate-engineering-${{ github.sha }}-${{ steps.compiled.outputs.build_version }}
           path: dist/*
           if-no-files-found: error
           retention-days: 7
