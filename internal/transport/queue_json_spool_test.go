@@ -22,7 +22,7 @@ func TestQueueAmbiguousJSONNeverReachesRelay(t *testing.T) {
         {"duplicate mutable state", []byte(`"state":"queued"`), []byte(`"state":"dead","state":"queued"`)},
         {"casefold mutable state", []byte(`"state":"queued"`), []byte(`"State":"dead","state":"queued"`)},
         {"unicode simplefold mutable state", []byte(`"state":"queued"`), []byte(`"ſtate":"dead","state":"queued"`)},
-        {"unicode escaped simplefold mutable state", []byte(`"state":"queued"`), []byte(`"\\u017ftate":"dead","state":"queued"`)},
+        {"unicode escaped simplefold mutable state", []byte(`"state":"queued"`), []byte(`"\u017ftate":"dead","state":"queued"`)},
         {"escaped mutable state", []byte(`"state":"queued"`), []byte(`"st\u0061te":"dead","state":"queued"`)},
         {"duplicate immutable scan", []byte(`"scan":{"id":`), []byte(`"scan":{"id":"forged","id":`)},
     } {

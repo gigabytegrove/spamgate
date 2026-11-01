@@ -12,7 +12,7 @@ func TestValidateSpoolJSON(t *testing.T) {
         {"duplicate root", `{"state":"dead","state":"queued"}`, "duplicate"},
         {"duplicate casefold", `{"state":"dead","State":"queued"}`, "duplicate"},
         {"unicode long s fold", `{"state":"dead","ſtate":"queued"}`, "duplicate"},
-        {"unicode escaped long s fold", `{"state":"dead","\\u017ftate":"queued"}`, "duplicate"},
+        {"unicode escaped long s fold", `{"state":"dead","\u017ftate":"queued"}`, "duplicate"},
         {"unicode nested scan fold", `{"scan":{"id":"original"},"ſcan":{"id":"forged"}}`, "duplicate"},
         {"unicode greek sigma fold", `{"Σ":1,"ς":2}`, "duplicate"},
         {"unicode Kelvin fold", `{"K":1,"K":2}`, "duplicate"},

@@ -31,7 +31,7 @@ func TestEncodingJSONAcceptsUnicodeConflictingStateKeys(t *testing.T) {
     for _, payload := range []string{
         `{"state":"dead","ſtate":"queued"}`,
         `{"ſtate":"dead","state":"queued"}`,
-        `{"state":"dead","\\u017ftate":"queued"}`,
+        `{"state":"dead","\u017ftate":"queued"}`,
     } {
         var decoded struct { State string `json:"state"` }
         if err := json.Unmarshal([]byte(payload), &decoded); err != nil {
