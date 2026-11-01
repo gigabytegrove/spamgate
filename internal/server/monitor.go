@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/gigabytegrove/spamgate/internal/core"
+	"github.com/gigabytegrove/spamgate/internal/spooljson"
 )
 
 const monitorSamplesLimit = 2016 // 7 days at 5-minute resolution
@@ -39,6 +40,9 @@ type monitorSample struct {
 	QueueQueued     int       `json:"queue_queued"`
 	QueueDelivering int       `json:"queue_delivering"`
 	QueueDead       int       `json:"queue_dead"`
+	QueueDelivered  int       `json:"queue_delivered"`
+	QueueDiscardPending int   `json:"queue_discard_pending"`
+	QueueDueJobs    int       `json:"queue_due_jobs"`
 	QueueBytes      int64     `json:"queue_bytes"`
 	QueuePendingTemps int     `json:"queue_pending_temps"`
 	QueuePendingTempBytes int64 `json:"queue_pending_temp_bytes"`
@@ -140,7 +144,9 @@ func newOperationsMonitor(dataDir string) *operationsMonitor {
 			err = errors.New("operations history exceeds 2 MiB limit")
 		} else {
 			var loaded monitorState
-			if e := json.Unmarshal(data, &loaded); e != nil {
+			if e := spooljson.Validate(data); e != nil {
+				err = fmt.Errorf("ambiguous operations history: %w", e)
+			} else if e := json.Unmarshal(data, &loaded); e != nil {
 				err = fmt.Errorf("invalid operations history: %w", e)
 			} else if loaded.Schema != 1 || len(loaded.Samples) > monitorSamplesLimit || len(loaded.Alerts) > monitorAlertsLimit {
 				err = errors.New("unsupported or oversized operations history")
@@ -275,8 +281,14 @@ func (m *operationsMonitor) record(s monitorSample) error {
 	if s.QueueAvailable && s.QueueDead > 0 {
 		signals["queue_dead"] = struct{ severity, summary string }{"critical", fmt.Sprintf("%d dead-letter SMTP jobs require investigation", s.QueueDead)}
 	}
-	if s.QueueAvailable && s.QueueQueued >= monitorThreshold("SPAMGATE_MONITOR_BACKLOG_THRESHOLD", 100) {
-		signals["queue_backlog"] = struct{ severity, summary string }{"warning", fmt.Sprintf("%d accepted SMTP jobs are awaiting delivery", s.QueueQueued)}
+	if s.QueueAvailable && s.QueueDiscardPending > 0 {
+		signals["queue_discard_pending"] = struct{ severity, summary string }{"critical", fmt.Sprintf("%d administratively discarded SMTP originals still require durable finalization; never auto-relay", s.QueueDiscardPending)}
+	}
+	if s.QueueAvailable && s.QueueDueJobs >= monitorThreshold("SPAMGATE_MONITOR_DUE_THRESHOLD", 25) {
+		signals["queue_due_jobs"] = struct{ severity, summary string }{"warning", fmt.Sprintf("%d SMTP originals have due relay or recovery attempts", s.QueueDueJobs)}
+	}
+	if s.QueueAvailable && s.QueueQueued+s.QueueDelivering >= monitorThreshold("SPAMGATE_MONITOR_BACKLOG_THRESHOLD", 100) {
+		signals["queue_backlog"] = struct{ severity, summary string }{"warning", fmt.Sprintf("%d accepted SMTP jobs are queued or delivering", s.QueueQueued+s.QueueDelivering)}
 	}
 	if deltas >= uint64(monitorThreshold("SPAMGATE_MONITOR_SCAN_ERROR_THRESHOLD", 5)) {
 		signals["scan_errors"] = struct{ severity, summary string }{"warning", fmt.Sprintf("%d scan failures observed between durable samples", deltas)}
@@ -297,6 +309,12 @@ func (m *operationsMonitor) record(s monitorSample) error {
 			a.Summary = active.summary
 			a.Severity = active.severity
 			delete(signals, a.Code)
+		} else if strings.HasPrefix(a.Code, "queue_") && !s.QueueAvailable {
+			// An unreadable or disabled queue is not evidence that earlier
+			// dead letters, unpublished originals or holds were repaired.
+			// Retain the prior alert and last-seen timestamp until a real
+			// successful inventory proves the condition is gone.
+			continue
 		} else if !monitorRateAlert(a.Code) || (previous != nil && previous.BootID == s.BootID) {
 			a.State = "resolved"
 			t := s.At
@@ -387,6 +405,13 @@ func (s *Server) monitorCapture() error {
 			sample.QueueQueued = q.Queued
 			sample.QueueDelivering = q.Delivering
 			sample.QueueDead = q.Dead
+			sample.QueueDelivered = q.Delivered
+			sample.QueueDiscardPending = q.DiscardPending
+			for _, job := range q.Jobs {
+				if (job.State == "queued" || job.State == "delivering") && !job.NextAttempt.IsZero() && !job.NextAttempt.After(sample.At) {
+					sample.QueueDueJobs++
+				}
+			}
 			sample.QueueBytes = q.Bytes
 			sample.QueuePendingTemps = q.PendingTemps
 			sample.QueuePendingTempBytes = q.PendingTempBytes
