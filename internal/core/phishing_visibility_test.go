@@ -30,7 +30,7 @@ func TestPhishingVisibilitySuppressesNonRenderedURLClaims(t *testing.T) {
 		{"nested hidden", "<div hidden><span>"+mismatch+"</span></div>", false, false},
 		{"visible sibling", "<div hidden>"+mismatch+"</div>"+mismatch, true, false},
 		{"aria false", "<div aria-hidden=\"false\">"+mismatch+"</div>", true, false},
-		{"inline greater than", "<a title=\"1 > 0\" href=\"https://evil.example.net\">"https://bank.example.com</a>", true, false},
+		{"inline greater than", "<a title=\"1 > 0\" href=\"https://evil.example.net\">https://bank.example.com</a>", true, false},
 		{"unterminated comment", "<!--"+mismatch, false, true},
 		{"unterminated script", "<script>"+mismatch, false, true},
 		{"unterminated quoted tag", "<div title=\"unterminated >"+mismatch, false, true},
@@ -71,7 +71,6 @@ func TestPhishingMalformedHiddenHTMLProducesZeroScoreCoverage(t *testing.T) {
 		t.Fatalf("malformed hidden HTML was scored or unreported: findings=%v coverage=%+v", found, coverage)
 	}
 }
-
 
 func TestPhishingVisibilityLargeRawTextSequence(t *testing.T) {
 	const mismatch = `<a href="https://evil.example.net">https://bank.example.com</a>`
