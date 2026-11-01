@@ -81,6 +81,7 @@ func dmarcDNSQuestion(domain string) ([]byte, error) {
 func dmarcDNSDecodeName(msg []byte, start int) (string, int, error) {
  pos, end, jumps := start, -1, 0
  var labels []string
+ length := 1 // RFC 1035: decompressed name including root <= 255 octets
  for {
   if pos >= len(msg) { return "", 0, errors.New("truncated DNS name") }
   size := int(msg[pos])
@@ -88,7 +89,7 @@ func dmarcDNSDecodeName(msg []byte, start int) (string, int, error) {
    if pos+1 >= len(msg) { return "", 0, errors.New("truncated DNS pointer") }
    target := (size&0x3f)<<8 | int(msg[pos+1])
    if end < 0 { end = pos+2 }
-   if target >= len(msg) || target >= pos || jumps >= 16 { return "", 0, errors.New("invalid DNS compression pointer") }
+   if target < 12 || target >= len(msg) || target >= pos || jumps >= 16 { return "", 0, errors.New("invalid DNS compression pointer") }
    pos, jumps = target, jumps+1
    continue
   }
@@ -99,6 +100,8 @@ func dmarcDNSDecodeName(msg []byte, start int) (string, int, error) {
    return strings.Join(labels, "."), end, nil
   }
   if pos+size > len(msg) { return "", 0, errors.New("truncated DNS label") }
+  if length+size+1 > 255 { return "", 0, errors.New("DNS name exceeds 255 octets") }
+  length += size+1
   labels = append(labels, strings.ToLower(string(msg[pos:pos+size])))
   if len(labels) > 127 { return "", 0, errors.New("DNS name too deep") }
   pos += size
@@ -109,7 +112,7 @@ func dmarcDNSRCODE(msg []byte, id uint16, domain string) (int, bool, error) {
  if len(msg) < 12 { return 0, false, errors.New("short DNS response") }
  if binary.BigEndian.Uint16(msg[:2]) != id { return 0, false, errors.New("DNS transaction ID mismatch") }
  flags := binary.BigEndian.Uint16(msg[2:4])
- if flags&0x8000 == 0 || flags&0x7800 != 0 { return 0, false, errors.New("not a standard DNS response") }
+ if flags&0x8000 == 0 || flags&0x7800 != 0 || flags&0x0040 != 0 { return 0, false, errors.New("not a standard DNS response") }
  if flags&0x0200 != 0 { return 0, true, nil } // validate complete question on TCP retry
  if binary.BigEndian.Uint16(msg[4:6]) != 1 { return 0, false, errors.New("unexpected DNS question count") }
  name, offset, err := dmarcDNSDecodeName(msg, 12)
@@ -123,6 +126,7 @@ func dmarcDNSRCODE(msg []byte, id uint16, domain string) (int, bool, error) {
   // An existing CNAME may point to an NXDOMAIN target.
   return 0, false, errors.New("NXDOMAIN response contains answer records; Author Domain existence ambiguous")
  }
+ if err := dmarcDNSValidateSections(msg, offset+4); err != nil { return 0, false, err }
  return rcode, false, nil
 }
 
