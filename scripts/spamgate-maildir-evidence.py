@@ -15,6 +15,8 @@ import sys
 from email import policy
 from email.parser import BytesHeaderParser
 
+from spamgate_evidence_chain import validate_transport_chain
+
 MAX_REPORT = 2 * 1024 * 1024
 MAX_CASES = 1000
 MAX_FILES = 20000
@@ -47,6 +49,7 @@ def read_evidence(path, recipient):
     entries = evidence.get("entries")
     if not isinstance(entries, list) or not 1 <= len(entries) <= MAX_CASES:
         raise ValueError("invalid transport evidence entries")
+    validate_transport_chain(evidence, entries)
     runs, cases, queues = set(), set(), set()
     for entry in entries:
         if not isinstance(entry, dict):
@@ -62,6 +65,13 @@ def read_evidence(path, recipient):
         cases.add(cid)
         queues.add(queue)
     return entries
+
+
+def read_transport_chronology(path):
+    """Return provenance coverage without asserting authenticity of operator logs."""
+    with os.fdopen(regular_fd(path, MAX_REPORT), "rb") as handle:
+        evidence = json.load(handle)
+    return evidence["log_chronology"]["chronology_validated"]
 
 
 def read_expectations(path, entries):
@@ -195,6 +205,7 @@ def run(args):
                 mismatched += 1
     complete = counts["missing"] == 0 and counts["duplicate"] == 0 and mismatched == 0
     publish(args.output, {"schema": 1, "type": "maildir_file_placement_only", "recipient": args.recipient,
+                          "transport_chronology_validated": read_transport_chronology(args.transport_evidence),
                           "complete_maildir_correlation": complete, "placement_expectations_checked": expected is not None,
                           "placement_mismatches": mismatched, "counts": counts,
                           "scanned_entries": limit[0], "entries": result,

@@ -29,8 +29,13 @@ class MaildirEvidenceTests(unittest.TestCase):
     def write_evidence(self, ids, **overrides):
         data = {"schema": 1, "type": "postfix_transport_evidence_only", "recipient": RECIPIENT,
                 "complete_transport_correlation": True,
+                "counts": {"transport_sent_not_mailbox_verified": len(ids)},
+                "log_chronology": {"chronology_validated": True, "lines": len(ids) * 3},
                 "entries": [{"case_id": f"case{i}", "run_id": rid, "queue_id": f"A1B2C{i}",
-                             "state": "transport_sent_not_mailbox_verified"}
+                             "state": "transport_sent_not_mailbox_verified",
+                             "queue_removed": True, "held": False, "discarded": False,
+                             "sent_count": 1,
+                             "transport_events": [{"transport": "lmtp", "status": "sent"}]}
                             for i, rid in enumerate(ids)]}
         data.update(overrides)
         self.evidence.write_text(json.dumps(data))
@@ -118,6 +123,33 @@ class MaildirEvidenceTests(unittest.TestCase):
         row = json.dumps({"case_id": "case0", "folder": "INBOX"}) + "\n"
         expected.write_text(row + row)
         self.assertEqual(self.call("--expected-placement", str(expected)).returncode, 2)
+
+    def test_reject_forged_complete_summary_without_queue_removal(self):
+        self.write_evidence([RID1])
+        data = json.loads(self.evidence.read_text())
+        data["entries"][0]["queue_removed"] = False
+        self.evidence.write_text(json.dumps(data))
+        self.message(RID1)
+        self.assertEqual(self.call().returncode, 2)
+        self.assertFalse(self.output.exists())
+
+    def test_reject_forged_complete_summary_with_discard(self):
+        self.write_evidence([RID1])
+        data = json.loads(self.evidence.read_text())
+        data["entries"][0]["transport_events"][0]["transport"] = "discard"
+        self.evidence.write_text(json.dumps(data))
+        self.message(RID1)
+        self.assertEqual(self.call().returncode, 2)
+        self.assertFalse(self.output.exists())
+
+    def test_reject_summary_count_mismatch(self):
+        self.write_evidence([RID1])
+        data = json.loads(self.evidence.read_text())
+        data["counts"]["transport_sent_not_mailbox_verified"] = 2
+        self.evidence.write_text(json.dumps(data))
+        self.message(RID1)
+        self.assertEqual(self.call().returncode, 2)
+        self.assertFalse(self.output.exists())
 
     def test_reject_incomplete_transport_evidence(self):
         self.write_evidence([RID1], complete_transport_correlation=False)

@@ -66,6 +66,7 @@ jobs:
           python3 scripts/test-spamgate-log-reader.py -v
           python3 scripts/test-spamgate-postfix-rotation.py -v
           python3 scripts/test-spamgate-postfix-integrity.py -v
+          python3 scripts/test-spamgate-evidence-chain.py -v
           python3 scripts/test-spamgate-maildir-evidence.py -v
           python3 scripts/spamgate-host-probe.py > /tmp/spamgate-preflight.json
           python3 -c 'import json; r=json.load(open("/tmp/spamgate-preflight.json")); assert r["status"] == "preflight_only" and not r["smtp"]["attempted"]'
