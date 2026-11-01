@@ -195,17 +195,30 @@ jobs:
             python3 scripts/spamgate-postfix-lmtp-lab.py --snapshot \
             --confirm DISPOSABLE-POSTFIX-LMTP-QUALIFICATION \
             > lab-evidence/postfix-lmtp-before.json
+          sudo env CI=true GITHUB_ACTIONS=true SPAMGATE_DISPOSABLE_POSTFIX_LMTP_LAB=1 \
+            python3 scripts/spamgate-lmtp-case-evidence.py --snapshot \
+            --confirm DISPOSABLE-POSTFIX-LMTP-QUALIFICATION \
+            > lab-evidence/postfix-lmtp-cases-before.json
           go test -count=1 -v -run '^TestRealPostfixMilterLocalDeliveryAndTempfail$' \
             ./internal/transport | tee lab-evidence/postfix-lmtp-milter-test.log
           sudo env CI=true GITHUB_ACTIONS=true SPAMGATE_DISPOSABLE_POSTFIX_LMTP_LAB=1 \
             python3 scripts/spamgate-postfix-lmtp-lab.py --snapshot \
             --confirm DISPOSABLE-POSTFIX-LMTP-QUALIFICATION \
             > lab-evidence/postfix-lmtp-after.json
+          sudo env CI=true GITHUB_ACTIONS=true SPAMGATE_DISPOSABLE_POSTFIX_LMTP_LAB=1 \
+            python3 scripts/spamgate-lmtp-case-evidence.py --snapshot \
+            --confirm DISPOSABLE-POSTFIX-LMTP-QUALIFICATION \
+            > lab-evidence/postfix-lmtp-cases-after.json
           python3 scripts/spamgate-postfix-lmtp-lab.py \
             --verify lab-evidence/postfix-lmtp-before.json lab-evidence/postfix-lmtp-after.json \
             --confirm DISPOSABLE-POSTFIX-LMTP-QUALIFICATION \
             | tee lab-evidence/postfix-lmtp-qualification.json
           python3 -c 'import json; r=json.load(open("lab-evidence/postfix-lmtp-qualification.json")); assert r["ok"] and r["route_verified"] and r["new_inbox"] == 4 and r["new_junk"] == 1'
+          python3 scripts/spamgate-lmtp-case-evidence.py \
+            --verify lab-evidence/postfix-lmtp-cases-before.json lab-evidence/postfix-lmtp-cases-after.json \
+            --confirm DISPOSABLE-POSTFIX-LMTP-QUALIFICATION \
+            | tee lab-evidence/postfix-lmtp-case-qualification.json
+          python3 -c 'import json; r=json.load(open("lab-evidence/postfix-lmtp-case-qualification.json")); assert r["ok"] and r["verified_cases"] == 7 and r["new_delivered_identities"] == 5 and r["rejected_or_tempfailed_deliveries"] == 0'
 
       - name: Validate Sieve removal and Dovecot configuration rollback
         shell: bash
