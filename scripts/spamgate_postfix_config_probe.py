@@ -9,7 +9,7 @@ import subprocess
 
 EXPECTED_MILTER = "inet:127.0.0.1:38472"
 PARAMETERS = ("smtpd_milters", "non_smtpd_milters", "milter_protocol",
-              "milter_default_action")
+              "milter_default_action", "smtpd_milter_maps")
 WATCHED_OVERRIDES = frozenset(PARAMETERS + ("smtpd_milter_maps",))
 MAX_OUTPUT = 65536
 
@@ -87,6 +87,7 @@ def inspect_config(values, master_overrides):
     smtp = _milters(values["smtpd_milters"])
     local = _milters(values["non_smtpd_milters"])
     overrides = _overrides(master_overrides)
+    dynamic_maps = _value(values["smtpd_milter_maps"])
     protocol_raw = _value(values["milter_protocol"])
     default_action = _value(values["milter_default_action"]).lower()
     findings = []
@@ -98,6 +99,8 @@ def inspect_config(values, master_overrides):
         flag("smtp_milter_chain_requires_review")
     if overrides:
         flag("master_service_milter_overrides_require_review")
+    if dynamic_maps:
+        flag("dynamic_smtpd_milter_maps_require_review")
     if not re.fullmatch(r"[0-9]{1,2}", protocol_raw) or not 2 <= int(protocol_raw) <= 6:
         flag("unsupported_milter_protocol")
         protocol = None

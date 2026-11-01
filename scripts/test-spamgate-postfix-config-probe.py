@@ -16,6 +16,7 @@ BASE = {
     "non_smtpd_milters": "",
     "milter_protocol": "6",
     "milter_default_action": "tempfail",
+    "smtpd_milter_maps": "",
 }
 
 
@@ -36,6 +37,12 @@ class PostfixConfigProbeTests(unittest.TestCase):
         values = dict(BASE, smtpd_milters=EXPECTED_MILTER + ", " + EXPECTED_MILTER)
         self.assertIn("smtp_milter_missing_or_duplicated",
                       inspect_config(values, "")["findings"])
+
+    def test_dynamic_per_client_milter_maps_cannot_be_assumed_safe(self):
+        report = inspect_config(dict(BASE, smtpd_milter_maps="cidr:/etc/postfix/milter_map"), "")
+        self.assertFalse(report["ok"])
+        self.assertIn("dynamic_smtpd_milter_maps_require_review", report["findings"])
+        self.assertNotIn("/etc/postfix", json.dumps(report))
 
     def test_missing_endpoint_is_not_qualified(self):
         values = dict(BASE, smtpd_milters="inet:127.0.0.1:11332")
@@ -85,6 +92,7 @@ class PostfixConfigProbeTests(unittest.TestCase):
                 " '-h non_smtpd_milters') echo '' ;;\n"
                 " '-h milter_protocol') echo '6' ;;\n"
                 " '-h milter_default_action') echo 'tempfail' ;;\n"
+                " '-h smtpd_milter_maps') echo '' ;;\\n"
                 " '-P') exit 0 ;;\n"
                 " *) exit 98 ;;\n"
                 "esac\n", encoding="utf-8")
