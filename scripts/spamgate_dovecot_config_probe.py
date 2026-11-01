@@ -1,4 +1,4 @@
-"""Read-only Dovecot LDA Sieve configuration and installed-file integrity probe.
+"""Read-only Dovecot LDA/LMTP Sieve configuration and file-integrity probe.
 
 This verifies a *configuration snapshot*, never an active mailbox disposition.
 It does not run sievec, change files, reload services or submit mail.
@@ -75,7 +75,7 @@ def parse_doveconf(raw):
             if len(stack) > 16:
                 raise DovecotProbeError("Dovecot section nesting exceeds limit")
             scope = tuple(stack)
-            if scope in (("protocol lda",), ("plugin",)):
+            if scope in (("protocol lda",), ("protocol lmtp",), ("plugin",)):
                 if scope in scopes:
                     raise DovecotProbeError("duplicate relevant Dovecot section")
                 scopes[scope] = {}
@@ -86,7 +86,7 @@ def parse_doveconf(raw):
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", key):
             raise DovecotProbeError("invalid Dovecot setting name")
         scope = tuple(stack)
-        if scope in (("protocol lda",), ("plugin",)):
+        if scope in (("protocol lda",), ("protocol lmtp",), ("plugin",)):
             settings = scopes[scope]
             if key in settings:
                 raise DovecotProbeError("duplicate relevant Dovecot setting")
@@ -96,15 +96,22 @@ def parse_doveconf(raw):
     return scopes
 
 
-def inspect_config(raw):
+def inspect_config(raw, delivery_path="lda"):
+    """Check only the explicitly selected Dovecot delivery protocol.
+
+    A configured LDA plugin does not qualify LMTP, or vice versa. This
+    deliberately does not infer which transport Postfix actually uses.
+    """
+    if delivery_path not in ("lda", "lmtp"):
+        raise DovecotProbeError("unsupported Dovecot delivery path")
     scopes = parse_doveconf(raw)
-    lda = scopes.get(("protocol lda",), {})
+    protocol = scopes.get(("protocol " + delivery_path,), {})
     plugin = scopes.get(("plugin",), {})
-    tokens = lda.get("mail_plugins", "").strip().strip("\"'").split()
+    tokens = protocol.get("mail_plugins", "").strip().strip("\"'").split()
     rule = plugin.get("sieve_before", "").strip().strip("\"'")
     findings = []
     if "sieve" not in tokens:
-        findings.append("lda_sieve_plugin_not_explicitly_enabled")
+        findings.append(delivery_path + "_sieve_plugin_not_explicitly_enabled")
     if rule != EXPECTED_RULE:
         findings.append("spamgate_sieve_before_not_configured")
     return findings
@@ -160,22 +167,29 @@ def inspect_installed_files(root=pathlib.Path("/etc/dovecot")):
     return True
 
 
-def probe_dovecot_sieve(executable=None, root=pathlib.Path("/etc/dovecot")):
-    """Return privacy-safe evidence; never report raw configuration or file data."""
+def probe_dovecot_sieve(executable=None, root=pathlib.Path("/etc/dovecot"),
+                        delivery_path="lda"):
+    """Return path-specific privacy-safe evidence, never a routing claim."""
+    # Keep the report bounded even for invalid direct library callers.
+    selected = delivery_path if delivery_path in ("lda", "lmtp") else None
+    scope = "dovecot_" + (selected or "unknown") + "_configuration_only"
     try:
-        findings = inspect_config(_doveconf(executable))
+        if selected is None:
+            raise DovecotProbeError("unsupported Dovecot delivery path")
+        findings = inspect_config(_doveconf(executable), delivery_path=selected)
         if findings:
             return {"attempted": True, "ok": False, "status": "requires_review",
-                    "scope": "dovecot_lda_configuration_only", "findings": findings}
+                    "delivery_path": selected, "scope": scope, "findings": findings}
         inspect_installed_files(root)
-        return {"attempted": True, "ok": True, "status": "lda_sieve_config_checked",
-                "scope": "dovecot_lda_configuration_only", "findings": [],
+        return {"attempted": True, "ok": True,
+                "status": selected + "_sieve_config_checked",
+                "delivery_path": selected, "scope": scope, "findings": [],
                 "limitations": [
                     "doveconf -n is a configuration snapshot, not evidence of an active reload",
-                    "LDA is checked; LMTP, ISPConfig-managed configuration and other delivery paths are not certified",
+                    "only the selected delivery path is checked; Postfix routing and ISPConfig persistence are not certified",
                     "file checksums do not prove Sieve execution, final mailbox placement or correct recipient ownership",
                 ]}
     except (DovecotProbeError, UnicodeError) as exc:
         return {"attempted": True, "ok": False, "status": "unverified",
-                "scope": "dovecot_lda_configuration_only",
+                "delivery_path": selected, "scope": scope,
                 "error": str(exc), "findings": ["dovecot_sieve_unverified"]}

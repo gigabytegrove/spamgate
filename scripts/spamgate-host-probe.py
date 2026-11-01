@@ -48,7 +48,9 @@ def parse_args(argv):
     p.add_argument("--output", help="write JSON report, exclusive create")
     p.add_argument("--check-services", action="store_true", help="opt-in read-only loopback HTTP health and Milter TCP checks")
     p.add_argument("--check-postfix-config", action="store_true", help="opt-in read-only postconf SMTP Milter configuration audit")
-    p.add_argument("--check-dovecot-sieve", action="store_true", help="opt-in read-only Dovecot LDA Sieve configuration and file integrity audit")
+    p.add_argument("--check-dovecot-sieve", action="store_true", help="opt-in read-only Dovecot LDA/LMTP Sieve configuration and file integrity audit")
+    p.add_argument("--dovecot-delivery-path", choices=("lda", "lmtp"), default=None,
+                   help="explicit Dovecot delivery path to inspect (requires --check-dovecot-sieve; default lda)")
     p.add_argument("--verify-milter-protocol", action="store_true", help="opt-in bounded Milter option negotiation; no mail callbacks")
     p.add_argument("--require-milter-actions", default=None, help="comma-separated required capabilities: add_header,change_header,quarantine")
     p.add_argument("--health-port", type=int, default=38470, help="loopback health port (default 38470)")
@@ -68,6 +70,8 @@ def parse_args(argv):
             action not in ("add_header", "change_header", "quarantine") for action in required):
         p.error("invalid or duplicate --require-milter-actions value")
     a.require_milter_actions = required
+    if a.dovecot_delivery_path is not None and not a.check_dovecot_sieve:
+        p.error("--dovecot-delivery-path requires --check-dovecot-sieve")
     if a.send and (not a.recipient or a.recipient != a.confirm_recipient):
         p.error("--send requires matching --recipient and --confirm-recipient")
     if a.send and not a.sender:
@@ -191,7 +195,7 @@ def run(a):
                               "Milter TCP acceptance does not verify protocol negotiation or message disposition",
                               "Milter option negotiation does not verify Postfix action enforcement or mailbox placement",
                               "Postfix configuration inspection cannot prove active service settings or actual mail disposition",
-                              "Dovecot LDA Sieve inspection cannot prove active LMTP routing, Sieve execution or mailbox placement"]}
+                              "Dovecot LDA/LMTP Sieve inspection cannot prove active Postfix routing, Sieve execution or mailbox placement"]}
     if a.check_services:
         report["services"] = probe_services(a)
         if not report["services"]["ok"]:
@@ -203,7 +207,7 @@ def run(a):
             report["status"] = "postfix_config_failed"
             return report
     if a.check_dovecot_sieve:
-        report["dovecot_sieve"] = probe_dovecot_sieve()
+        report["dovecot_sieve"] = probe_dovecot_sieve(delivery_path=a.dovecot_delivery_path or "lda")
         if not report["dovecot_sieve"]["ok"]:
             report["status"] = "dovecot_sieve_failed"
             return report

@@ -57,6 +57,52 @@ class DovecotConfigTests(unittest.TestCase):
         value = GOOD.replace("protocol lda {\n  mail_plugins = $mail_plugins sieve\n}\n", "")
         self.assertIn("lda_sieve_plugin_not_explicitly_enabled", inspect_config(value))
 
+    def test_explicit_lmtp_path_with_independent_plugin(self):
+        self.assertEqual(inspect_config(GOOD, delivery_path="lmtp"), [])
+        lmtp_only = GOOD.replace("protocol lda {\n  mail_plugins = $mail_plugins sieve\n}\n", "")
+        self.assertEqual(inspect_config(lmtp_only, delivery_path="lmtp"), [])
+        self.assertIn("lda_sieve_plugin_not_explicitly_enabled", inspect_config(lmtp_only))
+
+    def test_lmtp_does_not_inherit_lda_plugin(self):
+        lda_only = GOOD.replace("protocol lmtp {\n  mail_plugins = sieve\n}\n", "")
+        self.assertEqual(inspect_config(lda_only, delivery_path="lda"), [])
+        self.assertIn("lmtp_sieve_plugin_not_explicitly_enabled",
+                      inspect_config(lda_only, delivery_path="lmtp"))
+
+    def test_lmtp_requires_sieve_not_just_other_plugins(self):
+        raw = GOOD.replace("protocol lmtp {\n  mail_plugins = sieve",
+                           "protocol lmtp {\n  mail_plugins = quota")
+        self.assertIn("lmtp_sieve_plugin_not_explicitly_enabled",
+                      inspect_config(raw, delivery_path="lmtp"))
+
+    def test_nested_lmtp_does_not_qualify_top_level(self):
+        nested = GOOD.replace("protocol lmtp {\n  mail_plugins = sieve\n}\n", "")
+        nested += "service lmtp {\n protocol lmtp {\n mail_plugins = sieve\n }\n}\n"
+        self.assertIn("lmtp_sieve_plugin_not_explicitly_enabled",
+                      inspect_config(nested, delivery_path="lmtp"))
+
+    def test_duplicate_lmtp_section_rejected(self):
+        with self.assertRaises(DovecotProbeError):
+            inspect_config(GOOD + "protocol lmtp {\n mail_plugins = sieve\n}\n",
+                           delivery_path="lmtp")
+
+    def test_duplicate_lmtp_setting_rejected(self):
+        raw = GOOD.replace("protocol lmtp {\n  mail_plugins = sieve",
+                           "protocol lmtp {\n  mail_plugins = sieve\n  mail_plugins = sieve")
+        with self.assertRaises(DovecotProbeError):
+            inspect_config(raw, delivery_path="lmtp")
+
+    def test_lmtp_missing_global_rule_is_not_qualified(self):
+        raw = GOOD.replace("sieve_before =", "sieve_after =")
+        self.assertIn("spamgate_sieve_before_not_configured",
+                      inspect_config(raw, delivery_path="lmtp"))
+
+    def test_invalid_direct_delivery_path_is_rejected(self):
+        for path in ("", "smtp", "LDA", "../lmtp", None):
+            with self.subTest(path=path):
+                with self.assertRaises(DovecotProbeError):
+                    inspect_config(GOOD, delivery_path=path)
+
     def test_missing_sieve_before_refused(self):
         self.assertIn("spamgate_sieve_before_not_configured",
                       inspect_config(GOOD.replace("sieve_before =", "other =")))
@@ -119,6 +165,46 @@ class DovecotConfigTests(unittest.TestCase):
         self.assertTrue(report["ok"], report)
         self.assertEqual(report["scope"], "dovecot_lda_configuration_only")
         self.assertNotIn("mail_plugins", json.dumps(report))
+
+    def test_lmtp_success_with_fake_readonly_doveconf(self):
+        binary = pathlib.Path(self.tmp.name, "doveconf-lmtp")
+        binary.write_text("#!/bin/sh\n[ \"$1\" = -n ] || exit 99\ncat <<'CONFIG'\n" + GOOD + "CONFIG\n")
+        binary.chmod(0o700)
+        report = probe_dovecot_sieve(executable=str(binary), root=self.root,
+                                     delivery_path="lmtp")
+        self.assertTrue(report["ok"], report)
+        self.assertEqual(report["delivery_path"], "lmtp")
+        self.assertEqual(report["status"], "lmtp_sieve_config_checked")
+        self.assertEqual(report["scope"], "dovecot_lmtp_configuration_only")
+        self.assertNotIn("mail_plugins", json.dumps(report))
+        self.assertIn("Postfix routing", " ".join(report["limitations"]))
+
+    def test_invalid_library_path_is_privacy_safe(self):
+        report = probe_dovecot_sieve(delivery_path="invalid-secret-path")
+        self.assertFalse(report["ok"])
+        self.assertIsNone(report["delivery_path"])
+        self.assertNotIn("invalid-secret-path", json.dumps(report))
+
+    def test_cli_lmtp_requires_check_flag(self):
+        for args in (["--dovecot-delivery-path", "lmtp"],
+                     ["--check-dovecot-sieve", "--dovecot-delivery-path", "smtp"]):
+            result = subprocess.run([sys.executable, str(SCRIPT), *args],
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 2, result.stderr)
+
+    def test_cli_lmtp_failure_blocks_smtp(self):
+        env = dict(os.environ, PATH=self.tmp.name)
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), "--check-dovecot-sieve",
+             "--dovecot-delivery-path", "lmtp", "--send",
+             "--sender", "probe@example.org", "--recipient", "test@example.org",
+             "--confirm-recipient", "test@example.org"],
+            capture_output=True, text=True, timeout=10, env=env)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["status"], "dovecot_sieve_failed")
+        self.assertEqual(report["dovecot_sieve"]["delivery_path"], "lmtp")
+        self.assertFalse(report["smtp"]["attempted"])
 
     def test_bad_doveconf_refused_without_config_leak(self):
         binary = pathlib.Path(self.tmp.name, "doveconf")

@@ -77,8 +77,8 @@ jobs:
           sudo doveconf -n | grep -F 'sieve_before = /etc/dovecot/sieve/spamgate-junk.sieve'
           # Exercise the shipped read-only probe against actual Dovecot and
           # root-owned installed files on this disposable runner.
-          sudo python3 scripts/spamgate-host-probe.py --check-dovecot-sieve > /tmp/spamgate-dovecot-probe.json
-          python3 -c 'import json; r=json.load(open("/tmp/spamgate-dovecot-probe.json")); assert r["dovecot_sieve"]["ok"] and r["status"] == "preflight_only" and not r["smtp"]["attempted"]'
+          sudo python3 scripts/spamgate-host-probe.py --check-dovecot-sieve --dovecot-delivery-path lda > /tmp/spamgate-dovecot-probe.json
+          python3 -c 'import json; r=json.load(open("/tmp/spamgate-dovecot-probe.json")); assert r["dovecot_sieve"]["ok"] and r["dovecot_sieve"]["delivery_path"] == "lda" and r["dovecot_sieve"]["scope"] == "dovecot_lda_configuration_only" and r["status"] == "preflight_only" and not r["smtp"]["attempted"]'
           mkdir -p lab-evidence
           sudo cp /tmp/spamgate-dovecot-probe.json lab-evidence/dovecot-sieve-config-probe.json
           sudo systemctl restart dovecot
