@@ -203,7 +203,7 @@ func (s *Server) authorized(w http.ResponseWriter, r *http.Request, admin bool, 
 func (s *Server) Router() http.Handler {
 	m := http.NewServeMux()
 	m.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		jsonReply(w, 200, map[string]any{"status": "ok", "version": core.Version})
+		jsonReply(w, 200, map[string]any{"status": "ok", "version": core.Version, "build_version": core.BuildVersion, "source_commit": core.SourceCommit})
 	})
 	m.HandleFunc("GET /", s.index)
 	m.HandleFunc("GET /assets/app.css", assetCSS)
