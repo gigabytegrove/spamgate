@@ -98,7 +98,7 @@ def inspect_config(values, master_overrides):
         flag("smtp_milter_chain_requires_review")
     if overrides:
         flag("master_service_milter_overrides_require_review")
-    if not re.fullmatch(r"[0-9]+", protocol_raw) or not 2 <= int(protocol_raw) <= 6:
+    if not re.fullmatch(r"[0-9]{1,2}", protocol_raw) or not 2 <= int(protocol_raw) <= 6:
         flag("unsupported_milter_protocol")
         protocol = None
     else:
