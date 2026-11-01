@@ -63,9 +63,7 @@ func DMARCCheck(ctx context.Context, resolver SPFResolver, headerFrom string, sp
 		result.Detail = "Invalid From domain"
 		return result
 	}
-	if resolver == nil {
-		resolver = net.DefaultResolver
-	}
+	resolver = dmarcPolicyResolver(resolver)
 	dnsCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	walk := newDMARCDNSWalk(dnsCtx, resolver)
