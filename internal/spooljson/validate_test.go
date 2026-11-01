@@ -17,7 +17,7 @@ func TestValidateSpoolJSON(t *testing.T) {
         {"trailing JSON", `{"id":"a"}{"id":"b"}`, "trailing"},
         {"trailing garbage", `{"id":"a"}junk`, "trailing"},
         {"root array", `[{"id":"a"}]`, "root"},
-        {"truncated", `{"scan":{"action":"accept"}`, "closed"},
+        {"truncated", `{"scan":{"action":"accept"}`, "spool JSON"},
         {"invalid UTF8", string([]byte{'{', '"', 'x', '"', ':', '"', 0xff, '"', '}'}), "UTF-8"},
         {"token exhaustion", `{"items":[` + strings.Repeat("0,", maxJSONTokens) + `0]}`, "budget"},
         {"deep nesting", `{"x":` + strings.Repeat("[", 65) + `0` + strings.Repeat("]", 65) + `}`, "depth"},
