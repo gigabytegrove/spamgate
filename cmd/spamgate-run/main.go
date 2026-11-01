@@ -282,6 +282,7 @@ func executableBuildVersion(path string) (string,error) {
  output,err:=exec.CommandContext(ctx,path,"-build-version").Output()
  if err!=nil {return "unversioned",nil} // pre-build-ID worker compatibility
  build:=strings.TrimSpace(string(output))
+ if build=="" {return "unversioned",nil}
  if build!="unversioned" && !core.ValidBuildVersion(build){return "",fmt.Errorf("invalid worker build ID %q",build)}
  return build,nil
 }
