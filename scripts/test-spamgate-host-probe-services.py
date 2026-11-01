@@ -18,7 +18,7 @@ class HealthHandler(http.server.BaseHTTPRequestHandler):
             self.send_error(404)
             return
         self.send_response(self.server.response_status)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", self.server.content_type)
         self.send_header("Content-Length", str(len(self.server.response_body)))
         self.end_headers()
         try:
@@ -47,10 +47,11 @@ class LoopbackServer(socketserver.ThreadingTCPServer):
 
 class ServiceProbeTests(unittest.TestCase):
     def exercise(self, *, health_status=200, body=b'{"status":"ok","version":"0.6.0-beta.2"}',
-                 expected=None, milter_open=True, send=False):
+                 expected=None, milter_open=True, send=False, content_type="application/json"):
         with http.server.ThreadingHTTPServer(("127.0.0.1", 0), HealthHandler) as health:
             health.response_status = health_status
             health.response_body = body
+            health.content_type = content_type
             with LoopbackServer(("127.0.0.1", 0), MilterListener) as milter:
                 threads = []
                 for server in (health, milter):
@@ -111,6 +112,29 @@ class ServiceProbeTests(unittest.TestCase):
         process, report = self.exercise(body=b"x" * 4097)
         self.assertEqual(process.returncode, 1)
         self.assertIn("4096-byte", report["services"]["health"]["error"])
+
+    def test_health_wrong_content_type_refused(self):
+        process, report = self.exercise(content_type="text/html")
+        self.assertEqual(process.returncode, 1)
+        self.assertEqual(report["status"], "service_probe_failed")
+        self.assertIn("Content-Type", report["services"]["health"]["error"])
+
+    def test_health_invalid_utf8_refused_with_json_report(self):
+        process, report = self.exercise(body=b'{"status":"ok","version":"' + bytes([0xff]) + b'"}')
+        self.assertEqual(process.returncode, 1)
+        self.assertEqual(report["status"], "service_probe_failed")
+        self.assertEqual(report["services"]["health"]["error_type"], "ValueError")
+
+    def test_health_duplicate_status_refused(self):
+        body = b'{"status":"failed","status":"ok","version":"0.6.0-beta.2"}'
+        process, report = self.exercise(body=body)
+        self.assertEqual(process.returncode, 1)
+        self.assertIn("duplicate", report["services"]["health"]["error"])
+
+    def test_health_nonfinite_json_refused(self):
+        process, report = self.exercise(body=b'{"status":"ok","version":"0.6.0-beta.2","metric":NaN}')
+        self.assertEqual(process.returncode, 1)
+        self.assertIn("non-finite", report["services"]["health"]["error"])
 
     def test_version_mismatch_refused(self):
         process, report = self.exercise(expected="0.6.0-beta.3")

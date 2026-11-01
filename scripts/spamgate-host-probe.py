@@ -18,6 +18,7 @@ import ssl
 import sys
 import uuid
 from email.message import EmailMessage
+from spamgate_probe_json import decode_health_response
 
 MAX_MESSAGE_BYTES = 128 * 1024
 
@@ -109,7 +110,7 @@ def probe_services(a):
             raise ValueError("health response exceeds 4096-byte limit")
         if response.status != 200:
             raise ValueError(f"health endpoint returned HTTP {response.status}")
-        payload = json.loads(raw)
+        payload = decode_health_response(raw, response.getheader("Content-Type", ""))
         if not isinstance(payload, dict) or payload.get("status") != "ok":
             raise ValueError("health response did not report status=ok")
         version = payload.get("version")
@@ -119,7 +120,7 @@ def probe_services(a):
         if a.expect_version and version != a.expect_version:
             raise ValueError("health version does not match --expect-version")
         result["health"]["status"] = "ok"
-    except (OSError, ValueError, http.client.HTTPException) as exc:
+    except (OSError, ValueError, UnicodeError, RecursionError, http.client.HTTPException) as exc:
         result["health"]["error_type"] = type(exc).__name__
         result["health"]["error"] = str(exc)[:240]
     finally:
