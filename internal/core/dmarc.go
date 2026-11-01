@@ -20,8 +20,8 @@ type DMARCResult struct {
 	Testing bool
 }
 
-// dmarcTXT discovers a single DMARC1 policy. An NXDOMAIN is absence, while a
-// transient DNS problem must never be converted into DMARC authentication fail.
+// dmarcTXT discovers at most one DMARC1 policy. NXDOMAIN or conflicting
+// policy TXT records mean absence at this name; transient errors remain inconclusive.
 func dmarcTXT(ctx context.Context, resolver SPFResolver, name string) (string, error) {
 	txts, err := resolver.LookupTXT(ctx, "_dmarc."+name)
 	if err != nil {
@@ -35,7 +35,9 @@ func dmarcTXT(ctx context.Context, resolver SPFResolver, name string) (string, e
 	for _, s := range txts {
 		if dmarcCandidate(s) {
 			if record != "" {
-				return "", fmt.Errorf("%w: multiple DMARC1 policy TXT records", errDMARCPolicy)
+				// RFC 9989 section 4.10: discard all conflicting records
+				// at this DNS name, allowing discovery at parent names.
+				return "", nil
 			}
 			record = s
 		}

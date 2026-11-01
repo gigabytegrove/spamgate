@@ -4,7 +4,6 @@ import (
     "context"
     "errors"
     "net"
-    "strings"
     "testing"
 )
 
@@ -26,20 +25,25 @@ func TestDMARCRFC7489RejectsAmbiguousPolicyRecords(t *testing.T) {
     }
 }
 
-func TestDMARCRFC7489DuplicateTXTIsPermerrorNotTemperror(t *testing.T) {
+// RFC 9989 section 4.10 discards conflicting TXT policies at a DNS name.
+func TestDMARCRFC9989DuplicateTXTDiscardAndAncestorFallback(t *testing.T) {
     dns := stubDNS{txt: map[string][]string{
-        "_dmarc.example.org": {"v=DMARC1; p=reject", "v=DMARC1; p=none"},
+        "_dmarc.mail.example.org": {"v=DMARC1; p=reject", "v=DMARC1; p=none"},
+        "_dmarc.example.org": {"v=DMARC1; p=quarantine; sp=reject; psd=n"},
     }}
-    got := DMARCCheck(context.Background(), dns, "sender@example.org", SPFResult{Result: "fail"}, nil)
-    if got.Result != "permerror" || !strings.Contains(got.Detail, "multiple") {
-        t.Fatalf("duplicate policy records are permanent errors: %+v", got)
+    got := DMARCCheck(context.Background(), dns, "sender@mail.example.org", SPFResult{Result: "fail"}, nil)
+    if got.Result != "fail" || got.Policy != "reject" {
+        t.Fatalf("conflicting direct records must be discarded, parent inherited: %+v", got)
     }
-    dns.txt = map[string][]string{
-        "_dmarc.example.org": {"v=DMARC1; v=DMARC2; p=reject"},
+    dns.txt = map[string][]string{"_dmarc.example.org": {"v=DMARC1; p=reject", "v=DMARC1; p=none"}}
+    got = DMARCCheck(context.Background(), dns, "sender@example.org", SPFResult{Result: "fail"}, nil)
+    if got.Result != "none" || got.Policy != "" {
+        t.Fatalf("conflicting policy without ancestor must not enforce: %+v", got)
     }
+    dns.txt = map[string][]string{"_dmarc.example.org": {"v=DMARC1; v=DMARC2; p=reject"}}
     got = DMARCCheck(context.Background(), dns, "sender@example.org", SPFResult{Result: "fail"}, nil)
     if got.Result != "permerror" {
-        t.Fatalf("duplicated v must not hide a policy: %+v", got)
+        t.Fatalf("malformed single record must remain non-enforceable: %+v", got)
     }
 }
 

@@ -13,7 +13,7 @@ This change advances GitHub issue #3. It does **not** close protocol interoperab
 
 ## Qualification limits
 
-This is a targeted RFC 9989 discovery and alignment implementation, **not** full DMARC conformance. The existing duplicate-policy-record handling remains conservative (`permerror`) instead of RFC 9989's discard behavior. Full `np` NXDOMAIN/NODATA differentiation, external reporting URI validation, cross-implementation fixture comparisons, live DNS interoperability, RFC 9990/9991 reporting, and real Postfix/Dovecot disposition remain open.
+This is a targeted RFC 9989 discovery and alignment implementation, **not** full DMARC conformance. Conflicting policy TXT records at one DNS name are discarded per RFC 9989 section 4.10, and discovery continues to ancestors. Malformed individual records remain non-enforceable. Full `np` NXDOMAIN/NODATA differentiation, external reporting URI validation, cross-implementation fixture comparisons, live DNS interoperability, RFC 9990/9991 reporting, and real Postfix/Dovecot disposition remain open.
 
 The resolver abstraction currently does not expose authoritative NXDOMAIN versus NODATA for the Author Domain, so this change deliberately does not apply `np` to unproven non-existent domains. Incorrectly treating missing `_dmarc` TXT as non-existent Author Domain would be unsafe.
 
