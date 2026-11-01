@@ -123,32 +123,31 @@ func versionIdentity(version, build string) string {
 // A legacy worker does not implement -build-version; treat it as older than
 // every numbered build rather than guessing from its modification timestamp.
 func executableBuildVersion(path string) (string, error) {
- ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
- defer cancel()
- out, err := exec.CommandContext(ctx, path, "-build-version").Output()
- if err != nil { return "unversioned", nil }
- value := strings.TrimSpace(string(out))
- // Legacy native workers may accept unknown flags but produce no output.
- // They predate numbered builds; treat an empty successful response exactly
- // like a failed unsupported flag, never as a malformed numbered build.
+ out, err := probeExecutableFlag(path, "-build-version")
+ if err != nil {
+  var exit *exec.ExitError
+  // Legacy executables may exit nonzero on an unsupported flag. Accept
+  // that case only when stdout is empty; timeouts, launch errors, signals,
+  // oversized output and explicit contradictory output must fail closed.
+  if errors.As(err, &exit) && exit.ExitCode() >= 0 && strings.TrimSpace(out) == "" {
+   return "unversioned", nil
+  }
+  return "", fmt.Errorf("inspect executable build identity: %w", err)
+ }
+ value := strings.TrimSpace(out)
  if value == "" || value == "unversioned" { return "unversioned", nil }
  if core.ValidBuildVersion(value) { return value, nil }
- return "", fmt.Errorf("invalid executable build identity %q", value)
+ return "", errors.New("invalid executable build identity")
 }
 func executableVersion(path string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	out, err := exec.CommandContext(ctx, path, "-version").Output()
-	if err != nil {
-		return "", err
-	}
-	version := strings.TrimSpace(string(out))
-	if _, err := compare(version, version); err != nil {
-		return "", fmt.Errorf("invalid executable version %q: %w", version, err)
-	}
-	return version, nil
+ out, err := probeExecutableFlag(path, "-version")
+ if err != nil { return "", fmt.Errorf("inspect executable source version: %w", err) }
+ version := strings.TrimSpace(out)
+ if _, err := compare(version, version); err != nil {
+  return "", fmt.Errorf("invalid executable source version: %w", err)
+ }
+ return version, nil
 }
-
 
 func Record(dir, state, version, detail string) error {
 	data, err := json.Marshal(UpdateRecord{State: state, Version: version, Detail: detail, At: time.Now().UTC()})
