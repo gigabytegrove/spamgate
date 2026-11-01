@@ -63,6 +63,17 @@ class MaildirEvidenceTests(unittest.TestCase):
         self.assertNotIn("private body", self.output.read_text())
         self.assertEqual(self.output.stat().st_mode & 0o777, 0o600)
 
+    def test_transport_chronology_metadata_preserved(self):
+        self.message(RID1)
+        data = json.loads(self.evidence.read_text())
+        data["log_chronology"]["chronology_validated"] = False
+        self.evidence.write_text(json.dumps(data))
+        result = self.call()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = json.loads(self.output.read_text())
+        self.assertFalse(output["transport_chronology_validated"])
+        self.assertTrue(output["complete_maildir_correlation"])
+
     def test_junk_placement_cur(self):
         self.message(RID1, self.junk, folder="cur")
         self.assertEqual(self.call().returncode, 0)
