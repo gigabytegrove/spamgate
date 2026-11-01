@@ -17,7 +17,7 @@ func TestPostfixHoldInventoryRejectsAmbiguousOwnershipJSON(t *testing.T) {
     }{
         {"duplicate queue ID", `{"queue_name":"hold","queue_id":"SAFE12","queue_id":"OTHER12","sender":"sender@example.org","arrival_time":1793100000,"recipients":[{"address":"a@example.org"}]}`},
         {"case folded queue ID", `{"queue_name":"hold","queue_id":"SAFE12","QUEUE_ID":"OTHER12","arrival_time":1793100000,"recipients":[{"address":"a@example.org"}]}`},
-        {"escaped duplicate queue ID", `{"queue_name":"hold","queue_id":"SAFE12","queue_\\u0069d":"OTHER12","arrival_time":1793100000,"recipients":[{"address":"a@example.org"}]}`},
+        {"escaped duplicate queue ID", `{"queue_name":"hold","queue_id":"SAFE12","queue_\u0069d":"OTHER12","arrival_time":1793100000,"recipients":[{"address":"a@example.org"}]}`},
         {"duplicate sender", `{"queue_name":"hold","queue_id":"SAFE12","sender":"first@example.org","sender":"second@example.org","arrival_time":1793100000,"recipients":[{"address":"a@example.org"}]}`},
         {"duplicate recipient array", `{"queue_name":"hold","queue_id":"SAFE12","arrival_time":1793100000,"recipients":[{"address":"a@example.org"}],"recipients":[{"address":"b@example.org"}]}`},
         {"nested duplicate recipient address", `{"queue_name":"hold","queue_id":"SAFE12","arrival_time":1793100000,"recipients":[{"address":"a@example.org","address":"b@example.org"}]}`},
