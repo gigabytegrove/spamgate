@@ -42,6 +42,17 @@ class HealthJSONTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             decode_health_response(b'{}{}', "application/json")
 
+    def test_quoted_brackets_do_not_count_as_nesting(self):
+        payload = b'{"text":"[' + b"["*500 + b']"}'
+        self.assertEqual(decode_health_response(payload, "application/json")["text"],
+                         "["*501+"]")
+
+    def test_nesting_limit_boundary(self):
+        self.assertIsInstance(decode_health_response(b"["*128+b"0"+b"]"*128,
+                                                     "application/json"), list)
+        with self.assertRaisesRegex(ValueError, "128 levels"):
+            decode_health_response(b"["*129+b"0"+b"]"*129, "application/json")
+
     def test_reject_excessive_nesting(self):
         with self.assertRaisesRegex(ValueError, "nesting"):
             decode_health_response(b"["*1500+b"0"+b"]"*1500, "application/json")

@@ -23,6 +23,34 @@ def _reject_constant(value):
     raise ValueError("non-finite health JSON value: " + value)
 
 
+def _check_nesting(text, max_depth=128):
+    """Reject adversarial nesting before invoking the JSON decoder.
+
+    Brackets inside quoted strings (including escaped quotes) are data, not
+    structure. The input is already bounded to 4096 bytes, so this scan is
+    linear and has a deterministic maximum cost.
+    """
+    depth = 0
+    quoted = False
+    escaped = False
+    for char in text:
+        if quoted:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                quoted = False
+        elif char == '"':
+            quoted = True
+        elif char in "[{":
+            depth += 1
+            if depth > max_depth:
+                raise ValueError("health JSON nesting exceeds 128 levels")
+        elif char in "]}":
+            depth -= 1
+
+
 def decode_health_response(raw, content_type):
     if len(raw) > MAX_HEALTH_BYTES:
         raise ValueError("health response exceeds 4096-byte limit")
@@ -33,6 +61,7 @@ def decode_health_response(raw, content_type):
         text = raw.decode("utf-8", errors="strict")
     except UnicodeDecodeError as exc:
         raise ValueError("health JSON is not valid UTF-8") from exc
+    _check_nesting(text)
     try:
         return json.loads(text, object_pairs_hook=_unique_object,
                           parse_constant=_reject_constant)
