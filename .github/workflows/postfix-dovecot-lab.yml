@@ -75,6 +75,12 @@ jobs:
           sudo bash scripts/install-dovecot-sieve.sh --preview
           sudo bash scripts/install-dovecot-sieve.sh --apply --confirm DOVECOT-SIEVE
           sudo doveconf -n | grep -F 'sieve_before = /etc/dovecot/sieve/spamgate-junk.sieve'
+          # Exercise the shipped read-only probe against actual Dovecot and
+          # root-owned installed files on this disposable runner.
+          sudo python3 scripts/spamgate-host-probe.py --check-dovecot-sieve > /tmp/spamgate-dovecot-probe.json
+          python3 -c 'import json; r=json.load(open("/tmp/spamgate-dovecot-probe.json")); assert r["dovecot_sieve"]["ok"] and r["status"] == "preflight_only" and not r["smtp"]["attempted"]'
+          mkdir -p lab-evidence
+          sudo cp /tmp/spamgate-dovecot-probe.json lab-evidence/dovecot-sieve-config-probe.json
           sudo systemctl restart dovecot
           sudo doveadm user spamgatebeta
           sudo doveadm mailbox create -u spamgatebeta Junk
@@ -135,6 +141,13 @@ jobs:
           set -Eeuo pipefail
           sudo bash scripts/install-dovecot-sieve.sh --remove --confirm REMOVE-DOVECOT-SIEVE
           sudo doveconf -n > lab-evidence/dovecot-after-sieve-removal.txt
+          # Removal must make the read-only evidence gate fail, without
+          # attempting SMTP or touching mailboxes.
+          if sudo python3 scripts/spamgate-host-probe.py --check-dovecot-sieve > lab-evidence/dovecot-sieve-after-rollback.json; then
+            echo 'Unsafe: Dovecot probe still qualified removed Sieve integration' >&2
+            exit 1
+          fi
+          python3 -c 'import json; r=json.load(open("lab-evidence/dovecot-sieve-after-rollback.json")); assert r["status"] == "dovecot_sieve_failed" and not r["smtp"]["attempted"]'
           if grep -Fq 'sieve_before = /etc/dovecot/sieve/spamgate-junk.sieve' lab-evidence/dovecot-after-sieve-removal.txt; then
             echo 'SpamGate Sieve rule remained active after rollback' >&2
             exit 1
