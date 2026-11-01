@@ -22,6 +22,7 @@ from spamgate_probe_json import decode_health_response
 from spamgate_milter_probe import verify_milter_protocol
 from spamgate_postfix_config_probe import probe_postfix_config
 from spamgate_dovecot_config_probe import probe_dovecot_sieve
+from spamgate_lmtp_listener_probe import probe_lmtp_listener
 
 MAX_MESSAGE_BYTES = 128 * 1024
 
@@ -51,6 +52,9 @@ def parse_args(argv):
     p.add_argument("--check-dovecot-sieve", action="store_true", help="opt-in read-only Dovecot LDA/LMTP Sieve configuration and file integrity audit")
     p.add_argument("--dovecot-delivery-path", choices=("lda", "lmtp"), default=None,
                    help="explicit Dovecot delivery path to inspect (requires --check-dovecot-sieve; default lda)")
+    p.add_argument("--check-lmtp-listener", action="store_true", help="opt-in read-only local LMTP greeting/LHLO/QUIT verification")
+    p.add_argument("--lmtp-socket", help="explicit absolute Unix LMTP socket (default /run/dovecot/lmtp)")
+    p.add_argument("--lmtp-tcp-port", type=int, help="instead check an IPv4 loopback LMTP TCP port")
     p.add_argument("--verify-milter-protocol", action="store_true", help="opt-in bounded Milter option negotiation; no mail callbacks")
     p.add_argument("--require-milter-actions", default=None, help="comma-separated required capabilities: add_header,change_header,quarantine")
     p.add_argument("--health-port", type=int, default=38470, help="loopback health port (default 38470)")
@@ -72,6 +76,14 @@ def parse_args(argv):
     a.require_milter_actions = required
     if a.dovecot_delivery_path is not None and not a.check_dovecot_sieve:
         p.error("--dovecot-delivery-path requires --check-dovecot-sieve")
+    if (a.lmtp_socket is not None or a.lmtp_tcp_port is not None) and not a.check_lmtp_listener:
+        p.error("LMTP endpoint options require --check-lmtp-listener")
+    if a.lmtp_socket is not None and a.lmtp_tcp_port is not None:
+        p.error("select either --lmtp-socket or --lmtp-tcp-port")
+    if a.lmtp_tcp_port is not None and not 1 <= a.lmtp_tcp_port <= 65535:
+        p.error("LMTP TCP port must be 1..65535")
+    if a.lmtp_socket is not None and (not a.lmtp_socket.startswith("/") or "\x00" in a.lmtp_socket or len(os.fsencode(a.lmtp_socket)) > 107):
+        p.error("LMTP Unix socket must be an absolute path of at most 107 bytes")
     if a.send and (not a.recipient or a.recipient != a.confirm_recipient):
         p.error("--send requires matching --recipient and --confirm-recipient")
     if a.send and not a.sender:
@@ -188,6 +200,7 @@ def run(a):
               "preflight": preflight(), "services": {"attempted": False},
               "postfix_config": {"attempted": False},
               "dovecot_sieve": {"attempted": False},
+              "lmtp_listener": {"attempted": False},
               "smtp": {"attempted": False},
               "limitations": ["SMTP 250 is not proof of mailbox delivery",
                               "Synthetic marker results do not measure real-world classifier accuracy",
@@ -195,7 +208,8 @@ def run(a):
                               "Milter TCP acceptance does not verify protocol negotiation or message disposition",
                               "Milter option negotiation does not verify Postfix action enforcement or mailbox placement",
                               "Postfix configuration inspection cannot prove active service settings or actual mail disposition",
-                              "Dovecot LDA/LMTP Sieve inspection cannot prove active Postfix routing, Sieve execution or mailbox placement"]}
+                              "Dovecot LDA/LMTP Sieve inspection cannot prove active Postfix routing, Sieve execution or mailbox placement",
+                              "LMTP listener handshake does not prove Postfix routing, Sieve execution or mailbox placement"]}
     if a.check_services:
         report["services"] = probe_services(a)
         if not report["services"]["ok"]:
@@ -210,6 +224,14 @@ def run(a):
         report["dovecot_sieve"] = probe_dovecot_sieve(delivery_path=a.dovecot_delivery_path or "lda")
         if not report["dovecot_sieve"]["ok"]:
             report["status"] = "dovecot_sieve_failed"
+            return report
+    if a.check_lmtp_listener:
+        if a.lmtp_tcp_port is not None:
+            report["lmtp_listener"] = probe_lmtp_listener(tcp_port=a.lmtp_tcp_port)
+        else:
+            report["lmtp_listener"] = probe_lmtp_listener(unix_socket=a.lmtp_socket or "/run/dovecot/lmtp")
+        if not report["lmtp_listener"]["ok"]:
+            report["status"] = "lmtp_listener_failed"
             return report
     if not a.send:
         report["status"] = "preflight_only"
