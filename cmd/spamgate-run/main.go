@@ -33,7 +33,42 @@ import (
 const restartExitCode = 75
 const maxDownload = 80 << 20
 
-var versionPattern = regexp.MustCompile(`^v?\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?$`)
+var versionPattern = regexp.MustCompile(`^v?\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?(?:\+[0-9]{8}-(?:[01][0-9]|2[0-3])[a-z]?)?package main
+
+// spamgate (native launcher) is an independently compiled, deliberately non-updating process
+// supervisor for native SpamGate installations. It never loads mail config or
+// holds HTTP/Milter sockets. All mail traffic and UI run in the spamgate worker.
+// Unlike the legacy detached updater, failures cannot silently kill the parent.
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"os/exec"
+	"os/signal"
+	"path/filepath"
+	"regexp"
+	"runtime"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/gigabytegrove/spamgate/internal/core"
+)
+
+const restartExitCode = 75
+const maxDownload = 80 << 20
+
+)
 var digestPattern = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
 
 type options struct {
@@ -259,60 +294,66 @@ func staged(o options) (string, string, error) {
 	}
 	return path, strings.TrimPrefix(m.Version, "v"), nil
 }
-func compareVersions(a, b string) (int, error) {
-	decode := func(raw string) ([]int, error) {
-		raw = strings.TrimPrefix(raw, "v")
-		parts := strings.SplitN(raw, "-", 2)
-		fields := strings.Split(parts[0], ".")
-		if len(fields) != 3 {
-			return nil, errors.New("invalid version")
-		}
-		out := make([]int, 5)
-		for i, x := range fields {
-			n, e := strconv.Atoi(x)
-			if e != nil {
-				return nil, e
-			}
-			out[i] = n
-		}
-		out[3] = 4 // stable > RC > beta > alpha
-		if len(parts) == 2 {
-			pre := strings.Split(parts[1], ".")
-			if len(pre) != 2 {
-				return nil, errors.New("invalid prerelease")
-			}
-			rank := map[string]int{"alpha": 1, "beta": 2, "rc": 3}
-			out[3] = rank[pre[0]]
-			if out[3] == 0 {
-				return nil, errors.New("invalid prerelease")
-			}
-			n, e := strconv.Atoi(pre[1])
-			if e != nil {
-				return nil, e
-			}
-			out[4] = n
-		}
-		return out, nil
-	}
-	x, err := decode(a)
-	if err != nil {
-		return 0, err
-	}
-	y, err := decode(b)
-	if err != nil {
-		return 0, err
-	}
-	for i := range x {
-		if x[i] > y[i] {
-			return 1, nil
-		}
-		if x[i] < y[i] {
-			return -1, nil
-		}
-	}
-	return 0, nil
+// Release tags carry a separate build ID while -version retains the source
+// version. A same-source build is forward only when its hourly ID increases.
+func splitVersionIdentity(raw string) (string, string, error) {
+ parts:=strings.Split(raw,"+")
+ if len(parts)>2 {return "","",errors.New("invalid release build metadata")}
+ src:=strings.TrimPrefix(parts[0],"v")
+ build:="unversioned"
+ if len(parts)==2 {
+  if !core.ValidBuildVersion(parts[1]) {return "","",errors.New("invalid build identity")}
+  build=parts[1]
+ }
+ return src,build,nil
 }
-
+func versionIdentity(source, build string) string {
+ if build=="unversioned" {return source}
+ return source+"+"+build
+}
+func executableBuildVersion(path string) (string,error) {
+ ctx,cancel:=context.WithTimeout(context.Background(),5*time.Second)
+ defer cancel()
+ output,err:=exec.CommandContext(ctx,path,"-build-version").Output()
+ if err!=nil {return "unversioned",nil} // pre-build-ID worker compatibility
+ build:=strings.TrimSpace(string(output))
+ if build!="unversioned" && !core.ValidBuildVersion(build){return "",fmt.Errorf("invalid worker build ID %q",build)}
+ return build,nil
+}
+func compareVersions(a,b string)(int,error){
+ decode:=func(input string)([]int,string,error){
+  src,build,err:=splitVersionIdentity(input)
+  if err!=nil{return nil,"",err}
+  parts:=strings.SplitN(src,"-",2)
+  fields:=strings.Split(parts[0],".")
+  if len(fields)!=3{return nil,"",errors.New("invalid source version")}
+  out:=make([]int,5)
+  for i,x:=range fields {
+   n,e:=strconv.Atoi(x)
+   if e!=nil||n<0{return nil,"",errors.New("invalid source version")}
+   out[i]=n
+  }
+  out[3]=4
+  if len(parts)==2 {
+   pre:=strings.Split(parts[1],".")
+   if len(pre)!=2{return nil,"",errors.New("invalid prerelease")}
+   rank:=map[string]int{"alpha":1,"beta":2,"rc":3}
+   out[3]=rank[pre[0]]
+   if out[3]==0{return nil,"",errors.New("invalid prerelease")}
+   n,e:=strconv.Atoi(pre[1])
+   if e!=nil||n<0{return nil,"",errors.New("invalid prerelease number")}
+   out[4]=n
+  }
+  return out,build,nil
+ }
+ aa,ba,e:=decode(a);if e!=nil{return 0,e}
+ bb,bbBuild,e:=decode(b);if e!=nil{return 0,e}
+ for i:=range aa {
+  if aa[i]>bb[i]{return 1,nil}
+  if aa[i]<bb[i]{return -1,nil}
+ }
+ return core.CompareBuildVersions(ba,bbBuild)
+}
 func clearStaged(o options) {
 	folder := updateFolder(o)
 	_ = os.Remove(filepath.Join(folder, "pending.json"))
@@ -523,6 +564,8 @@ func supervise(ctx context.Context, o options) error {
 	if err != nil {
 		return fmt.Errorf("installed worker version: %w", err)
 	}
+ installedBuild,err:=executableBuildVersion(o.worker)
+ if err!=nil{return fmt.Errorf("installed worker build: %w",err)}
 	child, done, err := recoverWorker(ctx, o, url, version, 0)
 	if err != nil {
 		if ctx.Err() != nil { return nil }
@@ -576,7 +619,7 @@ func supervise(ctx context.Context, o options) error {
 		pending, newVersion, err := staged(o)
 		if err == nil {
 			var cmp int
-			cmp, err = compareVersions(newVersion, version)
+			cmp, err = compareVersions(newVersion, versionIdentity(version,installedBuild))
 			if err == nil && cmp <= 0 {
 				err = fmt.Errorf("refusing non-forward update %s from %s", newVersion, version)
 			}
@@ -596,12 +639,21 @@ func supervise(ctx context.Context, o options) error {
 			}
 			continue
 		}
-		if got, e := executableVersion(o.worker); e != nil || got != newVersion {
-			err = fmt.Errorf("replacement version mismatch: got %q expected %q: %v", got, newVersion, e)
-		}
+		sourceVersion,newBuild,parseErr:=splitVersionIdentity(newVersion)
+  if parseErr!=nil {err=parseErr}
+  if err==nil {
+   if got,e:=executableVersion(o.worker);e!=nil||got!=sourceVersion {
+    err=fmt.Errorf("replacement source version mismatch: got %q expected %q: %v",got,sourceVersion,e)
+   }
+  }
+  if err==nil {
+   if got,e:=executableBuildVersion(o.worker);e!=nil||got!=newBuild {
+    err=fmt.Errorf("replacement build version mismatch: got %q expected %q: %v",got,newBuild,e)
+   }
+  }
 		if err == nil {
 			record(o, "checking", newVersion, "installed "+o.worker+"; verifying process and health")
-			child, done, err = startHealthy(ctx, o, url, newVersion)
+			child, done, err = startHealthy(ctx, o, url, sourceVersion)
 		}
 		if err != nil {
 			if e := copyAtomic(previous, o.worker); e != nil {
@@ -622,7 +674,8 @@ func supervise(ctx context.Context, o options) error {
 			log.Printf("SpamGate launcher: rolled back %s and verified previous worker: %v", newVersion, failure)
 			continue
 		}
-		version = newVersion
+		version = sourceVersion
+  installedBuild=newBuild
 		healthySince = time.Now()
 		probeFailures = 0
 		clearStaged(o)
