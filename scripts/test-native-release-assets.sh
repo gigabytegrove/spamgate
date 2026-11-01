@@ -11,7 +11,7 @@ trap 'rm -rf -- "$TMP"' EXIT
 prepare() {
   rm -rf -- "$TMP/assets"
   mkdir -p "$TMP/assets"
-  cp -p -- "$SOURCE"/spamgate-{launcher,worker}-linux-amd64 "$SOURCE/spamgate-linux-amd64" "$SOURCE/spamgate-windows-amd64.exe" "$SOURCE/SHA256SUMS.txt" "$TMP/assets/"
+  cp -p -- "$SOURCE"/spamgate-{launcher,worker}-linux-amd64 "$SOURCE/spamgate-linux-amd64" "$SOURCE/spamgate-windows-amd64.exe" "$SOURCE/BUILD-INFO.json" "$SOURCE/SHA256SUMS.txt" "$TMP/assets/"
 }
 reject() {
   local label="$1"
@@ -29,4 +29,13 @@ prepare; sed -i 's@spamgate-worker-linux-amd64@../spamgate-worker-linux-amd64@' 
 prepare; rm "$TMP/assets/spamgate-launcher-linux-amd64"; reject 'missing launcher'
 prepare; if bash "$VERIFY" "$TMP/assets" '0.6.0-beta.9999' >"$TMP/output" 2>&1; then echo 'FAIL: wrong version accepted' >&2; exit 1; fi; echo 'PASS rejected: wrong version'
 prepare; ln -s "$SOURCE/spamgate-worker-linux-amd64" "$TMP/assets/spamgate-worker-linux-amd64.tmp"; mv -f "$TMP/assets/spamgate-worker-linux-amd64.tmp" "$TMP/assets/spamgate-worker-linux-amd64"; reject 'symlink worker'
+prepare; rm "$TMP/assets/BUILD-INFO.json"; reject 'missing build identity manifest'
+prepare; python3 - "$TMP/assets/BUILD-INFO.json" <<'PY'
+import json,sys
+p=sys.argv[1]
+d=json.load(open(p));d["build_version"]="20261101-01z"
+open(p,"w").write(json.dumps(d))
+PY
+(cd "$TMP/assets" && sha256sum BUILD-INFO.json > /tmp/spamgate-asset-buildid.sum && sed -i '/ BUILD-INFO.json$/d' SHA256SUMS.txt && cat /tmp/spamgate-asset-buildid.sum >> SHA256SUMS.txt && rm /tmp/spamgate-asset-buildid.sum)
+reject 'build identity substituted even with matching metadata checksum'
 echo 'PASS native release asset negative regression suite'
