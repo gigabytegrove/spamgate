@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/gigabytegrove/spamgate/internal/core"
 	"net/http"
+	"time"
 )
 
 // Authenticated, point-in-time counters. No unauthenticated monitoring access.
@@ -72,13 +73,61 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Fprintln(w, "spamgate_outbox_snapshot_available 1")
 	fmt.Fprintln(w, "spamgate_outbox_snapshot_error 0")
-	fmt.Fprintln(w, "# HELP spamgate_outbox_messages Persistent delivery jobs by status.")
+	// All queue metrics are emitted from one validated snapshot. Never emit
+	// plausible zero counts when an enabled queue fails inventory validation.
+	fmt.Fprintln(w, "# HELP spamgate_outbox_jobs Published durable delivery records, including finalization-pending records.")
+	fmt.Fprintln(w, "# TYPE spamgate_outbox_jobs gauge")
+	fmt.Fprintf(w, "spamgate_outbox_jobs %d\n", q.Total)
+	fmt.Fprintln(w, "# HELP spamgate_outbox_messages Published durable delivery records by state.")
 	fmt.Fprintln(w, "# TYPE spamgate_outbox_messages gauge")
 	for _, entry := range []struct {
 		name string
 		count int
-	}{{"queued", q.Queued}, {"delivering", q.Delivering}, {"dead", q.Dead}} {
+	}{
+		{"queued", q.Queued},
+		{"delivering", q.Delivering},
+		{"dead", q.Dead},
+		{"delivered", q.Delivered},
+		{"discard_pending", q.DiscardPending},
+	} {
 		fmt.Fprintf(w, "spamgate_outbox_messages{status=%q} %d\n", entry.name, entry.count)
 	}
+	fmt.Fprintln(w, "# HELP spamgate_outbox_bytes Total original-message bytes in published durable records.")
+	fmt.Fprintln(w, "# TYPE spamgate_outbox_bytes gauge")
 	fmt.Fprintf(w, "spamgate_outbox_bytes %d\n", q.Bytes)
+	fmt.Fprintln(w, "# HELP spamgate_outbox_unpublished_records Synced or incomplete unpublished spool files requiring investigation; never auto-replayed.")
+	fmt.Fprintln(w, "# TYPE spamgate_outbox_unpublished_records gauge")
+	fmt.Fprintf(w, "spamgate_outbox_unpublished_records %d\n", q.PendingTemps)
+	fmt.Fprintln(w, "# HELP spamgate_outbox_unpublished_bytes Bytes held by unpublished spool files.")
+	fmt.Fprintln(w, "# TYPE spamgate_outbox_unpublished_bytes gauge")
+	fmt.Fprintf(w, "spamgate_outbox_unpublished_bytes %d\n", q.PendingTempBytes)
+
+	// Backlog age and due counts are observations, not delivery guarantees.
+	// Exclude dead, delivered and discard-pending originals from active work.
+	// No message IDs, recipients, subjects or SMTP error text are exported.
+	now := time.Now().UTC()
+	var oldest time.Time
+	overdue := 0
+	for _, job := range q.Jobs {
+		if job.State != "queued" && job.State != "delivering" {
+			continue
+		}
+		if !job.Created.IsZero() && !job.Created.After(now) &&
+			(oldest.IsZero() || job.Created.Before(oldest)) {
+			oldest = job.Created
+		}
+		if !job.NextAttempt.IsZero() && !job.NextAttempt.After(now) {
+			overdue++
+		}
+	}
+	oldestAge := 0.0
+	if !oldest.IsZero() {
+		oldestAge = now.Sub(oldest).Seconds()
+	}
+	fmt.Fprintln(w, "# HELP spamgate_outbox_oldest_active_age_seconds Age of oldest queued or delivering original; zero when none.")
+	fmt.Fprintln(w, "# TYPE spamgate_outbox_oldest_active_age_seconds gauge")
+	fmt.Fprintf(w, "spamgate_outbox_oldest_active_age_seconds %.3f\n", oldestAge)
+	fmt.Fprintln(w, "# HELP spamgate_outbox_due_jobs Queued or delivering originals with a due recovery or relay attempt.")
+	fmt.Fprintln(w, "# TYPE spamgate_outbox_due_jobs gauge")
+	fmt.Fprintf(w, "spamgate_outbox_due_jobs %d\n", overdue)
 }

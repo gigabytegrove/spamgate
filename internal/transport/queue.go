@@ -60,6 +60,7 @@ type QueueSummary struct {
 	Queued     int             `json:"queued"`
 	Delivering int             `json:"delivering"`
 	Dead       int             `json:"dead"`
+	Delivered  int             `json:"delivered"`
 	DiscardPending int       `json:"discard_pending"`
 	Bytes      int64           `json:"bytes"`
 	PendingTemps int          `json:"pending_temps"`
@@ -323,6 +324,8 @@ func (q *DeliveryQueue) snapshotLocked() (QueueSummary, error) {
 			info.Delivering++
 		case "dead":
 			info.Dead++
+		case "delivered":
+			info.Delivered++
 		case "discard_pending":
 			info.DiscardPending++
 		}
