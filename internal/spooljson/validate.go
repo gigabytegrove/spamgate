@@ -6,7 +6,6 @@ import (
     "errors"
     "fmt"
     "io"
-    "strings"
     "unicode/utf8"
 )
 
@@ -74,7 +73,7 @@ func validateValue(decoder *json.Decoder, value json.Token, depth int, budget *i
             if *budget < 0 {
                 return errors.New("spool JSON token budget exceeded")
             }
-            folded := strings.ToLower(key)
+            folded := foldJSONKey(key)
             if _, duplicate := seen[folded]; duplicate {
                 return errors.New("spool JSON contains duplicate object key")
             }
