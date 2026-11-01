@@ -16,12 +16,39 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+ "github.com/gigabytegrove/spamgate/internal/core"
 )
 
 const Endpoint = "https://api.github.com/repos/gigabytegrove/spamgate/releases?per_page=30"
 const maxBinary = 80 << 20
 
-var releaseTag = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(?:-alpha\.[0-9]+|-beta\.[0-9]+|-rc\.[0-9]+)?$`)
+var releaseTag = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(?:-alpha\.[0-9]+|-beta\.[0-9]+|-rc\.[0-9]+)?(?:\+[0-9]{8}-(?:[01][0-9]|2[0-3])[a-z]?)?package updater
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
+	"runtime"
+	"strconv"
+	"strings"
+	"time"
+
+ "github.com/gigabytegrove/spamgate/internal/core"
+)
+
+const Endpoint = "https://api.github.com/repos/gigabytegrove/spamgate/releases?per_page=30"
+const maxBinary = 80 << 20
+
+)
 var hexDigest = regexp.MustCompile(`^[a-fA-F0-9]{64}$`)
 
 type Asset struct {
@@ -38,6 +65,8 @@ type Release struct {
 }
 type Status struct {
 	Current     string        `json:"current"`
+ CurrentBuild string        `json:"current_build"`
+ LatestBuild string        `json:"latest_build,omitempty"`
 	Latest      string        `json:"latest,omitempty"`
 	Available   bool          `json:"available"`
 	ReleaseURL  string        `json:"release_url,omitempty"`
@@ -71,58 +100,52 @@ func platformAsset() (string, error) {
 	}
 	return "", errors.New("unsupported platform")
 }
+// buildFromRelease separates SemVer source and our immutable build metadata.
+// Legacy releases without +YYYYMMDD-HH retain the unversioned identity.
+func buildFromRelease(s string) (string, string, error) {
+ p := strings.Split(s, "+")
+ if len(p) > 2 { return "", "", errors.New("invalid release build metadata") }
+ build := "unversioned"
+ if len(p) == 2 {
+  if !core.ValidBuildVersion(p[1]) { return "", "", errors.New("invalid release build version") }
+  build = p[1]
+ }
+ return p[0], build, nil
+}
+
 func compare(a, b string) (int, error) {
-	parse := func(s string) ([]int, error) {
-		s = strings.TrimPrefix(s, "v")
-		x := strings.SplitN(s, "-", 2)
-		p := strings.Split(x[0], ".")
-		if len(p) != 3 {
-			return nil, errors.New("invalid version")
-		}
-		out := make([]int, 5)
-		for i := 0; i < 3; i++ {
-			n, e := strconv.Atoi(p[i])
-			if e != nil {
-				return nil, e
-			}
-			out[i] = n
-		}
-		out[3] = 4
-		if len(x) > 1 {
-			z := strings.Split(x[1], ".")
-			if len(z) != 2 {
-				return nil, errors.New("invalid prerelease")
-			}
-			ranks := map[string]int{"alpha": 1, "beta": 2, "rc": 3}
-			out[3] = ranks[z[0]]
-			if out[3] == 0 {
-				return nil, errors.New("unknown prerelease")
-			}
-			n, e := strconv.Atoi(z[1])
-			if e != nil {
-				return nil, e
-			}
-			out[4] = n
-		}
-		return out, nil
-	}
-	aa, e := parse(a)
-	if e != nil {
-		return 0, e
-	}
-	bb, e := parse(b)
-	if e != nil {
-		return 0, e
-	}
-	for i := range aa {
-		if aa[i] > bb[i] {
-			return 1, nil
-		}
-		if aa[i] < bb[i] {
-			return -1, nil
-		}
-	}
-	return 0, nil
+ parse := func(s string) ([]int, string, error) {
+  source, build, err := buildFromRelease(s)
+  if err != nil { return nil, "", err }
+  source = strings.TrimPrefix(source, "v")
+  x := strings.SplitN(source, "-", 2)
+  p := strings.Split(x[0], ".")
+  if len(p) != 3 { return nil, "", errors.New("invalid source version") }
+  out := make([]int,5)
+  for i:=0;i<3;i++ {
+   n, e := strconv.Atoi(p[i])
+   if e!=nil || n<0 { return nil,"",errors.New("invalid source component") }
+   out[i]=n
+  }
+  out[3]=4
+  if len(x)>1 {
+   z:=strings.Split(x[1],".")
+   if len(z)!=2{return nil,"",errors.New("invalid prerelease")}
+   rank:=map[string]int{"alpha":1,"beta":2,"rc":3}
+   out[3]=rank[z[0]]
+   if out[3]==0{return nil,"",errors.New("unknown prerelease")}
+   n,e:=strconv.Atoi(z[1]);if e!=nil || n<0{return nil,"",errors.New("invalid prerelease number")}
+   out[4]=n
+  }
+  return out,build,nil
+ }
+ aa, buildA,e:=parse(a);if e!=nil{return 0,e}
+ bb, buildB,e:=parse(b);if e!=nil{return 0,e}
+ for i:=range aa {
+  if aa[i]>bb[i]{return 1,nil}
+  if aa[i]<bb[i]{return -1,nil}
+ }
+ return core.CompareBuildVersions(buildA,buildB)
 }
 func (c *Client) get(ctx context.Context, url string, limit int64) ([]byte, error) {
 	if !strings.HasPrefix(url, "https://github.com/gigabytegrove/spamgate/releases/download/") && url != c.Endpoint {
@@ -201,16 +224,23 @@ func lookup(r Release, name string) (Asset, error) {
 	return found, nil
 }
 func (c *Client) Check(ctx context.Context, current string) (Status, error) {
-	s := Status{Current: current}
+	s := Status{Current: current, CurrentBuild: core.BuildVersion}
 	r, e := c.Latest(ctx)
 	if e != nil {
 		return s, e
 	}
-	comparison, e := compare(r.Tag, current)
+	currentIdentity := current
+ if core.ValidBuildVersion(core.BuildVersion) {
+  currentIdentity += "+" + core.BuildVersion
+ }
+ comparison, e := compare(r.Tag, currentIdentity)
 	if e != nil {
 		return s, e
 	}
 	s.Latest = r.Tag
+ _,latestBuild,e:=buildFromRelease(r.Tag)
+ if e!=nil{return s,e}
+ s.LatestBuild=latestBuild
 	s.Available = comparison > 0
 	s.ReleaseURL = r.HTML
 	name, e := platformAsset()
