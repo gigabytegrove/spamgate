@@ -34,7 +34,7 @@ jobs:
           set -Eeuo pipefail
           printf 'postfix postfix/mailname string localhost\npostfix postfix/main_mailer_type select Local only\n' | sudo debconf-set-selections
           sudo -E apt-get update -qq
-          sudo -E apt-get install -y -qq postfix dovecot-core dovecot-imapd dovecot-sieve
+          sudo -E apt-get install -y -qq postfix dovecot-core dovecot-imapd dovecot-sieve dovecot-lmtpd
           if ! id spamgatebeta >/dev/null 2>&1; then
             sudo useradd -m -s /bin/bash spamgatebeta
           fi
@@ -134,6 +134,34 @@ jobs:
             exit 1
           fi
           printf '%s\n' "$INBOX_STATUS" "$JUNK_STATUS" > lab-evidence/dovecot-mailbox-counts.txt
+
+      - name: Real Dovecot LMTP and Sieve mailbox placement on disposable VM
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Only after the existing real Postfix -> Milter -> LDA assertions.
+          # This separate direct-LMTP path does NOT establish Postfix routing.
+          sudo tee /etc/dovecot/conf.d/98-spamgate-lmtp-lab.conf >/dev/null <<'DOVECOT'
+          protocols = $protocols lmtp
+          auth_username_format = %Ln
+          postmaster_address = postmaster@localhost
+          protocol lmtp {
+            mail_plugins = $mail_plugins sieve
+          }
+          DOVECOT
+          sudo doveconf -n >/dev/null
+          sudo systemctl restart dovecot
+          sudo test -S /run/dovecot/lmtp
+          sudo python3 scripts/spamgate-host-probe.py --check-dovecot-sieve --dovecot-delivery-path lmtp --check-lmtp-listener > /tmp/spamgate-lmtp-preflight.json
+          python3 -c 'import json; r=json.load(open("/tmp/spamgate-lmtp-preflight.json")); assert r["dovecot_sieve"]["ok"] and r["lmtp_listener"]["ok"] and not r["smtp"]["attempted"]'
+          sudo cp /tmp/spamgate-lmtp-preflight.json lab-evidence/dovecot-lmtp-config-probe.json
+          sudo chown "$(id -u):$(id -g)" lab-evidence/dovecot-lmtp-config-probe.json
+          sudo env CI=true GITHUB_ACTIONS=true SPAMGATE_DISPOSABLE_LMTP_LAB=1 \
+            python3 scripts/spamgate-lmtp-delivery-lab.py --confirm DISPOSABLE-DOVECOT-LMTP-DELIVERY \
+            | tee lab-evidence/lmtp-delivery.json
+          python3 -c 'import json; r=json.load(open("lab-evidence/lmtp-delivery.json")); assert r["ok"] and r["verified_cases"] == 5 and len(r["cases"]) == 5'
+          sudo doveadm mailbox status -u spamgatebeta messages INBOX
+          sudo doveadm mailbox status -u spamgatebeta messages Junk
 
       - name: Validate Sieve removal and Dovecot configuration rollback
         shell: bash
