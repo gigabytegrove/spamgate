@@ -104,7 +104,7 @@ func seedInPlaceBinary(dir, base string) error {
 		}
 		build,err:=executableBuildVersion(candidate)
   if err!=nil { continue }
-  if cmp,e := compare(version+"+"+build, bestVersion+"+"+bestBuild); e == nil && cmp > 0 {
+  if cmp,e := compare(versionIdentity(version,build),versionIdentity(bestVersion,bestBuild)); e == nil && cmp > 0 {
    best,bestVersion,bestBuild=candidate,version,build
   }
 	}
@@ -112,6 +112,12 @@ func seedInPlaceBinary(dir, base string) error {
 		return nil
 	}
 	return copyExecutable(best, target)
+}
+
+// versionIdentity attaches numbered build metadata only when present.
+func versionIdentity(version, build string) string {
+ if build=="unversioned" {return version}
+ return version+"+"+build
 }
 
 // A legacy worker does not implement -build-version; treat it as older than
