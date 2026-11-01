@@ -389,7 +389,7 @@ func launch(o options) (*exec.Cmd, <-chan error, error) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
-	cmd.Env = append(os.Environ(), "SPAMGATE_SUPERVISED=1", "SPAMGATE_INSTALLED_WORKER="+o.worker, "SPAMGATE_SPLIT_WORKER=1", "SPAMGATE_OPEN_BROWSER=false")
+	cmd.Env = append(os.Environ(), "SPAMGATE_SUPERVISED=1", "SPAMGATE_INSTALLED_WORKER="+o.worker, "SPAMGATE_SPLIT_WORKER=1", "SPAMGATE_SUPPORTS_BUILD_IDS=1", "SPAMGATE_OPEN_BROWSER=false")
 	if err := cmd.Start(); err != nil {
 		return nil, nil, err
 	}
