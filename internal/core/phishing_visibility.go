@@ -1,11 +1,17 @@
 package core
 
-import "strings"
+import (
+	"html"
+	"strings"
+)
 
 // phishingRenderedHTML keeps only HTML that can contribute visible anchor
 // text. Uncertain or malformed tags stop inspection rather than inventing a
 // scored URL claim. This is not a browser or an external CSS renderer.
 func phishingRenderedHTML(input string, coverage *mimeCoverage) string {
+	if coverage == nil {
+		coverage = &mimeCoverage{}
+	}
 	type frame struct {
 		name   string
 		hidden bool
@@ -78,6 +84,10 @@ func phishingRenderedHTML(input string, coverage *mimeCoverage) string {
 		i = end + 1
 		if selfClosing {
 			continue
+		}
+		if len(stack) >= 256 {
+			coverage.mark("Phishing HTML nesting exceeds 256 elements; remaining markup not inspected")
+			break
 		}
 		stack = append(stack, frame{name: name, hidden: nextHidden})
 		hidden = nextHidden
@@ -214,11 +224,11 @@ func phishingHiddenAttributes(attrs string) bool {
 		case "hidden", "inert":
 			return true
 		case "aria-hidden":
-			if strings.EqualFold(strings.TrimSpace(value), "true") {
+			if strings.EqualFold(strings.TrimSpace(html.UnescapeString(value)), "true") {
 				return true
 			}
 		case "style":
-			if phishingInlineCSSHidden(value) {
+			if phishingInlineCSSHidden(html.UnescapeString(value)) {
 				return true
 			}
 		}

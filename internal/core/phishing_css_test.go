@@ -44,6 +44,8 @@ func TestPhishingCSSCascadeVisibleLinkIntegration(t *testing.T) {
 		{"unrelated content", "content:'display:none'", 1},
 		{"custom property", "--custom:display:none", 1},
 		{"hidden visibility", "visibility:hidden", 0},
+		{"encoded style colon", "display&#58;none", 0},
+		{"encoded visibility colon", "visibility&#58;hidden", 0},
 		{"visible visibility", "visibility:hidden;visibility:visible", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -64,5 +66,22 @@ func TestPhishingConvenienceHelperNilCoverageIsSafe(t *testing.T) {
 	}
 	if got := phishingVisibleLinks(strings.Repeat(mismatch, 60)); len(got) != 10 {
 		t.Fatalf("anchor budget: got %d findings, want 10", len(got))
+	}
+}
+
+func TestPhishingHTMLNestingBudget(t *testing.T) {
+	const mismatch = "<a href='https://evil.example.net'>https://bank.example.com</a>"
+	html := strings.Repeat("<div>", 300) + mismatch + strings.Repeat("</div>", 300)
+	coverage := &mimeCoverage{}
+	found := phishingVisibleLinksWithCoverage(html, coverage)
+	if len(found) != 0 || !coverage.Incomplete || !strings.Contains(strings.Join(coverage.Reasons, " "), "256") {
+		t.Fatalf("unbounded nesting was not reported: findings=%v coverage=%+v", found, coverage)
+	}
+}
+
+func TestPhishingEncodedAriaHidden(t *testing.T) {
+	const mismatch = "<a href='https://evil.example.net'>https://bank.example.com</a>"
+	if got := phishingVisibleLinks("<div aria-hidden='tr&#117;e'>" + mismatch + "</div>"); len(got) != 0 {
+		t.Fatalf("encoded aria-hidden attribute leaked a finding: %v", got)
 	}
 }

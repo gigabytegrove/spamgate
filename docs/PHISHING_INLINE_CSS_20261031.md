@@ -17,3 +17,5 @@ The phishing visible-link classifier previously searched for the literal substri
 The parser is intentionally not a full browser CSS engine. External stylesheets, class selectors, media queries, CSS custom property substitution, inherited visibility overrides, escaped identifiers, and layout/opacity tricks are not resolved. It does not prove phishing precision/recall on independently labeled mail. No mail server configuration or running host is changed by this source commit.
 
 Acceptance for issue #5 still requires independently labeled clean/spam corpora, measured false-positive bounds, and real-host qualification. This work is regression hardening, not beta signoff.
+
+Additional hardening: decode HTML character references in inline style and ARIA attributes before evaluating browser-visible semantics; bound HTML element nesting at 256 and report incomplete inspection without speculative findings. This limits adversarial unmatched-tag CPU consumption.
