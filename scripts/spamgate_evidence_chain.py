@@ -54,6 +54,8 @@ def validate_transport_chain(evidence, entries):
         for event in events:
             if (not isinstance(event, dict)
                     or set(event) != {"transport", "status"}
+                    or not isinstance(event["transport"], str)
+                    or not isinstance(event["status"], str)
                     or event["transport"] not in ALLOWED_TRANSPORTS
                     or event["status"] not in ALLOWED_STATUSES):
                 raise ValueError("invalid or unsafe recipient transport event")
