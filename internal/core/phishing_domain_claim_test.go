@@ -43,9 +43,6 @@ func TestPhishingVisibleLinkPSLOrganizationalBoundary(t *testing.T) {
 }
 
 func TestPhishingPSLBoundaryMIMEAndClassifierOptIn(t *testing.T) {
-    store, err := Open(t.TempDir())
-    if err != nil { t.Fatal(err) }
-    scanner := &Scanner{Store: store, Resolver: stubDNS{}}
     cases := []struct{ name, shown, destination string; want bool }{
         {"legitimate sibling", "support.example.com", "login.example.com", false},
         {"different github tenants", "alice.github.io", "bob.github.io", true},
@@ -53,6 +50,9 @@ func TestPhishingPSLBoundaryMIMEAndClassifierOptIn(t *testing.T) {
     }
     for _, tc := range cases {
         t.Run(tc.name, func(t *testing.T) {
+            store, err := Open(t.TempDir())
+            if err != nil { t.Fatal(err) }
+            scanner := &Scanner{Store: store, Resolver: stubDNS{}}
             body := fmt.Sprintf("<a href=\"https://%s/login\">https://%s/login</a>", tc.destination, tc.shown)
             raw := []byte("From: sender@example.org\r\nTo: recipient@example.net\r\n" +
                 "Date: Sun, 01 Nov 2026 15:00:00 +0000\r\n" +
