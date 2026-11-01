@@ -98,7 +98,7 @@ jobs:
           import datetime, json, pathlib, sys
           build,commit=sys.argv[1:]
           record={"version":__import__("subprocess").check_output(["dist/spamgate-worker-linux-amd64","-version"],text=True).strip(),"build_version":build,"source_commit":commit,"build_kind":"automatic","time_zone":"America/New_York","qualified_at_utc":datetime.datetime.now(datetime.timezone.utc).isoformat()}
-          pathlib.Path("dist/BUILD-INFO.json").write_text(json.dumps(record,indent=2,sort_keys=True)+"\\n")
+          pathlib.Path("dist/BUILD-INFO.json").write_text(json.dumps(record,indent=2,sort_keys=True)+"\n")
           PY
           test "$(dist/spamgate-worker-linux-amd64 -build-version)" = "$BUILD_VERSION"
           test "$(dist/spamgate-launcher-linux-amd64 -build-version)" = "$BUILD_VERSION"
