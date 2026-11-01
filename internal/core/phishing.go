@@ -17,7 +17,6 @@ import (
 // values are parsed separately so data-href and quoted text containing "href"
 // cannot masquerade as the browser's actual destination.
 var anchorPattern = regexp.MustCompile(`(?is)<a\b((?:[^>"']|"[^"]*"|'[^']*')*)>(.*?)</a\s*>`)
-var htmlCommentPattern = regexp.MustCompile(`(?s)<!--.*?-->`)
 var stripMarkup = regexp.MustCompile(`(?s)<[^>]+>`)
 
 func htmlAttrSpace(b byte) bool {
@@ -38,7 +37,11 @@ func anchorHref(attrs string) string {
         if start == i { i++; continue }
         name := attrs[start:i]
         for i < len(attrs) && htmlAttrSpace(attrs[i]) { i++ }
-        if i >= len(attrs) || attrs[i] != '=' { continue }
+        if i >= len(attrs) || attrs[i] != '=' {
+            // HTML keeps the first occurrence even when it has no value.
+            if strings.EqualFold(name, "href") { return "" }
+            continue
+        }
         i++
         for i < len(attrs) && htmlAttrSpace(attrs[i]) { i++ }
         if i >= len(attrs) { return "" }
@@ -68,8 +71,8 @@ func phishingVisibleLinks(body string) []string {
 
 func phishingVisibleLinksWithCoverage(body string, coverage *mimeCoverage) []string {
     var findings []string
-    // Comments are not browser-rendered links. Ignore them for scoring.
-    body = htmlCommentPattern.ReplaceAllString(body, "")
+    // Only browser-visible anchor text may justify a phishing score.
+    body = phishingRenderedHTML(body, coverage)
     anchors := anchorPattern.FindAllStringSubmatch(body, 51)
     if len(anchors) > 50 {
         coverage.mark("More than 50 HTML anchors; remaining links not inspected")
