@@ -92,7 +92,7 @@ class PostfixConfigProbeTests(unittest.TestCase):
                 " '-h non_smtpd_milters') echo '' ;;\n"
                 " '-h milter_protocol') echo '6' ;;\n"
                 " '-h milter_default_action') echo 'tempfail' ;;\n"
-                " '-h smtpd_milter_maps') echo '' ;;\\n"
+                " '-h smtpd_milter_maps') echo '' ;;\n"
                 " '-P') exit 0 ;;\n"
                 " *) exit 98 ;;\n"
                 "esac\n", encoding="utf-8")
