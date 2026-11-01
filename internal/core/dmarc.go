@@ -145,6 +145,20 @@ func DMARCCheck(ctx context.Context, resolver SPFResolver, headerFrom string, sp
 			return result
 		}
 	}
+	// RFC 9989 np= applies only to a proven NXDOMAIN Author Domain.
+	// Never infer NXDOMAIN from a missing _dmarc TXT record (NODATA and
+	// NXDOMAIN are indistinguishable through net.Resolver.LookupTXT).
+	if inherited && tags["np"] != "" && tags["np"] != policy {
+		selected, statusErr := walk.inheritedNonexistentPolicy(domain, policy, tags["np"])
+		if statusErr != nil {
+			result.Result = "temperror"
+			result.Policy = ""
+			result.Detail = "DMARC non-existent subdomain policy inconclusive: " + statusErr.Error()
+			return result
+		}
+		policy = selected
+		result.Policy = selected
+	}
 	result.Result = "fail"
 	result.Detail = fmt.Sprintf("DMARC authentication failed (policy domain %s; p=%s; SPF/DKIM not aligned)", policyDomain, policy)
 	return result
