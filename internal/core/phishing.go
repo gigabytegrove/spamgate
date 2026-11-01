@@ -97,8 +97,7 @@ func phishingVisibleLinksWithCoverage(body string, coverage *mimeCoverage) []str
         displayed, err := url.Parse(shown)
         if err != nil { continue }
         shownHost := strings.ToLower(strings.TrimSuffix(displayed.Hostname(), "."))
-        if !ValidReputationDomain(shownHost) || shownHost == destHost ||
-            strings.HasSuffix(shownHost, "."+destHost) || strings.HasSuffix(destHost, "."+shownHost) {
+        if !ValidReputationDomain(shownHost) || phishingSameOrganization(shownHost, destHost) {
             continue
         }
         findings = append(findings, fmt.Sprintf("Visible link claims %s but navigates to %s", shownHost, destHost))
