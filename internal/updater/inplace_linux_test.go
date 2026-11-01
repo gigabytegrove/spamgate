@@ -59,3 +59,19 @@ func TestInPlaceRejectsSymlinkAndLegacyModeUnchanged(t *testing.T) {
 	t.Setenv(InPlaceEnv,"")
 	if ActiveBinaryPath(dir)!=runningPath(dir){t.Fatal("legacy updater path changed")}
 }
+
+func TestExecutableBuildVersionLegacyEmptyAndInvalid(t *testing.T) {
+    dir := t.TempDir()
+    legacy := filepath.Join(dir, "legacy")
+    executableFixture(t, legacy, "0.6.0-alpha.11")
+    got, err := executableBuildVersion(legacy)
+    if err != nil || got != "unversioned" {
+        t.Fatalf("legacy worker with silent unsupported build flag: %q %v", got, err)
+    }
+    invalid := filepath.Join(dir, "invalid")
+    script := "#!/bin/sh\\nif [ \\"$1\\" = \\"-build-version\\" ]; then echo invalid-build-id; else echo 0.6.0-alpha.11; fi\\n"
+    if err := os.WriteFile(invalid, []byte(script), 0700); err != nil { t.Fatal(err) }
+    if got, err := executableBuildVersion(invalid); err == nil {
+        t.Fatalf("malformed explicit build identity accepted: %q", got)
+    }
+}
