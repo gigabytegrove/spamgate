@@ -5,7 +5,7 @@ Never invokes postconf -e, postfix reload, postsuper, or SMTP submission.
 """
 import re
 import shutil
-import subprocess
+from spamgate_bounded_command import CommandProbeError, capture_command
 
 EXPECTED_MILTER = "inet:127.0.0.1:38472"
 PARAMETERS = ("smtpd_milters", "non_smtpd_milters", "milter_protocol",
@@ -23,21 +23,16 @@ def _postconf(arguments, executable=None):
     if not binary:
         raise PostfixConfigError("postconf executable not found")
     try:
-        completed = subprocess.run(
-            [binary, *arguments], capture_output=True, timeout=5, check=False)
-    except subprocess.TimeoutExpired as exc:
-        raise PostfixConfigError("postconf read timed out") from exc
-    except OSError as exc:
-        raise PostfixConfigError("postconf could not be executed") from exc
-    if (len(completed.stdout) > MAX_OUTPUT or
-            len(completed.stderr) > MAX_OUTPUT):
-        raise PostfixConfigError("postconf output exceeds bounded limit")
-    if completed.returncode:
+        stdout, stderr, exit_code = capture_command(
+            [binary, *arguments], timeout=5, max_bytes=MAX_OUTPUT)
+    except CommandProbeError as exc:
+        raise PostfixConfigError("postconf " + str(exc)) from exc
+    if exit_code:
         raise PostfixConfigError("postconf read failed")
-    if completed.stderr.strip():
+    if stderr.strip():
         raise PostfixConfigError("postconf emitted configuration diagnostics")
     try:
-        value = completed.stdout.decode("utf-8", "strict")
+        value = stdout.decode("utf-8", "strict")
     except UnicodeDecodeError as exc:
         raise PostfixConfigError("postconf returned invalid UTF-8") from exc
     if "\x00" in value:

@@ -146,6 +146,15 @@ class DovecotConfigTests(unittest.TestCase):
         report = json.loads(result.stdout)
         self.assertEqual(report["dovecot_sieve"], {"attempted": False})
 
+    def test_doveconf_output_flood_fails_closed_without_leaking_output(self):
+        binary = pathlib.Path(self.tmp.name, "doveconf-flood")
+        binary.write_text("#!/bin/sh\nwhile :; do printf 'secret-value'; done\n")
+        binary.chmod(0o700)
+        report = probe_dovecot_sieve(executable=str(binary), root=self.root)
+        self.assertFalse(report["ok"])
+        self.assertIn("output exceeds limit", report["error"])
+        self.assertNotIn("secret-value", json.dumps(report))
+
 
 if __name__ == "__main__":
     unittest.main()

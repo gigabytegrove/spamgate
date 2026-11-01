@@ -9,7 +9,7 @@ import pathlib
 import re
 import shutil
 import stat
-import subprocess
+from spamgate_bounded_command import CommandProbeError, capture_command
 
 EXPECTED_RULE = "/etc/dovecot/sieve/spamgate-junk.sieve"
 EXPECTED_FILES = (
@@ -31,20 +31,16 @@ def _doveconf(executable=None):
     if not binary:
         raise DovecotProbeError("doveconf executable not found")
     try:
-        result = subprocess.run(
-            [binary, "-n"], capture_output=True, check=False, timeout=5)
-    except subprocess.TimeoutExpired as exc:
-        raise DovecotProbeError("doveconf read timed out") from exc
-    except OSError as exc:
-        raise DovecotProbeError("doveconf could not be executed") from exc
-    if len(result.stdout) > MAX_CONFIG or len(result.stderr) > MAX_CONFIG:
-        raise DovecotProbeError("doveconf output exceeds limit")
-    if result.returncode:
+        stdout, stderr, exit_code = capture_command(
+            [binary, "-n"], timeout=5, max_bytes=MAX_CONFIG)
+    except CommandProbeError as exc:
+        raise DovecotProbeError("doveconf " + str(exc)) from exc
+    if exit_code:
         raise DovecotProbeError("doveconf configuration validation failed")
-    if result.stderr.strip():
+    if stderr.strip():
         raise DovecotProbeError("doveconf emitted diagnostics")
     try:
-        raw = result.stdout.decode("utf-8", "strict")
+        raw = stdout.decode("utf-8", "strict")
     except UnicodeDecodeError as exc:
         raise DovecotProbeError("doveconf output is not UTF-8") from exc
     if "\x00" in raw:

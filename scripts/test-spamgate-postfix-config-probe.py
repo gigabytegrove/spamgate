@@ -122,6 +122,16 @@ class PostfixConfigProbeTests(unittest.TestCase):
             self.assertEqual(report["status"], "postfix_config_failed")
             self.assertFalse(report["smtp"]["attempted"])
 
+    def test_postconf_output_flood_fails_closed_without_leaking_output(self):
+        with tempfile.TemporaryDirectory() as root:
+            binary = pathlib.Path(root, "postconf")
+            binary.write_text("#!/bin/sh\nwhile :; do printf 'secret-value'; done\n")
+            binary.chmod(0o700)
+            report = probe_postfix_config(executable=str(binary))
+            self.assertFalse(report["ok"])
+            self.assertIn("output exceeds limit", report["error"])
+            self.assertNotIn("secret-value", json.dumps(report))
+
 
 if __name__ == "__main__":
     unittest.main()
