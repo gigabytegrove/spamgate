@@ -84,6 +84,12 @@ class EvidenceChainTests(unittest.TestCase):
     def test_extra_event_keys(self):
         self.assert_refused(lambda e: e["entries"][0]["transport_events"][0].update({"secret": "ignored"}))
 
+    def test_nonstring_event_transport_is_refused(self):
+        self.assert_refused(lambda e: e["entries"][0]["transport_events"][0].update({"transport": []}))
+
+    def test_nonstring_event_status_is_refused(self):
+        self.assert_refused(lambda e: e["entries"][0]["transport_events"][0].update({"status": []}))
+
     def test_invalid_run_identity(self):
         self.assert_refused(lambda e: e["entries"][0].update({"run_id": "../etc/passwd"}))
 
