@@ -20,6 +20,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+ "github.com/gigabytegrove/spamgate/internal/core"
 )
 
 const UpdateRestartExitCode = 75
@@ -82,6 +84,8 @@ func seedInPlaceBinary(dir, base string) error {
 		return fmt.Errorf("check protected base version: %w", err)
 	}
 	bestVersion := baseVersion
+ bestBuild,err:=executableBuildVersion(base)
+ if err!=nil{return err}
 	for _, candidate := range []string{runningPath(dir), target} {
 		info, err := os.Lstat(candidate)
 		if errors.Is(err, os.ErrNotExist) {
@@ -98,9 +102,11 @@ func seedInPlaceBinary(dir, base string) error {
 		if err != nil {
 			continue // an invalid saved overlay cannot replace the known-good base
 		}
-		if cmp, err := compare(version, bestVersion); err == nil && cmp > 0 {
-			best, bestVersion = candidate, version
-		}
+		build,err:=executableBuildVersion(candidate)
+  if err!=nil { continue }
+  if cmp,e := compare(version+"+"+build, bestVersion+"+"+bestBuild); e == nil && cmp > 0 {
+   best,bestVersion,bestBuild=candidate,version,build
+  }
 	}
 	if best == target {
 		return nil
@@ -108,6 +114,17 @@ func seedInPlaceBinary(dir, base string) error {
 	return copyExecutable(best, target)
 }
 
+// A legacy worker does not implement -build-version; treat it as older than
+// every numbered build rather than guessing from its modification timestamp.
+func executableBuildVersion(path string) (string, error) {
+ ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+ defer cancel()
+ out, err := exec.CommandContext(ctx, path, "-build-version").Output()
+ if err != nil { return "unversioned", nil }
+ value := strings.TrimSpace(string(out))
+ if value == "unversioned" || core.ValidBuildVersion(value) { return value, nil }
+ return "", fmt.Errorf("invalid executable build identity %q", value)
+}
 func executableVersion(path string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -190,16 +207,21 @@ func promoteStaged(dir, base string) (string, error) {
 	return version, nil
 }
 func verifyExecutableVersion(binary, expected string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	output, err := exec.CommandContext(ctx, binary, "-version").Output()
-	if err != nil {
-		return fmt.Errorf("replacement version check failed: %w", err)
-	}
-	if got := strings.TrimSpace(string(output)); got != strings.TrimPrefix(expected, "v") {
-		return fmt.Errorf("replacement identifies as %q, expected %q", got, strings.TrimPrefix(expected, "v"))
-	}
-	return nil
+ source, build, err := buildFromRelease(expected)
+ if err != nil { return err }
+ version, err := executableVersion(binary)
+ if err != nil { return fmt.Errorf("replacement version check failed: %w", err) }
+ if version != strings.TrimPrefix(source,"v") {
+  return fmt.Errorf("replacement version %q does not match expected %q", version, source)
+ }
+ if build != "unversioned" {
+  actualBuild, err := executableBuildVersion(binary)
+  if err!=nil {return err}
+  if actualBuild!=build {
+   return fmt.Errorf("replacement build %q does not match expected %q", actualBuild, build)
+  }
+ }
+ return nil
 }
 func rollback(dir string) error {
 	previous := filepath.Join(updateDir(dir), "running.previous"+filepath.Ext(mustExecutableName()))
