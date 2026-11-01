@@ -64,14 +64,7 @@ def read_evidence(path, recipient):
         runs.add(rid)
         cases.add(cid)
         queues.add(queue)
-    return entries
-
-
-def read_transport_chronology(path):
-    """Return provenance coverage without asserting authenticity of operator logs."""
-    with os.fdopen(regular_fd(path, MAX_REPORT), "rb") as handle:
-        evidence = json.load(handle)
-    return evidence["log_chronology"]["chronology_validated"]
+    return entries, evidence["log_chronology"]["chronology_validated"]
 
 
 def read_expectations(path, entries):
@@ -176,7 +169,7 @@ def publish(path, data):
 def run(args):
     if (args.recipient != args.confirm_recipient or not ADDRESS.fullmatch(args.recipient)):
         raise ValueError("invalid recipient or confirmation mismatch")
-    entries = read_evidence(args.transport_evidence, args.recipient)
+    entries, transport_chronology_validated = read_evidence(args.transport_evidence, args.recipient)
     inbox = pathlib.Path(args.inbox_maildir)
     junk = pathlib.Path(args.junk_maildir)
     if inbox.resolve() == junk.resolve():
@@ -205,7 +198,7 @@ def run(args):
                 mismatched += 1
     complete = counts["missing"] == 0 and counts["duplicate"] == 0 and mismatched == 0
     publish(args.output, {"schema": 1, "type": "maildir_file_placement_only", "recipient": args.recipient,
-                          "transport_chronology_validated": read_transport_chronology(args.transport_evidence),
+                          "transport_chronology_validated": transport_chronology_validated,
                           "complete_maildir_correlation": complete, "placement_expectations_checked": expected is not None,
                           "placement_mismatches": mismatched, "counts": counts,
                           "scanned_entries": limit[0], "entries": result,
