@@ -128,7 +128,11 @@ func executableBuildVersion(path string) (string, error) {
  out, err := exec.CommandContext(ctx, path, "-build-version").Output()
  if err != nil { return "unversioned", nil }
  value := strings.TrimSpace(string(out))
- if value == "unversioned" || core.ValidBuildVersion(value) { return value, nil }
+ // Legacy native workers may accept unknown flags but produce no output.
+ // They predate numbered builds; treat an empty successful response exactly
+ // like a failed unsupported flag, never as a malformed numbered build.
+ if value == "" || value == "unversioned" { return "unversioned", nil }
+ if core.ValidBuildVersion(value) { return value, nil }
  return "", fmt.Errorf("invalid executable build identity %q", value)
 }
 func executableVersion(path string) (string, error) {
