@@ -23,6 +23,24 @@ func TestStageAndCheckShareSupervisorStatus(t *testing.T) {
  if status.InstallMode!="requires_supervisor"{t.Fatalf("unsafe install allowed: %+v",status)}
 }
 
+func TestHealthReportsSourceAndIndependentBuild(t *testing.T) {
+ st,err:=core.Open(t.TempDir());if err!=nil{t.Fatal(err)}
+ req:=httptest.NewRequest(http.MethodGet,"/healthz",nil)
+ w:=httptest.NewRecorder()
+ New(st,nil).Router().ServeHTTP(w,req)
+ if w.Code!=200{t.Fatal(w.Code)}
+ var got struct {
+  Status string `json:"status"`
+  Version string `json:"version"`
+  BuildVersion string `json:"build_version"`
+  SourceCommit string `json:"source_commit"`
+ }
+ if err:=json.Unmarshal(w.Body.Bytes(),&got);err!=nil{t.Fatal(err)}
+ if got.Status!="ok"||got.Version!=core.Version||got.BuildVersion!=core.BuildVersion||got.SourceCommit!=core.SourceCommit{
+  t.Fatalf("identity response: %+v",got)
+ }
+}
+
 func TestLocalUpdateStatusReportsRealSupervisorWithoutReleaseLookup(t *testing.T) {
  st,err:=core.Open(t.TempDir());if err!=nil{t.Fatal(err)}
  if err:=st.UpdateConfig(func(c *core.Config)error{
@@ -49,7 +67,7 @@ func TestLocalUpdateStatusReportsRealSupervisorWithoutReleaseLookup(t *testing.T
  if w.Code!=http.StatusOK{t.Fatalf("admin local status: %d %s",w.Code,w.Body.String())}
  var result updater.Status
  if err:=json.Unmarshal(w.Body.Bytes(),&result);err!=nil{t.Fatal(err)}
- if result.Current!=core.Version||result.InstallMode!="supervised"||result.InstallPath!="/opt/spamgate/spamgate-worker"{
+ if result.Current!=core.Version||result.CurrentBuild!=core.BuildVersion||result.InstallMode!="supervised"||result.InstallPath!="/opt/spamgate/spamgate-worker"{
   t.Fatalf("supervised local status not reported: %+v",result)
  }
  if result.Latest!=""||result.Available{t.Fatalf("local-only status falsely claimed a GitHub release check: %+v",result)}
