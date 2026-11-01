@@ -471,7 +471,7 @@ func (s *SMTP) handle(conn net.Conn) {
 				// Malformed DATA framing makes the remainder of the stream
 				// ambiguous. Close rather than treating message bytes as
 				// SMTP commands after a rejected transaction.
-				s.log.Warn("SMTP DATA wire framing rejected", "error", dataErr)
+				slog.Warn("SMTP DATA wire framing rejected", "error", dataErr)
 				reply(554, "5.6.0 Invalid SMTP DATA framing")
 				return
 			}
@@ -571,7 +571,7 @@ func (s *SMTP) handle(conn net.Conn) {
 				// Generated tag headers must not turn an accepted original into
 				// an undeliverable dead-letter record after SMTP 250.
 				if wireErr := validateRelayWireData(queuedRaw); wireErr != nil {
-					s.log.Error("tagged message exceeds SMTP relay wire limits", "id", m.ID, "error", wireErr)
+					slog.Error("tagged message exceeds SMTP relay wire limits", "id", m.ID, "error", wireErr)
 					reply(552, "5.3.4 Tagged message exceeds SMTP relay wire limits")
 					resetEnvelope()
 					continue
