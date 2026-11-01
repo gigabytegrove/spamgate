@@ -5,7 +5,6 @@ This verifies observable Maildir file placement only, not IMAP/mdbox storage,
 classifier correctness, user-visible IMAP state, or production host qualification.
 """
 import argparse
-import contextlib
 import json
 import os
 import pathlib
@@ -16,6 +15,7 @@ from email import policy
 from email.parser import BytesHeaderParser
 
 from spamgate_evidence_chain import validate_transport_chain
+from spamgate_maildir_io import check_message_identity, open_directory, open_maildir_child
 
 MAX_REPORT = 2 * 1024 * 1024
 MAX_CASES = 1000
@@ -89,32 +89,13 @@ def read_expectations(path, entries):
     return expected
 
 
-def directory(path):
-    info = os.lstat(path)
-    if not stat.S_ISDIR(info.st_mode):
-        raise ValueError(f"not a real directory: {path}")
-    fd = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
-    if not stat.S_ISDIR(os.fstat(fd).st_mode):
-        os.close(fd)
-        raise ValueError(f"directory changed: {path}")
-    return fd
-
-
-@contextlib.contextmanager
-def open_directory(path):
-    fd = directory(path)
-    try:
-        yield fd
-    finally:
-        os.close(fd)
-
-
-def message_id(dir_fd, filename):
+def message_id(dir_fd, filename, listed_info):
     fd = os.open(filename, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0), dir_fd=dir_fd)
     with os.fdopen(fd, "rb") as handle:
         info = os.fstat(handle.fileno())
         if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_MESSAGE:
             raise ValueError("nonregular or oversized Maildir entry")
+        check_message_identity(listed_info, info, info)
         header = bytearray()
         while len(header) <= MAX_HEADERS:
             line = handle.readline(MAX_HEADERS + 1 - len(header))
@@ -127,6 +108,7 @@ def message_id(dir_fd, filename):
             raise ValueError("Maildir headers exceed limit")
         msg = BytesHeaderParser(policy=policy.default).parsebytes(bytes(header) + b"\r\n")
         values = msg.get_all("Message-ID", [])
+        check_message_identity(listed_info, info, os.fstat(handle.fileno()))
         if len(values) != 1:
             return None
         value = str(values[0]).strip()
@@ -137,7 +119,7 @@ def message_id(dir_fd, filename):
 def scan_maildir(root, placement, hits, limit):
     with open_directory(root) as root_fd:
         for folder in ("new", "cur"):
-            with open_directory(os.path.join(root, folder)) as folder_fd:
+            with open_maildir_child(root_fd, folder) as folder_fd:
                 with os.scandir(folder_fd) as listing:
                     for item in listing:
                         limit[0] += 1
@@ -145,7 +127,7 @@ def scan_maildir(root, placement, hits, limit):
                             raise ValueError("Maildir entry limit exceeded")
                         if not item.is_file(follow_symlinks=False):
                             raise ValueError("Maildir contains symlink or non-file entry")
-                        rid = message_id(folder_fd, item.name)
+                        rid = message_id(folder_fd, item.name, item.stat(follow_symlinks=False))
                         if rid in hits:
                             hits[rid].append({"folder": placement, "state": folder})
 
