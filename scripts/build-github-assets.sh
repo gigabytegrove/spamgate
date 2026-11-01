@@ -95,7 +95,7 @@ python3 - "$OUT/BUILD-INFO.json" "$VERSION" "$BUILD_VERSION" "$SOURCE_SHA" "$BUI
 import datetime, json, pathlib, sys
 path,version,build,commit,kind=sys.argv[1:]
 record={"version":version,"build_version":build,"source_commit":commit,"build_kind":kind,"time_zone":"America/New_York","qualified_at_utc":datetime.datetime.now(datetime.timezone.utc).isoformat()}
-pathlib.Path(path).write_text(json.dumps(record,sort_keys=True,indent=2)+"\\n",encoding="utf-8")
+pathlib.Path(path).write_text(json.dumps(record,sort_keys=True,indent=2)+"\n",encoding="utf-8")
 PY
 
 cmp -s "$OUT/spamgate-worker-linux-amd64" "$OUT/spamgate-linux-amd64"
@@ -105,4 +105,4 @@ for asset in spamgate-linux-amd64 spamgate-worker-linux-amd64 spamgate-launcher-
 # The fault-injection suite must reject a substituted launcher, missing asset,
 # corrupted worker, manifest injection, wrong version and symlinked executable.
 bash "$ROOT/scripts/test-native-release-assets.sh" "$OUT" "$VERSION"
-printf 'All release gates passed. Build %s (%s), exact assets at %s\\n' "$BUILD_VERSION" "$VERSION" "$OUT"
+printf 'All release gates passed. Build %s (%s), exact assets at %s\n' "$BUILD_VERSION" "$VERSION" "$OUT"
