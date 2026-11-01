@@ -218,14 +218,7 @@ func phishingHiddenAttributes(attrs string) bool {
 				return true
 			}
 		case "style":
-			css := strings.ToLower(value)
-			css = strings.Map(func(r rune) rune {
-				if r == ' ' || r == '\t' || r == '\r' || r == '\n' || r == '\f' {
-					return -1
-				}
-				return r
-			}, css)
-			if strings.Contains(css, "display:none") || strings.Contains(css, "visibility:hidden") {
+			if phishingInlineCSSHidden(value) {
 				return true
 			}
 		}

@@ -70,6 +70,9 @@ func phishingVisibleLinks(body string) []string {
 }
 
 func phishingVisibleLinksWithCoverage(body string, coverage *mimeCoverage) []string {
+	if coverage == nil {
+		coverage = &mimeCoverage{}
+	}
     var findings []string
     // Only browser-visible anchor text may justify a phishing score.
     body = phishingRenderedHTML(body, coverage)
