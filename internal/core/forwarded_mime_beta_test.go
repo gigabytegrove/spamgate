@@ -54,9 +54,9 @@ func TestForwardedRFC822PhishingInspection(t *testing.T) {
     for _, transfer := range []string{"plain", "base64"} {
         t.Run(transfer, func(t *testing.T) {
             nested := "From: sender@example.org\r\nContent-Type: text/html\r\n\r\n" +
-                "<a href=\"https://evil.example.com/login\">https://bank.example.com/login</a>"
+                "<a href=\"https://evil.example.net/login\">https://bank.example.com/login</a>"
             found := detectPhishingLinks(forwardedMIMEFixture(nested, transfer))
-            if len(found) != 1 || !strings.Contains(found[0], "evil.example.com") {
+            if len(found) != 1 || !strings.Contains(found[0], "evil.example.net") {
                 t.Fatalf("forwarded phishing link was missed: %v", found)
             }
             safe := "From: sender@example.org\r\nContent-Type: text/html\r\n\r\n" +
