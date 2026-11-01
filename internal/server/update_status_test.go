@@ -77,3 +77,17 @@ func TestLocalUpdateStatusReportsRealSupervisorWithoutReleaseLookup(t *testing.T
  if err:=json.Unmarshal(w.Body.Bytes(),&result);err!=nil{t.Fatal(err)}
  if result.InstallMode!="requires_supervisor"{t.Fatalf("unsupervised mode hidden: %+v",result)}
 }
+
+func TestLegacyLauncherCannotInstallBuildOnlyRelease(t *testing.T) {
+ t.Setenv("SPAMGATE_SPLIT_WORKER","1")
+ t.Setenv("SPAMGATE_SUPPORTS_BUILD_IDS","")
+ for _,tag:=range []string{"v0.6.0-beta.2+20261101-01","v0.7.0-beta.1+20261101-01a"} {
+  if !needsBuildAwareLauncher(tag) {t.Errorf("legacy launcher accepted numbered release %s",tag)}
+ }
+ if needsBuildAwareLauncher("v0.6.0-beta.3"){t.Fatal("legacy source-version-only update was blocked")}
+ t.Setenv("SPAMGATE_SUPPORTS_BUILD_IDS","1")
+ if needsBuildAwareLauncher("v0.6.0-beta.2+20261101-01"){t.Fatal("build-aware launcher incorrectly blocked")}
+ t.Setenv("SPAMGATE_SUPPORTS_BUILD_IDS","")
+ t.Setenv("SPAMGATE_SPLIT_WORKER","")
+ if needsBuildAwareLauncher("v0.6.0-beta.2+20261101-01"){t.Fatal("non-split supervisor incorrectly blocked")}
+}
