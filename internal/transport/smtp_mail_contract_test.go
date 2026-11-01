@@ -56,7 +56,7 @@ func TestSMTPDATAContractPreventsUndeclaredContent(t *testing.T) {
   {"zero_declared_size", smtpMailParameters{DeclaredSize:0}, "x", errSMTPDeclaredSize},
   {"default_rejects_8bit", smtpMailParameters{DeclaredSize:-1}, "caf\u00e9", errSMTPBody7Bit},
   {"explicit_7bit_rejects_8bit", smtpMailParameters{DeclaredSize:-1, EightBit:false}, "caf\u00e9", errSMTPBody7Bit},
-  {"eightbit_accepts_8bit", smtpMailParameters{DeclaredSize:-1, EightBit:true}, "caf\u00e9", nil},
+  {"eightbit_accepts_8bit", smtpMailParameters{DeclaredSize:-1, EightBit:true}, "Subject: test\r\n\r\ncaf\u00e9", nil},
   {"eightbit_still_checks_size", smtpMailParameters{DeclaredSize:3, EightBit:true}, "caf\u00e9", errSMTPDeclaredSize},
   {"utf8_header_requires_smtputf8", smtpMailParameters{DeclaredSize:-1, EightBit:true}, "Subject: caf\u00e9\r\n\r\nbody", errSMTPHeaderUTF8},
   {"invalid_utf8_header_rejected", smtpMailParameters{DeclaredSize:-1, EightBit:true}, "Subject: \xff\r\n\r\nbody", errSMTPHeaderUTF8},
