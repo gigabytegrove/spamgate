@@ -182,7 +182,7 @@ func TestRealPostfixMilterLocalDeliveryAndTempfail(t *testing.T) {
  t.Logf("Real Postfix Milter tag reached Dovecot Junk exactly once; scan=%s",scans[0].ID)
  // An external sender must not be able to forge SpamGate's verdict headers
  // and force an otherwise accepted message into Junk.
- forged:=[]byte("From: <sender@example.org>\r\nTo: <"+recipient+">\r\nX-SpamGate-ID: attacker-forged\r\nX-SpamGate-Action: tag\r\nSubject: forged-verdict-lab\r\n\r\nOrdinary accepted mail.\r\n")
+ forged:=[]byte("From: <sender@example.org>\r\nTo: <"+recipient+">\r\nX-SpamGate-ID: attacker-forged\r\nX-SpamGate-Action: tag\r\nMessage-ID: <forged-verdict@example.org>\r\nSubject: forged-verdict-lab\r\n\r\nOrdinary accepted mail.\r\n")
  if e:=smtp.SendMail("127.0.0.1:25",nil,"sender@example.org",[]string{recipient},forged);e!=nil{
   t.Fatalf("Postfix rejected forged-header safety fixture: %v",e)
  }
