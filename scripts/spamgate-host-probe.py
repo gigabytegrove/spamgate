@@ -19,6 +19,7 @@ import sys
 import uuid
 from email.message import EmailMessage
 from spamgate_probe_json import decode_health_response
+from spamgate_milter_probe import verify_milter_protocol, MilterProtocolError
 
 MAX_MESSAGE_BYTES = 128 * 1024
 
@@ -44,6 +45,8 @@ def parse_args(argv):
     p.add_argument("--category-marker", help="optional harmless SGTUBE marker, test mailbox only")
     p.add_argument("--output", help="write JSON report, exclusive create")
     p.add_argument("--check-services", action="store_true", help="opt-in read-only loopback HTTP health and Milter TCP checks")
+    p.add_argument("--verify-milter-protocol", action="store_true", help="opt-in bounded Milter option negotiation; no mail callbacks")
+    p.add_argument("--require-milter-actions", default="", help="comma-separated required capabilities: add_header,change_header,quarantine")
     p.add_argument("--health-port", type=int, default=38470, help="loopback health port (default 38470)")
     p.add_argument("--milter-port", type=int, default=38472, help="loopback Milter TCP port (default 38472)")
     p.add_argument("--expect-version", help="require the /healthz worker version to match exactly")
@@ -52,6 +55,15 @@ def parse_args(argv):
         p.error("ports must be 1..65535 and timeout 0..120 seconds")
     if a.expect_version and (not a.check_services or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.+_-]{0,79}", a.expect_version)):
         p.error("--expect-version requires --check-services and a safe version token")
+    if a.verify_milter_protocol and not a.check_services:
+        p.error("--verify-milter-protocol requires --check-services")
+    if a.require_milter_actions and not a.verify_milter_protocol:
+        p.error("--require-milter-actions requires --verify-milter-protocol")
+    required = a.require_milter_actions.split(",") if a.require_milter_actions else []
+    if len(required) != len(set(required)) or any(
+            action not in ("add_header", "change_header", "quarantine") for action in required):
+        p.error("invalid or duplicate --require-milter-actions value")
+    a.require_milter_actions = required
     if a.send and (not a.recipient or a.recipient != a.confirm_recipient):
         p.error("--send requires matching --recipient and --confirm-recipient")
     if a.send and not a.sender:
@@ -127,13 +139,22 @@ def probe_services(a):
         connection.close()
 
     try:
-        with socket.create_connection(("127.0.0.1", a.milter_port), timeout=a.timeout):
-            result["milter"]["status"] = "tcp_listening"
-    except OSError as exc:
+        with socket.create_connection(("127.0.0.1", a.milter_port), timeout=a.timeout) as connection:
+            connection.settimeout(a.timeout)
+            if a.verify_milter_protocol:
+                result["milter"].update(verify_milter_protocol(connection))
+                missing = [name for name in a.require_milter_actions
+                           if not result["milter"]["negotiated_actions"][name]]
+                if missing:
+                    raise ValueError("required milter actions not negotiated: " + ",".join(missing))
+                result["milter"]["status"] = "protocol_verified"
+            else:
+                result["milter"]["status"] = "tcp_listening"
+    except (OSError, ValueError) as exc:
         result["milter"]["error_type"] = type(exc).__name__
         result["milter"]["error"] = str(exc)[:240]
     result["ok"] = (result["health"]["status"] == "ok" and
-                    result["milter"]["status"] == "tcp_listening")
+                    result["milter"]["status"] == ("protocol_verified" if a.verify_milter_protocol else "tcp_listening"))
     return result
 
 
@@ -161,7 +182,8 @@ def run(a):
               "limitations": ["SMTP 250 is not proof of mailbox delivery",
                               "Synthetic marker results do not measure real-world classifier accuracy",
                               "Read-only preflight cannot establish production safety",
-                              "Milter TCP acceptance does not verify protocol negotiation or message disposition"]}
+                              "Milter TCP acceptance does not verify protocol negotiation or message disposition",
+                              "Milter option negotiation does not verify Postfix action enforcement or mailbox placement"]}
     if a.check_services:
         report["services"] = probe_services(a)
         if not report["services"]["ok"]:
