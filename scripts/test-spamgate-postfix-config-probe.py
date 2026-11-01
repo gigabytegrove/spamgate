@@ -42,9 +42,9 @@ class PostfixConfigProbeTests(unittest.TestCase):
         self.assertFalse(inspect_config(values, "")["ok"])
 
     def test_master_service_override_blocks_false_positive(self):
-        report = inspect_config(BASE, "submission/inet/smtpd_milters =\n  inet:127.0.0.1:11332\n")
-        # The malformed multiline input must not silently qualify.
-        self.assertFalse(report["ok"])
+        # A continuation without a parameter name must never be accepted.
+        with self.assertRaises(PostfixConfigError):
+            inspect_config(BASE, "submission/inet/smtpd_milters =\n  inet:127.0.0.1:11332\n")
 
     def test_realistic_master_override_is_reported_without_value(self):
         report = inspect_config(BASE, "submission/inet/smtpd_milters = inet:127.0.0.1:11332\n")
