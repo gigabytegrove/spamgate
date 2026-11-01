@@ -71,3 +71,14 @@ func TestPhishingMalformedHiddenHTMLProducesZeroScoreCoverage(t *testing.T) {
 		t.Fatalf("malformed hidden HTML was scored or unreported: findings=%v coverage=%+v", found, coverage)
 	}
 }
+
+
+func TestPhishingVisibilityLargeRawTextSequence(t *testing.T) {
+	const mismatch = `<a href="https://evil.example.net">https://bank.example.com</a>`
+	body := strings.Repeat("<SCRIPT>"+mismatch+"</SCRIPT>", 3000) + mismatch
+	coverage := &mimeCoverage{}
+	got := phishingVisibleLinksWithCoverage(body, coverage)
+	if coverage.Incomplete || len(got) != 1 {
+		t.Fatalf("raw-text sequence leaked hidden links or reported incomplete: findings=%+v coverage=%+v", got, coverage)
+	}
+}
