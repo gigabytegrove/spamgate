@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gigabytegrove/spamgate/internal/core"
+	"github.com/gigabytegrove/spamgate/internal/spooljson"
 	"net/http"
 	"os"
 	"os/exec"
@@ -43,6 +44,9 @@ func readPostfixHold(ctx context.Context) ([]PostfixHeld, error) {
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "/usr/sbin/postqueue", "-j")
+	// A forked descendant may retain the output pipe after postqueue exits.
+	// Never wait indefinitely for inherited descriptors on a mail host.
+	cmd.WaitDelay = time.Second
 	var output queueLimit
 	output.max = 5 << 20
 	var stderr queueLimit
@@ -72,6 +76,13 @@ func parsePostfixHold(payload []byte) ([]PostfixHeld, error) {
 				Address string `json:"address"`
 			} `json:"recipients"`
 		}
+		// Postfix inventory is authorization evidence for privileged HOLD release.
+		// encoding/json silently accepts duplicate keys, including conflicting
+		// queue IDs and recipient lists. Refuse ambiguous or aliased JSON before
+		// any field is trusted for queue ownership correlation.
+		if err := spooljson.Validate(scanner.Bytes()); err != nil {
+			return nil, errors.New("ambiguous or malformed Postfix queue JSON")
+		}
 		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
 			return nil, fmt.Errorf("invalid Postfix queue JSON: %w", err)
 		}
@@ -80,6 +91,14 @@ func parsePostfixHold(payload []byte) ([]PostfixHeld, error) {
 		}
 		if len(held) >= 1000 {
 			return nil, errors.New("too many held messages for this safe inventory; use postqueue on host")
+		}
+		if record.ArrivalTime <= 0 || record.MessageSize < 0 || len(record.Recipients) == 0 {
+			return nil, errors.New("incomplete Postfix HOLD ownership evidence")
+		}
+		for _, recipient := range record.Recipients {
+			if recipient.Address == "" {
+				return nil, errors.New("Postfix HOLD recipient address missing")
+			}
 		}
 		if !validPostfixEvidenceID(record.QueueID) {
 			return nil, errors.New("invalid Postfix queue identifier")

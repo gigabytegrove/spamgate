@@ -148,7 +148,14 @@ func TestRealPostfixMilterLocalDeliveryAndTempfail(t *testing.T) {
   t.Fatalf("hold request not recorded: %+v",scans)
  }
  for _,c:=range heldID{if !(c>='0'&&c<='9'||c>='a'&&c<='z'||c>='A'&&c<='Z'){t.Fatalf("unsafe queue ID %q",heldID)}}
- output,e:=exec.Command("sudo","-n","postsuper","-H",heldID).CombinedOutput()
+ // In the disposable CI privilege lab, release the *actual* held queue
+ // entry as the unprivileged native worker through the installed narrow
+ // root-owned helper. Never silently fall back to direct root postsuper.
+ releaseArgs:=[]string{"-n","postsuper","-H",heldID}
+ if os.Getenv("SPAMGATE_POSTFIX_PRIVILEGE_LAB")=="1" {
+  releaseArgs=[]string{"-n","-u","spamgate","sudo","-n","--","/usr/local/libexec/spamgate/postfix-hold-release",heldID}
+ }
+ output,e:=exec.Command("sudo",releaseArgs...).CombinedOutput()
  if e!=nil{t.Fatalf("test Postfix hold release: %v %s",e,output)}
  output,e=exec.Command("sudo","-n","postqueue","-f").CombinedOutput()
  if e!=nil{t.Fatalf("flush released test hold: %v %s",e,output)}
