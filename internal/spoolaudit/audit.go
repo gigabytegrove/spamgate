@@ -130,7 +130,7 @@ func readRecord(path string) (record,error) {
   return record{},errors.New("invalid envelope, original length or queue ID")
  }
  switch rec.State {
- case "queued","delivering","dead","delivered":
+ case "queued","delivering","dead","delivered","discard_pending":
  default:return record{},errors.New("invalid delivery state")
  }
  if rec.IntegritySHA256!=""&&rec.IntegritySHA256!=immutableDigest(rec){
