@@ -44,7 +44,9 @@ patched_go "$GOVERSION" || {
 echo "Release compiler: $(go version) (GOTOOLCHAIN=${GOTOOLCHAIN:-auto})"
 VERSION="$(go run ./cmd/spamgate -version)"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)\.[0-9]+$ ]] || { echo "Invalid development version: $VERSION" >&2; exit 1; }
-echo "QUALIFYING source $(git rev-parse HEAD 2>/dev/null || echo source-tree) / Go $GOVERSION / SpamGate $VERSION"
+SOURCE_SHA="$(git rev-parse --verify HEAD)"
+[[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'Cannot attest exact source commit' >&2; exit 1; }
+echo "QUALIFYING source $SOURCE_SHA / Go $GOVERSION / SpamGate $VERSION"
 
 go test -count=1 ./...
 # The race detector requires cgo even when callers set CGO_ENABLED=0 for release builds.
@@ -68,20 +70,39 @@ bash -n scripts/migrate-native-launcher.sh
 bash scripts/test-migrate-native-launcher.sh
 bash scripts/test-supervised-updates.sh
 
+# Number the actual compiled build after qualification, not the source tree.
+# Local invocations default to manual a..z; CI explicitly requests automatic.
+BUILD_KIND="${SPAMGATE_BUILD_KIND:-manual}"
+[[ "$BUILD_KIND" == manual || "$BUILD_KIND" == automatic ]] || { echo 'SPAMGATE_BUILD_KIND must be manual or automatic' >&2; exit 64; }
+BUILD_ARGS=(--mode "$BUILD_KIND" --out "$OUT")
+if [[ -n "${SPAMGATE_BUILD_LETTER:-}" ]]; then BUILD_ARGS+=(--letter "$SPAMGATE_BUILD_LETTER"); fi
+BUILD_VERSION="$(python3 "$ROOT/scripts/spamgate-build-id.py" "${BUILD_ARGS[@]}")"
+[[ "$BUILD_VERSION" =~ ^[0-9]{8}-(0[0-9]|1[0-9]|2[0-3])[a-z]?$ ]] || { echo 'Build ID generator returned an invalid value' >&2; exit 1; }
+LDFLAGS="-s -w -X github.com/gigabytegrove/spamgate/internal/core.BuildVersion=$BUILD_VERSION -X github.com/gigabytegrove/spamgate/internal/core.SourceCommit=$SOURCE_SHA"
+echo "BUILD ID: $BUILD_VERSION ($BUILD_KIND; America/New_York), source $VERSION @ $SOURCE_SHA"
 # Split native Linux layout, retaining legacy-compatible worker asset.
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o "$OUT/spamgate-worker-linux-amd64" ./cmd/spamgate
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="$LDFLAGS" -o "$OUT/spamgate-worker-linux-amd64" ./cmd/spamgate
 cp -p "$OUT/spamgate-worker-linux-amd64" "$OUT/spamgate-linux-amd64"
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w' -o "$OUT/spamgate-launcher-linux-amd64" ./cmd/spamgate-run
-CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags='-s -w -H=windowsgui' -o "$OUT/spamgate-windows-amd64.exe" ./cmd/spamgate
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="$LDFLAGS" -o "$OUT/spamgate-launcher-linux-amd64" ./cmd/spamgate-run
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="$LDFLAGS -H=windowsgui" -o "$OUT/spamgate-windows-amd64.exe" ./cmd/spamgate
 chmod 0755 "$OUT/spamgate-worker-linux-amd64" "$OUT/spamgate-linux-amd64" "$OUT/spamgate-launcher-linux-amd64"
 test "$("$OUT/spamgate-worker-linux-amd64" -version)" = "$VERSION"
 test "$("$OUT/spamgate-linux-amd64" -version)" = "$VERSION"
 test "$("$OUT/spamgate-launcher-linux-amd64" -version)" = "$VERSION"
+test "$("$OUT/spamgate-worker-linux-amd64" -build-version)" = "$BUILD_VERSION"
+test "$("$OUT/spamgate-launcher-linux-amd64" -build-version)" = "$BUILD_VERSION"
+python3 - "$OUT/BUILD-INFO.json" "$VERSION" "$BUILD_VERSION" "$SOURCE_SHA" "$BUILD_KIND" <<'PY'
+import datetime, json, pathlib, sys
+path,version,build,commit,kind=sys.argv[1:]
+record={"version":version,"build_version":build,"source_commit":commit,"build_kind":kind,"time_zone":"America/New_York","qualified_at_utc":datetime.datetime.now(datetime.timezone.utc).isoformat()}
+pathlib.Path(path).write_text(json.dumps(record,sort_keys=True,indent=2)+"\\n",encoding="utf-8")
+PY
+
 cmp -s "$OUT/spamgate-worker-linux-amd64" "$OUT/spamgate-linux-amd64"
-(cd "$OUT" && sha256sum spamgate-linux-amd64 spamgate-worker-linux-amd64 spamgate-launcher-linux-amd64 spamgate-windows-amd64.exe > SHA256SUMS.txt && sha256sum -c SHA256SUMS.txt)
-for asset in spamgate-linux-amd64 spamgate-worker-linux-amd64 spamgate-launcher-linux-amd64 spamgate-windows-amd64.exe SHA256SUMS.txt; do test -s "$OUT/$asset" || exit 1; done
+(cd "$OUT" && sha256sum spamgate-linux-amd64 spamgate-worker-linux-amd64 spamgate-launcher-linux-amd64 spamgate-windows-amd64.exe BUILD-INFO.json > SHA256SUMS.txt && sha256sum -c SHA256SUMS.txt)
+for asset in spamgate-linux-amd64 spamgate-worker-linux-amd64 spamgate-launcher-linux-amd64 spamgate-windows-amd64.exe BUILD-INFO.json SHA256SUMS.txt; do test -s "$OUT/$asset" || exit 1; done
 # Validate the actual release bytes, not just successful compilation.
 # The fault-injection suite must reject a substituted launcher, missing asset,
 # corrupted worker, manifest injection, wrong version and symlinked executable.
 bash "$ROOT/scripts/test-native-release-assets.sh" "$OUT" "$VERSION"
-printf 'All release gates passed. Exact assets at %s\n' "$OUT"
+printf 'All release gates passed. Build %s (%s), exact assets at %s\\n' "$BUILD_VERSION" "$VERSION" "$OUT"
