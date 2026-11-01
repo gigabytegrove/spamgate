@@ -26,6 +26,23 @@ func TestVersions(t *testing.T) {
 		}
 	}
 }
+func TestIndependentHourlyBuildReleaseOrder(t *testing.T) {
+ cases := []struct{ a,b string;want int }{
+  {"v0.6.0-beta.2+20261101-01","0.6.0-beta.2",1},
+  {"v0.6.0-beta.2+20261101-01a","v0.6.0-beta.2+20261101-01",1},
+  {"v0.6.0-beta.2+20261101-01z","v0.6.0-beta.2+20261101-02",-1},
+  {"v0.6.0-beta.3","v0.6.0-beta.2+20261101-23z",1},
+  {"v0.6.0-beta.2+20261101-02","v0.6.0-beta.2+20261101-02",0},
+ }
+ for _,tc :=range cases {
+  got,err:=compare(tc.a,tc.b)
+  if err!=nil||got!=tc.want{t.Errorf("compare(%q,%q)=%d %v; want %d",tc.a,tc.b,got,err,tc.want)}
+ }
+ for _,tag:=range []string{"v0.6.0-beta.2+20261101-24","v0.6.0-beta.2+20260230-01","v0.6.0-beta.2+20261101-01A"} {
+  if _,err:=compare(tag,"v0.6.0-beta.2");err==nil{t.Errorf("accepted invalid build tag %q",tag)}
+ }
+}
+
 func TestLatestIncludesPrereleases(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `[{"tag_name":"v0.6.0-alpha.6"},{"tag_name":"v0.5.0"},{"tag_name":"v9.0.0","draft":true}]`)
