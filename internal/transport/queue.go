@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/gigabytegrove/spamgate/internal/core"
+	"github.com/gigabytegrove/spamgate/internal/spooljson"
 )
 
 // DeliveryQueue is an intentionally single-node, filesystem-backed, bounded SMTP
@@ -255,6 +256,9 @@ func (q *DeliveryQueue) get(id string) (spoolRecord, error) {
  b, err := readSpoolFile(path, meta)
  if err != nil { return spoolRecord{}, fmt.Errorf("unsafe queue job %s: %w", id, err) }
 	var rec spoolRecord
+	if err = spooljson.Validate(b); err != nil {
+		return spoolRecord{}, fmt.Errorf("invalid or ambiguous queue JSON %s: %w", id, err)
+	}
 	if err = json.Unmarshal(b, &rec); err != nil {
 		return spoolRecord{}, err
 	}
