@@ -2,7 +2,6 @@ package transport
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -287,13 +286,9 @@ func (s *SMTP) handle(conn net.Conn) {
 		seenForwardedHelo = false
 	}
 	for commands := 0; commands < 500; commands++ {
-		lineBytes, e := readLineLimited(reader, 4096)
-		line := string(lineBytes)
-		if e != nil {
-			return
-		}
-		if len(line) > 4096 {
-			reply(500, "5.5.2 Command line too long")
+		line, commandErr := readSMTPCommand(reader)
+		if commandErr != nil {
+			reply(500, "5.5.2 Invalid SMTP command framing")
 			return
 		}
 		line = strings.TrimSpace(line)
@@ -317,6 +312,7 @@ func (s *SMTP) handle(conn net.Conn) {
 			mailIssued = false
 			sender = ""
 			recipients = nil
+			mailParams = smtpMailParameters{DeclaredSize: -1}
 			_, _ = io.WriteString(writer, "250-SpamGate\r\n250-XFORWARD ADDR\r\n250-8BITMIME\r\n250 SIZE 10485760\r\n")
 			_ = writer.Flush()
 		case strings.HasPrefix(upper, "HELO "):
@@ -333,11 +329,13 @@ func (s *SMTP) handle(conn net.Conn) {
 			mailIssued = false
 			sender = ""
 			recipients = nil
+			mailParams = smtpMailParameters{DeclaredSize: -1}
 			reply(250, "SpamGate")
 		case upper == "NOOP":
 			reply(250, "2.0.0 OK")
 		case upper == "RSET":
 			mailIssued = false
+			mailParams = smtpMailParameters{DeclaredSize: -1}
 			forwardedIP = ""
 			seenForwardedIP = false
 			seenForwardedHelo = false
@@ -463,41 +461,28 @@ func (s *SMTP) handle(conn net.Conn) {
 				continue
 			}
 			reply(354, "End data with <CR><LF>.<CR><LF>")
-			var raw bytes.Buffer
-			tooLarge := false
-			terminated := false
-			for {
-				part, e := readLineLimited(reader, 16*1024)
-				if e != nil {
-					return
+			raw, dataErr := readSMTPData(reader, 10<<20)
+			if dataErr != nil {
+				if errors.Is(dataErr, errSMTPDataTooLarge) {
+					reply(552, "5.3.4 Message too large")
+					resetEnvelope()
+					continue
 				}
-				if bytes.Equal(part, []byte(".\r\n")) || bytes.Equal(part, []byte(".\n")) {
-					terminated = true
-					break
-				}
-				if len(part) > 0 && part[0] == '.' {
-					part = part[1:]
-				}
-				if raw.Len()+len(part) > 10<<20 {
-					tooLarge = true
-				} else if !tooLarge {
-					raw.Write(part)
-				}
+				// Malformed DATA framing makes the remainder of the stream
+				// ambiguous. Close rather than treating message bytes as
+				// SMTP commands after a rejected transaction.
+				s.log.Warn("SMTP DATA wire framing rejected", "error", dataErr)
+				reply(554, "5.6.0 Invalid SMTP DATA framing")
+				return
 			}
-			if !terminated || tooLarge {
-				reply(552, "5.3.4 Message too large")
-				sender = ""
-				mailIssued = false
-				forwardedIP = ""
-			seenForwardedIP = false
-			seenForwardedHelo = false
-				forwardedHelo = ""
-				recipients = nil
+			if wireErr := validateRelayWireData(raw); wireErr != nil {
+				reply(554, "5.6.0 Original cannot be transmitted over SMTP DATA")
+				resetEnvelope()
 				continue
 			}
 			// SIZE and BODY declarations are part of the accepted SMTP
 			// transaction. Refuse violations before scanning or durable 250.
-			if contractErr := validateSMTPDataContract(mailParams, raw.Bytes()); contractErr != nil {
+			if contractErr := validateSMTPDataContract(mailParams, raw); contractErr != nil {
 				if errors.Is(contractErr, errSMTPDeclaredSize) {
 					reply(552, "5.3.4 Message exceeds declared MAIL SIZE")
 				} else if errors.Is(contractErr, errSMTPBody7Bit) {
@@ -518,7 +503,7 @@ func (s *SMTP) handle(conn net.Conn) {
 				originHelo = forwardedHelo
 			}
 			scanCtx, cancelScan := context.WithTimeout(context.Background(), 45*time.Second)
-   m, e := s.Scanner.Scan(scanCtx, core.Input{Raw: raw.Bytes(), Sender: sender, Recipients: recipients, ClientIP: originIP, Helo: originHelo, Connector: "smtp"})
+   m, e := s.Scanner.Scan(scanCtx, core.Input{Raw: raw, Sender: sender, Recipients: recipients, ClientIP: originIP, Helo: originHelo, Connector: "smtp"})
    cancelScan()
 			if e == nil {
 				m.IngestIP = clientIP
@@ -536,7 +521,7 @@ func (s *SMTP) handle(conn net.Conn) {
 				continue
 			}
 			if m.Action == "quarantine" {
-				if e = s.Store.Quarantine(m.ID, raw.Bytes()); e != nil {
+				if e = s.Store.Quarantine(m.ID, raw); e != nil {
 					slog.Error("SMTP quarantine persistence failed", "error", e)
 					reply(451, "4.3.0 Could not save quarantine")
 					resetEnvelope()
@@ -578,10 +563,18 @@ func (s *SMTP) handle(conn net.Conn) {
 			if s.Queue != nil {
 				// A successful spool fsync transfers SMTP delivery responsibility.
 				m.Delivery = "queued"
-				queuedRaw := raw.Bytes()
+				queuedRaw := raw
 				if m.Action == "tag" {
 					prefix := fmt.Sprintf("X-SpamGate-Result: tag\r\nX-SpamGate-Score: %.2f\r\nX-SpamGate-ID: %s\r\n", m.Score, m.ID)
 					queuedRaw = append([]byte(prefix), queuedRaw...)
+				}
+				// Generated tag headers must not turn an accepted original into
+				// an undeliverable dead-letter record after SMTP 250.
+				if wireErr := validateRelayWireData(queuedRaw); wireErr != nil {
+					s.log.Error("tagged message exceeds SMTP relay wire limits", "id", m.ID, "error", wireErr)
+					reply(552, "5.3.4 Tagged message exceeds SMTP relay wire limits")
+					resetEnvelope()
+					continue
 				}
 				if e = s.Queue.Enqueue(m, queuedRaw); e != nil {
 					s.log.Error("durable queue could not accept message", "id", m.ID, "error", e)
@@ -615,7 +608,7 @@ func (s *SMTP) handle(conn net.Conn) {
 				recipients = nil
 				continue
 			}
-			outgoing := raw.Bytes()
+			outgoing := raw
 			if m.Action == "tag" {
 				prefix := fmt.Sprintf("X-SpamGate-Result: tag\r\nX-SpamGate-Score: %.2f\r\nX-SpamGate-ID: %s\r\n", m.Score, m.ID)
 				outgoing = append([]byte(prefix), outgoing...)
