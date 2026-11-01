@@ -14,8 +14,8 @@ import (
 
 // VerifyRestored independently compares an existing, offline data tree with a
 // fully validated backup archive. It never overwrites application data. On
-// Linux the same nonblocking lock as the native worker is held for the check.
-// Other writers must also be stopped; the worker lock is advisory.
+// Linux an existing worker lock is acquired nonblocking; no new lock inode
+// is created in a fresh restore. Other writers must also be stopped.
 func VerifyRestored(archive, destination string) (Manifest, error) {
  manifest, z, err := inspect(archive)
  if err != nil { return Manifest{}, err }
@@ -27,10 +27,11 @@ func VerifyRestored(archive, destination string) (Manifest, error) {
  if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
   return Manifest{}, errors.New("restored data must be a real directory")
  }
- unlock, err := acquireOfflineLock(root)
+ unlock, checkLock, err := acquireRestoreReadLock(root)
  if err != nil { return Manifest{}, fmt.Errorf("offline restore verification refused: %w", err) }
  defer unlock()
  if err := verifyRestoredTree(manifest, root); err != nil { return Manifest{}, err }
+ if err := checkLock(); err != nil { return Manifest{}, err }
  return manifest, nil
 }
 

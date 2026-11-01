@@ -29,6 +29,7 @@ func restoredFixture(t *testing.T) (string, string) {
 func TestVerifyRestoredRoundTripAndEphemeralLocks(t *testing.T) {
  archive, dest := restoredFixture(t)
  manifest, err := VerifyRestored(archive, dest)
+ if _, lockErr := os.Lstat(filepath.Join(dest, ".worker.lock")); !os.IsNotExist(lockErr) { t.Fatalf("verification created worker lock: %v", lockErr) }
  if err != nil || len(manifest.Entries) != 3 { t.Fatalf("valid cold restore rejected: %+v %v", manifest, err) }
  for _, name := range []string{".worker.lock", ".events-journal.lock", "delivery-queue/.delivery-worker.lock"} {
   if err := os.WriteFile(filepath.Join(dest, name), nil, 0600); err != nil { t.Fatal(err) }
