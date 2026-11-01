@@ -15,7 +15,24 @@ var BuildVersion = "unversioned"
 // The runtime never guesses an unverified Git SHA.
 var SourceCommit = "unknown"
 
-var buildIDPattern = regexp.MustCompile(`^[0-9]{8}-(?:[01][0-9]|2[0-3])[a-z]?$)
+var buildIDPattern = regexp.MustCompile(`^[0-9]{8}-(?:[01][0-9]|2[0-3])[a-z]?package core
+
+import (
+ "fmt"
+ "regexp"
+ "strings"
+ "time"
+)
+
+// BuildVersion is stamped by the native build using go -ldflags -X.
+// Version remains the independent source/product version.
+var BuildVersion = "unversioned"
+
+// SourceCommit records the source that produced a compiled executable.
+// The runtime never guesses an unverified Git SHA.
+var SourceCommit = "unknown"
+
+var buildIDPattern = )
 
 // ValidBuildVersion checks the local America/New_York calendar date and hour,
 // not only the characters in the identifier. A trailing letter denotes a
