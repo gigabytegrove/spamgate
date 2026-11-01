@@ -131,12 +131,19 @@ func (w *dmarcDNSWalk) walk(domain string) (dmarcWalkResult, error) {
 }
 
 func (w *dmarcDNSWalk) discover(domain string) (string, string, map[string]string, error) {
+    // A direct Author Domain record is sufficient to select policy. Do not
+    // turn an unrelated ancestor DNS outage into a DMARC policy failure.
+    // Organizational-domain discovery is deferred until relaxed alignment
+    // actually requires it.
+    tags, err := w.lookup(domain)
+    if err != nil { return "", "", nil, err }
+    if tags != nil {
+        if tags["psd"] == "n" { return domain, domain, tags, nil }
+        return domain, "", tags, nil
+    }
     result, err := w.walk(domain)
     if err != nil {
         return "", "", nil, err
-    }
-    if tags := result.records[domain]; tags != nil {
-        return domain, result.org, tags, nil
     }
     if tags := result.records[result.org]; tags != nil {
         return result.org, result.org, tags, nil
@@ -159,6 +166,13 @@ func (w *dmarcDNSWalk) aligned(used, from, fromOrg, mode string) (bool, error) {
     }
     if mode == "s" {
         return false, nil
+    }
+    if fromOrg == "" {
+        // Direct Author Domain policies do not require this walk unless
+        // a different authenticated identity needs relaxed alignment.
+        author, err := w.walk(from)
+        if err != nil { return false, err }
+        fromOrg = author.org
     }
     result, err := w.walk(used)
     if err != nil {

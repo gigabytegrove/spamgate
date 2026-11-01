@@ -151,3 +151,32 @@ func TestRFC9989TreeWalkRecordSafetyAndCaching(t *testing.T) {
         t.Fatalf("invalid identifier should be rejected: %v", err)
     }
 }
+
+func TestRFC9989DirectPolicyUnaffectedByUnrelatedAncestorOutage(t *testing.T) {
+    dns := &countingDMARCDNS{
+        stubDNS: stubDNS{txt: map[string][]string{
+            "_dmarc.mail.example.org": {"v=DMARC1; p=reject"},
+        }},
+        fail: "_dmarc.example.org",
+    }
+    failed := DMARCCheck(context.Background(), dns, "sender@mail.example.org",
+        SPFResult{Result: "fail"}, nil)
+    if failed.Result != "fail" || failed.Policy != "reject" {
+        t.Fatalf("direct policy should remain actionable without ancestor lookup: %+v", failed)
+    }
+    passed := DMARCCheck(context.Background(), dns, "sender@mail.example.org",
+        SPFResult{Result: "pass", Domain: "mail.example.org"}, nil)
+    if passed.Result != "pass" { t.Fatalf("identical identity should pass: %+v", passed) }
+    for _, name := range dns.names {
+        if name == "_dmarc.example.org" {
+            t.Fatalf("unnecessary ancestor DNS query for direct policy: %v", dns.names)
+        }
+    }
+    // Relaxed alignment of a different identifier does need the ancestor
+    // boundary; an outage must be inconclusive, not DMARC fail.
+    unresolved := DMARCCheck(context.Background(), dns, "sender@mail.example.org",
+        SPFResult{Result: "pass", Domain: "other.mail.example.org"}, nil)
+    if unresolved.Result != "temperror" {
+        t.Fatalf("unresolved relaxed alignment should be temperror: %+v", unresolved)
+    }
+}

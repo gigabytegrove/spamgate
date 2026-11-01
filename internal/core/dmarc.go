@@ -1,8 +1,7 @@
 package core
 
-// DMARC policy discovery and organizational-domain alignment. This is a
-// RFC 9989 policy discovery uses bounded DNS Tree Walk and explicit PSD
-// boundaries; unresolved DNS failures never become authentication failures.
+// RFC 9989 DMARC policy discovery uses a bounded DNS Tree Walk and explicit
+// PSD boundaries; unresolved DNS failures never become authentication failures.
 
 import (
 	"context"
@@ -19,22 +18,6 @@ type DMARCResult struct {
 	// Testing records the current RFC 9989 t=y request. Historic pct
 	// values are ignored; authentication evidence is never suppressed.
 	Testing bool
-}
-
-func dmarcAligned(used, from, mode string) bool {
-	used = strings.TrimSuffix(strings.ToLower(used), ".")
-	from = strings.TrimSuffix(strings.ToLower(from), ".")
-	if used == "" || from == "" {
-		return false
-	}
-	if used == from {
-		return true
-	}
-	if mode == "s" {
-		return false
-	}
-	org := organizationalDomain(from)
-	return org != "" && org == organizationalDomain(used)
 }
 
 // dmarcTXT discovers a single DMARC1 policy. An NXDOMAIN is absence, while a

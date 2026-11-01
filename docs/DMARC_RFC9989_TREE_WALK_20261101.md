@@ -4,10 +4,10 @@ This change advances GitHub issue #3. It does **not** close protocol interoperab
 
 ## Behavior
 
-* DMARC policy discovery now walks the Author Domain toward the DNS root using at most eight queries per identifier, skipping intermediate labels when the input is deep. It does not use the local public suffix list to select an enforcement domain.
+* DMARC policy discovery walks the Author Domain toward the DNS root using at most eight queries per identifier when inheritance is required, skipping intermediate labels when the input is deep. A valid direct Author Domain policy is applied without unnecessary ancestor DNS lookups. It does not use the local public suffix list to select an enforcement domain.
 * A `psd=n` record identifies the Organizational Domain; `psd=y` identifies the Public Suffix Domain, with the next lower label becoming the Organizational Domain. Without an explicit boundary, the least-specific discovered record establishes the Organizational Domain.
 * Policy preference is Author Domain, Organizational Domain, then PSD. A subdomain inherits `sp` where present; direct Author Domain records use `p`.
-* Relaxed SPF/DKIM alignment independently discovers each authenticated identifier's Organizational Domain, with shared per-message DNS caching and a 48-lookup amplification budget. Strict and identical-domain comparisons avoid unnecessary identifier DNS queries.
+* Relaxed SPF/DKIM alignment independently discovers each authenticated identifier's Organizational Domain, with shared per-message DNS caching and a 48-lookup amplification budget. Strict and identical-domain comparisons avoid unnecessary identifier DNS queries. An ancestor DNS outage cannot invalidate an already-discovered direct policy when no relaxed boundary lookup is required.
 * Invalid `psd`, `np`, and `t` tag values fail with a non-enforceable policy error. DNS failures during alignment produce an inconclusive result rather than an authentication failure; a separate aligned DKIM signature can still pass.
 * The native launcher, persistent data directory, Postfix listeners and existing deployment state are unchanged.
 
