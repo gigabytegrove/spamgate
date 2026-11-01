@@ -540,3 +540,18 @@ test('legacy workers clearly show an unnumbered build without changing source ve
  assert.match(html,/Source version: <strong>0\.6\.0-beta\.2/);
  assert.match(html,/Installed build: <strong>unversioned/);
 });
+
+
+test('numbered releases cannot be installed with an older permanent launcher',()=>{
+ const ctx=context();
+ vm.runInContext(`S.section='updates';S.updateReleaseChecked=true;S.updateInfo={
+  current:'0.6.0-beta.2',current_build:'unversioned',
+  latest:'v0.6.0-beta.2+20261101-11',latest_build:'20261101-11',
+  available:true,staged:true,install_mode:'supervised',requires_launcher_upgrade:true
+ };`,ctx);
+ const html=vm.runInContext('updatesPage()',ctx);
+ assert.match(html,/Launcher upgrade required for numbered releases/);
+ assert.doesNotMatch(html,/id="install-update"/);
+ assert.doesNotMatch(html,/id="stage-update"/);
+ assert.match(html,/Installed build: <strong>unversioned/);
+});
