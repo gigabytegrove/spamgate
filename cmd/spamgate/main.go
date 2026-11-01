@@ -100,6 +100,7 @@ func execute(args []string) error {
 	backupFile := flags.String("backup-file", "", "Offline backup: write a ZIP of the stopped SpamGate data directory to a new file")
 	verifyBackup := flags.String("verify-backup", "", "Verify SHA-256 hashes and structure of an offline backup ZIP")
 	restoreBackup := flags.String("restore-backup", "", "Restore a verified backup ZIP to a new, nonexistent -data directory (server must be stopped)")
+	verifyRestored := flags.String("verify-restored", "", "Offline readback: verify an existing stopped -data directory against a backup ZIP")
 	mailReport := flags.Bool("mailserver-report", false, "Read-only report of local MTA and hosting-panel integration")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -114,7 +115,9 @@ func execute(args []string) error {
 	if *mailReport {
 		return json.NewEncoder(os.Stdout).Encode(hostinspect.Detect(context.Background()))
 	}
-	if (*backupFile != "" && *verifyBackup != "") || (*backupFile != "" && *restoreBackup != "") || (*verifyBackup != "" && *restoreBackup != "") {
+	offlineModes := 0
+	for _, value := range []string{*backupFile, *verifyBackup, *restoreBackup, *verifyRestored} { if value != "" { offlineModes++ } }
+	if offlineModes > 1 {
 		return fmt.Errorf("choose only one offline backup operation")
 	}
 	if *backupFile != "" {
@@ -137,6 +140,12 @@ func execute(args []string) error {
 			return err
 		}
 		fmt.Println("SpamGate backup restored to:", *data)
+		return nil
+	}
+	if *verifyRestored != "" {
+		manifest, err := backup.VerifyRestored(*verifyRestored, *data)
+		if err != nil { return err }
+		fmt.Printf("SpamGate restored data verified: %d archived file(s) against %s\n", len(manifest.Entries), *data)
 		return nil
 	}
 	if *data == "" || *web == "" {

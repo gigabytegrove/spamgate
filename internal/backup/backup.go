@@ -397,6 +397,7 @@ func Restore(archive, destination string) error {
 	if restoredFiles == 0 {
 		return errors.New("backup contains only ephemeral runtime lock files; refusing empty restore")
 	}
+	if err := verifyRestoredTree(manifest, stage); err != nil { return fmt.Errorf("restore readback verification: %w", err) }
 	if err := syncRestoredTree(stage); err != nil { return fmt.Errorf("restore directory durability: %w", err) }
 	return publishRestoredDirectory(stage, dest)
 }
