@@ -40,7 +40,7 @@ type QueuedMessage struct {
 	NextAttempt time.Time `json:"next_attempt"`
 	Updated     time.Time `json:"updated"`
 	Attempts    int       `json:"attempts"`
-	State       string    `json:"state"` // queued, delivering, dead, delivered
+	State       string    `json:"state"` // queued, delivering, dead, delivered, discard_pending
 	LastError   string    `json:"last_error,omitempty"`
 	Size        int       `json:"size"`
 	DeliveredAt time.Time `json:"delivered_at,omitempty"`
@@ -60,6 +60,7 @@ type QueueSummary struct {
 	Queued     int             `json:"queued"`
 	Delivering int             `json:"delivering"`
 	Dead       int             `json:"dead"`
+	DiscardPending int       `json:"discard_pending"`
 	Bytes      int64           `json:"bytes"`
 	PendingTemps int          `json:"pending_temps"`
 	PendingTempBytes int64    `json:"pending_temp_bytes"`
@@ -267,7 +268,7 @@ func (q *DeliveryQueue) get(id string) (spoolRecord, error) {
 		return spoolRecord{}, fmt.Errorf("invalid queue job %s", id)
 	}
 	switch rec.State {
-	case "queued", "delivering", "delivered", "dead":
+	case "queued", "delivering", "delivered", "dead", "discard_pending":
 	default:
 		return spoolRecord{}, fmt.Errorf("invalid queue state %s", id)
 	}
@@ -322,6 +323,8 @@ func (q *DeliveryQueue) snapshotLocked() (QueueSummary, error) {
 			info.Delivering++
 		case "dead":
 			info.Dead++
+		case "discard_pending":
+			info.DiscardPending++
 		}
 		rec.RawRFC822 = nil
 		info.Jobs = append(info.Jobs, rec.QueuedMessage)
@@ -388,6 +391,7 @@ func (q *DeliveryQueue) Retry(id string) error {
 	if e != nil {
 		return e
 	}
+	if rec.State == "discard_pending" { return errors.New("finish the audited discard before retrying") }
 	if rec.State == "delivering" || rec.State == "delivered" {
 		return errors.New("message is in flight or already delivered")
 	}
@@ -408,6 +412,7 @@ func (q *DeliveryQueue) Discard(id string) error {
 	if e != nil {
 		return e
 	}
+	if rec.State == "discard_pending" { return errors.New("finish pending discard through DiscardWithAudit") }
 	if rec.State == "delivering" || rec.State == "delivered" {
 		return errors.New("cannot discard an in-flight or delivered message")
 	}
@@ -432,6 +437,15 @@ func (q *DeliveryQueue) DiscardWithAudit(id, actor string) error {
  if err != nil { return err }
  if rec.State == "delivering" || rec.State == "delivered" {
   return errors.New("cannot discard an in-flight or delivered message")
+ }
+ // Persist the non-deliverable state before touching the history journal.
+ // A failed audit or crash must not allow a discarded original to be relayed.
+ if rec.State != "discard_pending" {
+  rec.State = "discard_pending"
+  rec.Updated = q.now()
+  if err := q.put(rec); err != nil {
+   return fmt.Errorf("cannot persist discard intent; original retained: %w", err)
+  }
  }
  msg, ok := q.store.Get(id)
  if !ok { msg = queueHistoryMessage(rec) }
@@ -528,6 +542,18 @@ func (q *DeliveryQueue) ProcessDue(ctx context.Context) error {
 				q.mu.Unlock()
 				return fmt.Errorf("cannot reconstruct queued scan history: %w", err)
 			}
+		}
+		// Legacy journal-first discards may have crashed before unlinking.
+		// Reconcile the recorded intent before any SMTP delivery attempt.
+		if msg.Delivery == "discard_requested" {
+			rec.State = "discard_pending"
+			rec.Updated = q.now()
+			if err := q.put(rec); err != nil {
+				q.mu.Unlock()
+				return fmt.Errorf("cannot reconcile interrupted discard %s: %w", rec.ID, err)
+			}
+			q.mu.Unlock()
+			continue
 		}
 		// The fsync-backed spool, not the mutable history mirror, owns the
 		// SMTP reverse path and recipient set. A damaged or stale history
