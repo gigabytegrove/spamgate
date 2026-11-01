@@ -68,6 +68,10 @@ func run() error {
 		fmt.Println(core.Version)
 		return nil
 	}
+	if len(os.Args) == 2 && os.Args[1] == "-build-version" {
+		fmt.Println(core.BuildVersion)
+		return nil
+	}
 	if os.Getenv("SPAMGATE_SUPERVISED") == "1" {
 		return errors.New("nested SpamGate launcher refused")
 	}
