@@ -33,42 +33,7 @@ import (
 const restartExitCode = 75
 const maxDownload = 80 << 20
 
-var versionPattern = regexp.MustCompile(`^v?\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?(?:\+[0-9]{8}-(?:[01][0-9]|2[0-3])[a-z]?)?package main
-
-// spamgate (native launcher) is an independently compiled, deliberately non-updating process
-// supervisor for native SpamGate installations. It never loads mail config or
-// holds HTTP/Milter sockets. All mail traffic and UI run in the spamgate worker.
-// Unlike the legacy detached updater, failures cannot silently kill the parent.
-
-import (
-	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-	"log"
-	"net"
-	"net/http"
-	"os"
-	"os/exec"
-	"os/signal"
-	"path/filepath"
-	"regexp"
-	"runtime"
-	"strconv"
-	"strings"
-	"syscall"
-	"time"
-
-	"github.com/gigabytegrove/spamgate/internal/core"
-)
-
-const restartExitCode = 75
-const maxDownload = 80 << 20
-
-)
+var versionPattern = regexp.MustCompile("^v?\\d+\\.\\d+\\.\\d+(?:-(?:alpha|beta|rc)\\.\\d+)?(?:\\+[0-9]{8}-(?:[01][0-9]|2[0-3])[a-z]?)?$")
 var digestPattern = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
 
 type options struct {
