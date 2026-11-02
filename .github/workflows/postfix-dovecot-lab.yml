@@ -262,58 +262,14 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          # Disposable GitHub Actions VM only; this test must run as the
-          # unprivileged spamgate worker with the narrow installed sudoers grant.
+          # Disposable GitHub Actions VM only; run as the unprivileged spamgate account.
           BEFORE_INBOX="$(sudo doveadm search -u spamgatebeta mailbox INBOX ALL | sed '/^$/d' | wc -l | tr -d ' ')"
           BEFORE_JUNK="$(sudo doveadm search -u spamgatebeta mailbox Junk ALL | sed '/^$/d' | wc -l | tr -d ' ')"
           go test -c -o /tmp/spamgate-postfix-http-lab.test ./internal/server
           chmod 0755 /tmp/spamgate-postfix-http-lab.test
-          sudo -u spamgate env CI=true GITHUB_ACTIONS=true SPAMGATE_DISPOSABLE_POSTFIX_HTTP_LAB=1 \
-            /tmp/spamgate-postfix-http-lab.test -test.v -test.run '^TestRealPostfixHoldReleaseThroughAdminHTTP        shell: bash
-        run: |
-          set -Eeuo pipefail
-          sudo bash scripts/install-dovecot-sieve.sh --remove --confirm REMOVE-DOVECOT-SIEVE
-          sudo doveconf -n > lab-evidence/dovecot-after-sieve-removal.txt
-          # Removal must make the read-only evidence gate fail, without
-          # attempting SMTP or touching mailboxes.
-          if sudo python3 scripts/spamgate-host-probe.py --check-dovecot-sieve > lab-evidence/dovecot-sieve-after-rollback.json; then
-            echo 'Unsafe: Dovecot probe still qualified removed Sieve integration' >&2
-            exit 1
-          fi
-          python3 -c 'import json; r=json.load(open("lab-evidence/dovecot-sieve-after-rollback.json")); assert r["status"] == "dovecot_sieve_failed" and not r["smtp"]["attempted"]'
-          if grep -Fq 'sieve_before = /etc/dovecot/sieve/spamgate-junk.sieve' lab-evidence/dovecot-after-sieve-removal.txt; then
-            echo 'SpamGate Sieve rule remained active after rollback' >&2
-            exit 1
-          fi
-          sudo systemctl restart dovecot
-          sudo doveadm mailbox status -u spamgatebeta messages INBOX
-          sudo doveadm mailbox status -u spamgatebeta messages Junk
-          printf 'Dovecot Sieve native install and rollback passed on disposable host.\n' | tee lab-evidence/dovecot-sieve-rollback.txt
-
-      - name: Postfix queue and delivery diagnostics
-        if: always()
-        shell: bash
-        run: |
-          sudo postqueue -p || true
-          sudo postfix status || true
-          sudo ls -la /home/spamgatebeta/Maildir/new || true
-          sudo ls -la /home/spamgatebeta/Maildir/cur || true
-          sudo ls -la /home/spamgatebeta/Maildir/.Junk/new || true
-          sudo ls -la /home/spamgatebeta/Maildir/.Junk/cur || true
-
-      - name: Preserve exact-commit integration evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: spamgate-postfix-dovecot-${{ github.sha }}
-          path: lab-evidence/*
-          if-no-files-found: warn
-          retention-days: 7
- \
-            | tee lab-evidence/postfix-http-hold-release.log
+          sudo -u spamgate env CI=true GITHUB_ACTIONS=true SPAMGATE_DISPOSABLE_POSTFIX_HTTP_LAB=1 /tmp/spamgate-postfix-http-lab.test -test.v -test.run TestRealPostfixHoldReleaseThroughAdminHTTP | tee lab-evidence/postfix-http-hold-release.log
           sudo postqueue -f
-          # Postfix release success is not mailbox delivery. Verify both
-          # exact Message-ID and independent INBOX/Junk count deltas.
+          # Independently verify exact Dovecot receipt, not merely helper success.
           RECEIPT=""
           for attempt in $(seq 1 60); do
             RECEIPT="$(sudo doveadm search -u spamgatebeta mailbox INBOX HEADER Message-ID spamgate-http-hold@example.org)"
@@ -325,9 +281,7 @@ jobs:
           AFTER_JUNK="$(sudo doveadm search -u spamgatebeta mailbox Junk ALL | sed '/^$/d' | wc -l | tr -d ' ')"
           test "$AFTER_INBOX" -eq "$((BEFORE_INBOX+1))"
           test "$AFTER_JUNK" -eq "$BEFORE_JUNK"
-          printf 'real_http_helper_lmtp_receipt=passed\ninbox_before=%s\ninbox_after=%s\njunk_before=%s\njunk_after=%s\n' \
-            "$BEFORE_INBOX" "$AFTER_INBOX" "$BEFORE_JUNK" "$AFTER_JUNK" \
-            | tee lab-evidence/postfix-http-hold-receipt.txt
+          printf 'real_http_helper_lmtp_receipt=passed\ninbox_before=%s\ninbox_after=%s\njunk_before=%s\njunk_after=%s\n' "$BEFORE_INBOX" "$AFTER_INBOX" "$BEFORE_JUNK" "$AFTER_JUNK" | tee lab-evidence/postfix-http-hold-receipt.txt
 
       - name: Validate Sieve removal and Dovecot configuration rollback
         shell: bash
