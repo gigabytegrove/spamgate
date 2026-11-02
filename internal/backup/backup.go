@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+
 )
 
 const (
@@ -278,7 +279,7 @@ func inspect(path string) (Manifest, *zip.ReadCloser, error) {
 		return fail(e)
 	}
 	var manifest Manifest
-	if e = json.Unmarshal(data, &manifest); e != nil {
+	if e = decodeBackupManifest(data, &manifest); e != nil {
 		return fail(e)
 	}
 	if manifest.Format != 1 || manifest.Product != "SpamGate" || len(manifest.Entries) == 0 || len(manifest.Entries) != len(files)-1 {
