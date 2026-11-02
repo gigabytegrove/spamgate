@@ -25,7 +25,8 @@ func TestBackupManifestRejectsAmbiguousJSONBeforeRestore(t *testing.T) {
         {"case folded root", strings.Replace(valid, `"product":"SpamGate"`, `"product":"SpamGate","Product":"Other"`, 1)},
         {"escaped root alias", strings.Replace(valid, `"product":"SpamGate"`, `"product":"SpamGate","pr\u006fduct":"Other"`, 1)},
         {"duplicate nested path", strings.Replace(valid, `"path":"config.json"`, `"path":"config.json","Path":"other"`, 1)},
-        {"duplicate nested digest", strings.Replace(valid, `"sha256":"`, `"sha256":"`, 1) + " "}, // replaced below
+        {"duplicate nested size", strings.Replace(valid, `"bytes":`+fmt.Sprint(len(payload)), `"bytes":`+fmt.Sprint(len(payload))+`,"Bytes":`+fmt.Sprint(len(payload)+1), 1)},
+        {"Unicode folded nested size", strings.Replace(valid, `"bytes":`+fmt.Sprint(len(payload)), `"bytes":`+fmt.Sprint(len(payload))+`,"byte\u017f":`+fmt.Sprint(len(payload)+1), 1)},
         {"unknown root field", strings.Replace(valid, `"product":"SpamGate"`, `"product":"SpamGate","unreviewed":true`, 1)},
         {"unknown entry field", strings.Replace(valid, `"path":"config.json"`, `"path":"config.json","unreviewed":true`, 1)},
         {"unpaired high surrogate", strings.Replace(valid, `"product":"SpamGate"`, `"product":"SpamGate","extra":"\ud800"`, 1)},
@@ -33,7 +34,6 @@ func TestBackupManifestRejectsAmbiguousJSONBeforeRestore(t *testing.T) {
         {"trailing object", valid + ` {}`},
         {"invalid utf8", strings.Replace(valid, `"product":"SpamGate"`, "\"product\":\"SpamGate\",\"extra\":\""+string([]byte{0xff})+"\"", 1)},
     }
-    cases[4].manifest = strings.Replace(valid, `"bytes":`+fmt.Sprint(len(payload)), `"bytes":`+fmt.Sprint(len(payload))+`,"Bytes":`+fmt.Sprint(len(payload)+1), 1)
     for _, tc := range cases {
         t.Run(tc.name, func(t *testing.T) {
             root := t.TempDir()
