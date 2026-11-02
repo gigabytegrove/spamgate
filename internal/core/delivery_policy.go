@@ -3,7 +3,8 @@ package core
 import (
 	"crypto/sha256"
 	"encoding/hex"
-		"errors"
+	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -24,12 +25,14 @@ func (s *Store) loadDeliveryPolicy() error {
 	next, err := readDeliveryPolicyState(filepath.Join(s.dir, "delivery-policy.json"))
 	if errors.Is(err, os.ErrNotExist) {
 		s.policy = deliveryPolicyState{Greylist: map[string]time.Time{}, Rates: map[string][]time.Time{}}
+		s.policyFileSeen = false
 		return nil
 	}
 	if err != nil {
 		return err
 	}
 	s.policy = next
+	s.policyFileSeen = true
 	return nil
 }
 func stablePolicyKey(elements ...string) string {
@@ -54,6 +57,27 @@ func (s *Store) EvaluateDeliveryPolicy(m Message, now time.Time) (string, string
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Multiple native workers may share /opt/spamgate/data. Serialize the
+	// read/modify/write cycle across processes and refresh counters under
+	// the same inode-stable lock before making an SMTP disposition.
+	unlock, err := acquireDeliveryPolicyLock(s.dir)
+	if err != nil {
+		return "", "", fmt.Errorf("lock delivery policy: %w", err)
+	}
+	defer unlock()
+	path := filepath.Join(s.dir, "delivery-policy.json")
+	persisted, err := readDeliveryPolicyState(path)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		if s.policyFileSeen {
+			return "", "", errors.New("delivery policy state disappeared; refusing to reset enforcement counters")
+		}
+	case err != nil:
+		return "", "", fmt.Errorf("reload delivery policy state: %w", err)
+	default:
+		s.policy = persisted
+		s.policyFileSeen = true
+	}
 	// Compute the entire next state without mutating the live state. A failed
 	// fsync/rename must not silently consume a rate allowance or expire a
 	// greylist entry in memory while the on-disk policy remains unchanged.
@@ -114,8 +138,14 @@ func (s *Store) EvaluateDeliveryPolicy(m Message, now time.Time) (string, string
 	if err := validateDeliveryPolicyState(next); err != nil {
 		return "", "", err
 	}
-	if err := atomicJSON(filepath.Join(s.dir, "delivery-policy.json"), next); err != nil {
+	if err := atomicJSON(path, next); err != nil {
 		return "", "", err
+	}
+	// Rename has published the file. Mark it as known even if the parent
+	// directory fsync fails, so a later disappearance cannot reset counters.
+	s.policyFileSeen = true
+	if err := syncAtomicParent(path); err != nil {
+		return "", "", fmt.Errorf("sync delivery policy directory: %w", err)
 	}
 	s.policy = next
 	return action, reason, nil

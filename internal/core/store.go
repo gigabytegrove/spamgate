@@ -29,6 +29,7 @@ type Store struct {
 	neural   NeuralModel
 	order    []string
 	policy   deliveryPolicyState
+ policyFileSeen bool
 	journalSize int64
 	journalKnown bool
  journalInfo os.FileInfo
