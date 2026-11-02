@@ -3,8 +3,7 @@ package core
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
-	"errors"
+		"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -22,23 +21,15 @@ type deliveryPolicyState struct {
 }
 
 func (s *Store) loadDeliveryPolicy() error {
-	s.policy = deliveryPolicyState{Greylist: map[string]time.Time{}, Rates: map[string][]time.Time{}}
-	data, err := os.ReadFile(filepath.Join(s.dir, "delivery-policy.json"))
+	next, err := readDeliveryPolicyState(filepath.Join(s.dir, "delivery-policy.json"))
 	if errors.Is(err, os.ErrNotExist) {
+		s.policy = deliveryPolicyState{Greylist: map[string]time.Time{}, Rates: map[string][]time.Time{}}
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	if err = json.Unmarshal(data, &s.policy); err != nil {
-		return err
-	}
-	if s.policy.Greylist == nil {
-		s.policy.Greylist = map[string]time.Time{}
-	}
-	if s.policy.Rates == nil {
-		s.policy.Rates = map[string][]time.Time{}
-	}
+	s.policy = next
 	return nil
 }
 func stablePolicyKey(elements ...string) string {
@@ -86,9 +77,7 @@ func (s *Store) EvaluateDeliveryPolicy(m Message, now time.Time) (string, string
 			next.Rates[k] = live
 		}
 	}
-	if len(next.Greylist) > 20000 || len(next.Rates) > 20000 {
-		return "", "", errors.New("delivery policy state capacity reached; disable policy or investigate hostile traffic")
-	}
+	
 	action, reason := "", ""
 	if cfg.RateLimitEnabled {
 		limit := cfg.RateLimitPerHour
@@ -121,6 +110,9 @@ func (s *Store) EvaluateDeliveryPolicy(m Message, now time.Time) (string, string
 			action = "soft_reject"
 			reason = "Sender retried before greylist delay elapsed"
 		}
+	}
+	if len(next.Greylist) > 20000 || len(next.Rates) > 20000 {
+		return "", "", errors.New("delivery policy state capacity reached; disable policy or investigate hostile traffic")
 	}
 	if err := atomicJSON(filepath.Join(s.dir, "delivery-policy.json"), next); err != nil {
 		return "", "", err
