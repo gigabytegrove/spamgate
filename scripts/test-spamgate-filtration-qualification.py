@@ -231,5 +231,102 @@ class QualificationTests(unittest.TestCase):
                 thread.join(timeout=5)
 
 
+    def synthetic_evidence(self):
+        """Complete, offline-only journal and independent observation fixture."""
+        run_id = 'a' * 32
+        digest = 'b' * 64
+        base = {'case_id': 'ham1', 'id': digest, 'label': 'ham',
+                'cohort': 'direct', 'run_id': run_id}
+        events = [{'event': 'plan', 'cases': 1},
+                  {**base, 'event': 'attempted'},
+                  {**base, 'event': 'smtp_accepted'}]
+        report = self.root / 'synthetic-report.jsonl'
+        observed = self.root / 'synthetic-observations.jsonl'
+        labels = self.root / 'synthetic-labels.jsonl'
+        observed.write_text(json.dumps({'run_id': run_id, 'action': 'accept'}) + '\\n')
+        return events, report, observed, labels
+
+    def reconcile_evidence(self, events, report, observed, labels):
+        report.write_text('\\n'.join(json.dumps(event) for event in events) + '\\n')
+        return self.call('reconcile', '--report', str(report),
+                         '--observations', str(observed), '--labels-out', str(labels))
+
+    def test_offline_valid_reconciliation_control(self):
+        events, report, observed, labels = self.synthetic_evidence()
+        result = self.reconcile_evidence(events, report, observed, labels)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(labels.read_text())['id'], 'b' * 64)
+
+    def test_duplicate_json_keys_refused_in_all_evidence_inputs(self):
+        self.manifest.write_text(
+            '{"case_id":"ham1","label":"ham","label":"spam","cohort":"direct","file":"ham.eml"}\\n')
+        result = self.call('plan', '--manifest', str(self.manifest))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('duplicate JSON object key', result.stderr)
+
+        self.manifest.write_text(
+            '{"case_id":"ham1","label":"ham","cohort":"direct","file":"ham.eml",'
+            '"\\\\u006cabel":"spam"}\\n')
+        result = self.call('plan', '--manifest', str(self.manifest))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('duplicate JSON object key', result.stderr)
+
+        events, report, observed, labels = self.synthetic_evidence()
+        report.write_text('{"event":"plan","cases":1,"cases":2}\\n'
+                          + '\\n'.join(json.dumps(e) for e in events[1:]) + '\\n')
+        result = self.call('reconcile', '--report', str(report),
+                           '--observations', str(observed), '--labels-out', str(labels))
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(labels.exists())
+
+        events, report, observed, labels = self.synthetic_evidence()
+        observed.write_text('{"run_id":"' + 'a' * 32
+                            + '","action":"accept","action":"reject"}\\n')
+        result = self.reconcile_evidence(events, report, observed, labels)
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(labels.exists())
+
+    def test_contradictory_or_incomplete_terminal_evidence_refused(self):
+        for name, mutate in (
+            ('terminal before attempt', lambda e: [e[0], e[2], e[1]]),
+            ('terminal label changed', lambda e: [e[0], e[1], {**e[2], 'label': 'spam'}]),
+            ('terminal extra error', lambda e: [e[0], e[1], {**e[2], 'error': 'hidden'}]),
+            ('missing attempted field', lambda e: [e[0], {k: v for k, v in e[1].items() if k != 'label'}, e[2]]),
+            ('invalid run identity', lambda e: [e[0], {**e[1], 'run_id': 'bad'}, {**e[2], 'run_id': 'bad'}]),
+            ('invalid digest', lambda e: [e[0], {**e[1], 'id': 'z' * 64}, {**e[2], 'id': 'z' * 64}]),
+            ('unpaired attempt', lambda e: [e[0], e[1]]),
+        ):
+            with self.subTest(name=name):
+                events, report, observed, labels = self.synthetic_evidence()
+                result = self.reconcile_evidence(mutate(events), report, observed, labels)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertFalse(labels.exists())
+
+    def test_malformed_observations_fail_cleanly_without_output(self):
+        for raw in ('{"run_id":[],"action":"accept"}',
+                    '{"run_id":null,"action":"accept"}',
+                    '{"run_id":"' + 'a' * 32 + '","action":{}}',
+                    '{"run_id":"' + 'a' * 32 + '","action":NaN}',
+                    '{"run_id":"' + 'a' * 32 + '","action":"accept","extra":1}'):
+            with self.subTest(raw=raw):
+                events, report, observed, labels = self.synthetic_evidence()
+                observed.write_text(raw + '\\n')
+                result = self.reconcile_evidence(events, report, observed, labels)
+                self.assertEqual(result.returncode, 2)
+                self.assertNotIn('Traceback', result.stderr)
+                self.assertFalse(labels.exists())
+
+    def test_manifest_wrong_file_type_and_excess_blank_lines_refused(self):
+        self.manifest.write_text(
+            '{"case_id":"ham1","label":"ham","cohort":"direct","file":42}\\n')
+        result = self.call('plan', '--manifest', str(self.manifest))
+        self.assertEqual(result.returncode, 2)
+        self.assertNotIn('Traceback', result.stderr)
+        self.manifest.write_text('\\n' * (4 * 1000 + 130))
+        result = self.call('plan', '--manifest', str(self.manifest))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('physical line limit', result.stderr)
+
+
 if __name__ == '__main__':
     unittest.main()
