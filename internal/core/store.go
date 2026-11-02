@@ -86,12 +86,9 @@ func Open(dir string) (*Store, error) {
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	for scanner.Scan() {
-		var m Message
-		if err := json.Unmarshal(scanner.Bytes(), &m); err != nil {
+		m, err := decodeHistoryEvent(scanner.Bytes())
+		if err != nil {
 			return nil, fmt.Errorf("corrupt event log: %w", err)
-		}
-		if m.ID == "" {
-			return nil, errors.New("missing event ID")
 		}
 		if _, ok := s.messages[m.ID]; !ok {
 			s.order = append(s.order, m.ID)

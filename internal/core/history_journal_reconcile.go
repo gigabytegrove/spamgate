@@ -2,7 +2,6 @@ package core
 
 import (
  "bufio"
- "encoding/json"
  "errors"
  "fmt"
  "os"
@@ -48,9 +47,8 @@ func (s *Store) refreshHistoryLocked() error {
  scanner:=bufio.NewScanner(f)
  scanner.Buffer(make([]byte,64*1024),16*1024*1024)
  for scanner.Scan() {
-  var m Message
-  if err:=json.Unmarshal(scanner.Bytes(),&m);err!=nil{return fmt.Errorf("corrupt shared history: %w",err)}
-  if m.ID==""{return errors.New("shared history has missing scan ID")}
+  m,err:=decodeHistoryEvent(scanner.Bytes())
+  if err!=nil{return fmt.Errorf("corrupt shared history: %w",err)}
   if _,ok:=messages[m.ID];!ok{order=append(order,m.ID)}
   messages[m.ID]=m
  }

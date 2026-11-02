@@ -5,7 +5,6 @@ import (
  "context"
  "crypto/sha256"
  "encoding/hex"
- "encoding/json"
  "errors"
  "fmt"
  "io"
@@ -71,18 +70,13 @@ func (s *Store) auditHistoryLocked(ctx context.Context) (HistoryIntegrity, error
  hash:=sha256.New()
  scanner:=bufio.NewScanner(io.TeeReader(f,hash))
  scanner.Buffer(make([]byte,64*1024),16*1024*1024)
- type event struct {
-  ID string `json:"id"`
-  Action string `json:"action"`
-  Timestamp time.Time `json:"timestamp"`
- }
- last:=make(map[string]event, len(s.order))
+ last:=make(map[string]Message, len(s.order))
  for scanner.Scan() {
   if out.DiskEvents%128==0 {
    if err:=ctx.Err();err!=nil{return HistoryIntegrity{},err}
   }
-  var e event
-  if err:=json.Unmarshal(scanner.Bytes(),&e);err!=nil || e.ID=="" {
+  e,err:=decodeHistoryEvent(scanner.Bytes())
+  if err!=nil {
    out.Status="corrupt"
    out.Detail=fmt.Sprintf("Malformed or missing-ID scan event at line %d; original file preserved",out.DiskEvents+1)
    return out,nil
@@ -104,7 +98,7 @@ func (s *Store) auditHistoryLocked(ctx context.Context) (HistoryIntegrity, error
  for _,id:=range s.order {
   inMemory:=s.messages[id]
   onDisk,ok:=last[id]
-  if !ok||onDisk.Action!=inMemory.Action||!onDisk.Timestamp.Equal(inMemory.Timestamp){
+  if !ok||!sameHistoryEvent(onDisk,inMemory){
    out.MissingRetained++
   }
  }
