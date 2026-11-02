@@ -72,17 +72,8 @@ func readLabelledCorpusWithOptions(r io.Reader,requireUniqueIDs bool)(counts,map
   line++
   raw:=bytes.TrimSpace(scanner.Bytes())
   if len(raw)==0{continue}
-  var record struct{
-   Label string `json:"label"`
-   Action string `json:"action"`
-   Cohort string `json:"cohort,omitempty"`
-   ID string `json:"id,omitempty"`
-  }
-  d:=json.NewDecoder(bytes.NewReader(raw))
-  d.DisallowUnknownFields()
-  if err:=d.Decode(&record);err!=nil{return counts{},nil,0,fmt.Errorf("line %d: invalid labelled JSON: %w",line,err)}
-  var extra any
-  if err:=d.Decode(&extra);err!=io.EOF{return counts{},nil,0,fmt.Errorf("line %d: trailing JSON content",line)}
+  record, err := parseCorpusRecord(raw)
+  if err != nil {return counts{},nil,0,fmt.Errorf("line %d: invalid labelled JSON: %w",line,err)}
   if record.Label!="ham"&&record.Label!="spam"{return counts{},nil,0,fmt.Errorf("line %d: label must be ham or spam",line)}
   if record.ID=="" && requireUniqueIDs {return counts{},nil,0,fmt.Errorf("line %d: strict corpus requires a SHA-256 id for every message",line)}
   if record.ID!="" {
@@ -95,7 +86,7 @@ func readLabelledCorpusWithOptions(r io.Reader,requireUniqueIDs bool)(counts,map
   switch record.Action{
   case "accept":flagged=false
   case "tag","quarantine","reject","soft_reject":flagged=true
-  default:return counts{},nil,0,fmt.Errorf("line %d: unsupported action %q",line,record.Action)
+  default:return counts{},nil,0,fmt.Errorf("line %d: unsupported action",line)
   }
   if record.Cohort!=""&&!validEvaluationCohort(record.Cohort){
    return counts{},nil,0,fmt.Errorf("line %d: unsupported privacy-safe cohort",line)

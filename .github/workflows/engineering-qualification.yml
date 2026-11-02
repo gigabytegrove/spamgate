@@ -112,6 +112,12 @@ jobs:
           EVAL_TEST_DIR="$(mktemp -d)"
           printf '%s\n' '{"label":"ham","action":"accept","cohort":"direct","id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}' '{"label":"spam","action":"reject","cohort":"direct","id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}' '{"label":"ham","action":"accept","cohort":"forwarded","id":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}' '{"label":"spam","action":"reject","cohort":"forwarded","id":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}' > "$EVAL_TEST_DIR/labels.jsonl"
           dist/spamgate-eval-linux-amd64 --require-unique-ids --require-cohorts --min-ham=1 --min-spam=1 --max-fpr-upper=1 --min-recall-lower=0 --min-cohort-ham=1 --min-cohort-spam=1 --max-cohort-fpr-upper=1 --min-cohort-recall-lower=0 "$EVAL_TEST_DIR/labels.jsonl" | grep -q '"cohort_gate_passed":true'
+          # Malformed classifier labels must fail without a false qualification.
+          printf '%s\n' '{"label":"ham","action":"accept","action":"reject"}' '{"label":"spam","action":"reject"}' > "$EVAL_TEST_DIR/ambiguous.jsonl"
+          if dist/spamgate-eval-linux-amd64 --min-ham=1 --min-spam=1 --max-fpr-upper=1 --min-recall-lower=0 "$EVAL_TEST_DIR/ambiguous.jsonl" > "$EVAL_TEST_DIR/ambiguous-report.json"; then
+            echo 'Evaluator accepted duplicate verdict keys' >&2; exit 1
+          fi
+          test ! -s "$EVAL_TEST_DIR/ambiguous-report.json"
           rm -rf "$EVAL_TEST_DIR"
           chmod 0755 dist/spamgate-worker-linux-amd64 dist/spamgate-launcher-linux-amd64 dist/spamgate-spool-audit-linux-amd64 dist/spamgate-postfix-release-linux-amd64
           if dist/spamgate-postfix-release-linux-amd64 ALL > /dev/null 2>&1; then echo 'Privileged helper accepted unsafe invocation' >&2; exit 1; fi
