@@ -89,6 +89,19 @@ func parsePostfixHold(payload []byte) ([]PostfixHeld, error) {
 		if record.QueueName != "hold" {
 			continue
 		}
+		// These fields are mandatory authorization evidence. Unmarshal into a
+		// value struct alone conflates an absent sender with a real null path
+		// and an absent size with an explicitly reported zero-byte message.
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(scanner.Bytes(), &fields); err != nil {
+			return nil, errors.New("invalid Postfix HOLD field evidence")
+		}
+		for _, name := range []string{"queue_id", "sender", "arrival_time", "message_size", "recipients"} {
+			value, present := fields[name]
+			if !present || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+				return nil, errors.New("incomplete Postfix HOLD ownership evidence")
+			}
+		}
 		if len(held) >= 1000 {
 			return nil, errors.New("too many held messages for this safe inventory; use postqueue on host")
 		}

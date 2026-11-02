@@ -21,12 +21,12 @@ func TestPostfixHoldCorrelationRequiresCompleteEnvelope(t *testing.T) {
         Recipients: []string{"alice@example.org", "bob@example.org"},
     }
     held := PostfixHeld{
-        QueueID: "ABC123", Sender: "sender@example.org",
+        QueueID: "ABC123", Sender: "Sender@EXAMPLE.org",
         ArrivalTime: timestamp.Unix(), RecipientCount: 2,
-        Recipients: []string{"BOB@example.org", "alice@example.org"},
+        Recipients: []string{"bob@EXAMPLE.org", "alice@example.org"},
     }
     if !correlatesPostfixHold(scan, held) {
-        t.Fatal("reordered, case-insensitive complete envelope did not correlate")
+        t.Fatal("reordered, domain-case-insensitive complete envelope did not correlate")
     }
     cases := []struct {
         name string

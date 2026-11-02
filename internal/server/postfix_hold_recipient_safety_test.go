@@ -16,7 +16,7 @@ import (
 func TestPostfixInventoryMarksTruncatedRecipients(t *testing.T) {
  var recipients []map[string]string
  for i:=0;i<55;i++ {recipients=append(recipients,map[string]string{"address":fmt.Sprintf("user%02d@example.org",i)})}
- raw,err:=json.Marshal(map[string]any{"queue_name":"hold","queue_id":"AF123","sender":"sender@example.net","arrival_time":1793100000,"recipients":recipients})
+ raw,err:=json.Marshal(map[string]any{"queue_name":"hold","queue_id":"AF123","sender":"sender@example.net","arrival_time":1793100000,"message_size":1234,"recipients":recipients})
  if err!=nil{t.Fatal(err)}
  held,err:=parsePostfixHold(append(raw,'\n'))
  if err!=nil{t.Fatal(err)}
