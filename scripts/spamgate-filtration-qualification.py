@@ -215,7 +215,7 @@ def run_send(args, cases):
 
 def reconcile(args):
     events = load_jsonl(args.report, 2 * MAX_CASES + 1)
-    if (not events or set(events[0]) != {"event", "cases"}
+    if (not events or not isinstance(events[0], dict) or set(events[0]) != {"event", "cases"}
             or events[0]["event"] != "plan"
             or type(events[0]["cases"]) is not int
             or not 1 <= events[0]["cases"] <= MAX_CASES):
@@ -233,7 +233,7 @@ def reconcile(args):
             raise ValueError("report event must be an object")
         event = row.get("event")
         expected = required | ({"error"} if event == "failed" else set())
-        if event not in {"attempted", "smtp_accepted", "failed"} or set(row) != expected:
+        if not isinstance(event, str) or event not in {"attempted", "smtp_accepted", "failed"} or set(row) != expected:
             raise ValueError("unexpected or incomplete report event fields")
         cid, run_id, digest = row["case_id"], row["run_id"], row["id"]
         if (not isinstance(cid, str) or not CASE_ID.fullmatch(cid)
