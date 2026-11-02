@@ -26,26 +26,28 @@ func policyTestStore(t *testing.T, dir string, limit int) *Store {
 
 func TestDeliveryPolicyTwoStoresShareRateLimit(t *testing.T) {
 	dir := t.TempDir()
-	a := policyTestStore(t, dir, 1)
-	b := policyTestStore(t, dir, 1)
+	a := policyTestStore(t, dir, 10)
+	b := policyTestStore(t, dir, 10)
 	now := time.Date(2026, 11, 2, 15, 0, 0, 0, time.UTC)
 	m := Message{Connector:"milter", ClientIP:"198.51.100.31", Action:"accept"}
-	if action, _, err := a.EvaluateDeliveryPolicy(m, now); err != nil || action != "" {
-		t.Fatalf("first request: %q %v", action, err)
+	for i := 0; i < 10; i++ {
+		if action, _, err := a.EvaluateDeliveryPolicy(m, now.Add(time.Duration(i)*time.Second)); err != nil || action != "" {
+			t.Fatalf("request %d: %q %v", i+1, action, err)
+		}
 	}
-	if action, _, err := b.EvaluateDeliveryPolicy(m, now.Add(time.Second)); err != nil || action != "soft_reject" {
+	if action, _, err := b.EvaluateDeliveryPolicy(m, now.Add(10*time.Second)); err != nil || action != "soft_reject" {
 		t.Fatalf("stale second store bypassed rate limit: %q %v", action, err)
 	}
-	if got := len(b.policy.Rates[stablePolicyKey("rate", "198.51.100.31")]); got != 1 {
-		t.Fatalf("second store lost first counter: %d", got)
+	if got := len(b.policy.Rates[stablePolicyKey("rate", "198.51.100.31")]); got != 10 {
+		t.Fatalf("second store lost first counters: %d", got)
 	}
 }
 
 func TestDeliveryPolicyConcurrentStoresDoNotLoseCounters(t *testing.T) {
 	if runtime.GOOS != "linux" { t.Skip("cross-process advisory lock is native Linux only") }
 	dir := t.TempDir()
-	a := policyTestStore(t, dir, 7)
-	b := policyTestStore(t, dir, 7)
+	a := policyTestStore(t, dir, 10)
+	b := policyTestStore(t, dir, 10)
 	m := Message{Connector:"milter", ClientIP:"198.51.100.32", Action:"accept"}
 	now := time.Date(2026, 11, 2, 15, 0, 0, 0, time.UTC)
 	const attempts = 16
@@ -75,19 +77,19 @@ func TestDeliveryPolicyConcurrentStoresDoNotLoseCounters(t *testing.T) {
 		default: t.Errorf("unexpected action: %q", action)
 		}
 	}
-	if allowed != 7 || refused != attempts-7 {
+	if allowed != 10 || refused != attempts-10 {
 		t.Fatalf("lost or duplicated allowance: accepted=%d refused=%d", allowed, refused)
 	}
 	reopened, err := Open(dir)
 	if err != nil { t.Fatal(err) }
-	if got := len(reopened.policy.Rates[stablePolicyKey("rate", m.ClientIP)]); got != 7 {
-		t.Fatalf("durable count=%d, want 7", got)
+	if got := len(reopened.policy.Rates[stablePolicyKey("rate", m.ClientIP)]); got != 10 {
+		t.Fatalf("durable count=%d, want 10", got)
 	}
 }
 
 func TestDeliveryPolicyRejectsChangedEvidenceAfterStartup(t *testing.T) {
 	dir := t.TempDir()
-	s := policyTestStore(t, dir, 2)
+	s := policyTestStore(t, dir, 10)
 	now := time.Date(2026, 11, 2, 15, 0, 0, 0, time.UTC)
 	m := Message{Connector:"milter", ClientIP:"198.51.100.33", Action:"accept"}
 	if _, _, err := s.EvaluateDeliveryPolicy(m, now); err != nil { t.Fatal(err) }
@@ -106,7 +108,7 @@ func TestDeliveryPolicyRejectsChangedEvidenceAfterStartup(t *testing.T) {
 
 func TestDeliveryPolicyRefusesMissingPreviouslyPublishedState(t *testing.T) {
 	dir := t.TempDir()
-	s := policyTestStore(t, dir, 2)
+	s := policyTestStore(t, dir, 10)
 	now := time.Date(2026, 11, 2, 15, 0, 0, 0, time.UTC)
 	m := Message{Connector:"milter", ClientIP:"198.51.100.34", Action:"accept"}
 	if _, _, err := s.EvaluateDeliveryPolicy(m, now); err != nil { t.Fatal(err) }
@@ -120,20 +122,23 @@ func TestDeliveryPolicyRefusesMissingPreviouslyPublishedState(t *testing.T) {
 
 func TestDeliveryPolicyReloadsValidExternalState(t *testing.T) {
 	dir := t.TempDir()
-	a := policyTestStore(t, dir, 2)
-	b := policyTestStore(t, dir, 2)
+	a := policyTestStore(t, dir, 10)
+	b := policyTestStore(t, dir, 10)
 	now := time.Date(2026, 11, 2, 15, 0, 0, 0, time.UTC)
 	m := Message{Connector:"milter", ClientIP:"198.51.100.35", Action:"accept"}
 	if _, _, err := a.EvaluateDeliveryPolicy(m, now); err != nil { t.Fatal(err) }
 	if _, _, err := b.EvaluateDeliveryPolicy(m, now.Add(time.Second)); err != nil { t.Fatal(err) }
+	for i := 2; i < 10; i++ {
+		if _, _, err := b.EvaluateDeliveryPolicy(m, now.Add(time.Duration(i)*time.Second)); err != nil { t.Fatal(err) }
+	}
 	raw, err := os.ReadFile(filepath.Join(dir, "delivery-policy.json"))
 	if err != nil { t.Fatal(err) }
 	var state deliveryPolicyState
 	if err := json.Unmarshal(raw, &state); err != nil { t.Fatal(err) }
-	if got := len(state.Rates[stablePolicyKey("rate", m.ClientIP)]); got != 2 {
-		t.Fatalf("external write overwritten: %d", got)
+	if got := len(state.Rates[stablePolicyKey("rate", m.ClientIP)]); got != 10 {
+		t.Fatalf("external writes overwritten: %d", got)
 	}
-	if action, _, err := a.EvaluateDeliveryPolicy(m, now.Add(2*time.Second)); err != nil || action != "soft_reject" {
+	if action, _, err := a.EvaluateDeliveryPolicy(m, now.Add(10*time.Second)); err != nil || action != "soft_reject" {
 		t.Fatalf("first store failed to reload peer state: %q %v", action, err)
 	}
 }
