@@ -23,20 +23,48 @@ MAX_CASES = 1000
 MAX_BYTES = 128 * 1024
 COHORTS = {"direct", "forwarded", "attachment", "internationalized", "bulk", "other"}
 ACTIONS = {"accept", "tag", "quarantine", "reject", "soft_reject"}
-CASE_ID = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}\Z")
+CASE_ID = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}\\Z")
+DIGEST = re.compile(r"[0-9a-f]{64}\\Z")
+RUN_ID = re.compile(r"[0-9a-f]{32}\\Z")
+
+
+def reject_duplicate_json_keys(pairs):
+    """Reject even escaped aliases and nested duplicate keys before coercion."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON object key")
+        result[key] = value
+    return result
+
+
+def reject_nonfinite_json(value):
+    raise ValueError("non-finite JSON number is not permitted")
+
 
 
 def load_jsonl(path, limit):
     records = []
     with open(path, "rb") as handle:
         for number, raw in enumerate(handle, 1):
+            # Bound physical lines as well as nonempty records. Otherwise an
+            # unbounded blank-line file can monopolize an offline operator run.
+            if number > 4 * limit + 128:
+                raise ValueError(f"{path}: exceeds physical line limit")
             if len(raw) > 65536:
                 raise ValueError(f"{path}: line {number} exceeds 64 KiB")
             if not raw.strip():
                 continue
             if len(records) >= limit:
                 raise ValueError(f"{path}: exceeds {limit} records")
-            record = json.loads(raw)
+            try:
+                record = json.loads(
+                    raw,
+                    object_pairs_hook=reject_duplicate_json_keys,
+                    parse_constant=reject_nonfinite_json,
+                )
+            except (UnicodeError, json.JSONDecodeError) as exc:
+                raise ValueError(f"{path}: line {number} is invalid JSON") from exc
             if not isinstance(record, dict):
                 raise ValueError(f"{path}: line {number} is not an object")
             records.append(record)
@@ -187,49 +215,70 @@ def run_send(args, cases):
 
 def reconcile(args):
     events = load_jsonl(args.report, 2 * MAX_CASES + 1)
-    if not events or set(events[0]) != {"event", "cases"} or events[0]["event"] != "plan" or type(events[0]["cases"]) is not int or not 1 <= events[0]["cases"] <= MAX_CASES:
+    if (not events or set(events[0]) != {"event", "cases"}
+            or events[0]["event"] != "plan"
+            or type(events[0]["cases"]) is not int
+            or not 1 <= events[0]["cases"] <= MAX_CASES):
         raise ValueError("missing or invalid durable batch plan")
     planned_count = events[0]["cases"]
     events = events[1:]
     observed = load_jsonl(args.observations, MAX_CASES)
+
     attempts, accepted, failed = {}, set(), set()
+    run_ids, digests = set(), set()
+    pending = None
+    required = {"case_id", "id", "label", "cohort", "run_id", "event"}
     for row in events:
-        if set(row) - {"case_id", "id", "label", "cohort", "run_id", "event", "error"}:
-            raise ValueError("unexpected report fields")
-        cid, run_id, event = row.get("case_id"), row.get("run_id"), row.get("event")
-        if not isinstance(cid, str) or not isinstance(run_id, str):
-            raise ValueError("invalid report identity")
+        if not isinstance(row, dict):
+            raise ValueError("report event must be an object")
+        event = row.get("event")
+        expected = required | ({"error"} if event == "failed" else set())
+        if event not in {"attempted", "smtp_accepted", "failed"} or set(row) != expected:
+            raise ValueError("unexpected or incomplete report event fields")
+        cid, run_id, digest = row["case_id"], row["run_id"], row["id"]
+        if (not isinstance(cid, str) or not CASE_ID.fullmatch(cid)
+                or not isinstance(run_id, str) or not RUN_ID.fullmatch(run_id)
+                or not isinstance(digest, str) or not DIGEST.fullmatch(digest)
+                or type(row["label"]) is not str or row["label"] not in ("ham", "spam")
+                or type(row["cohort"]) is not str or row["cohort"] not in COHORTS):
+            raise ValueError("invalid report identity, label or cohort")
+        if event == "failed" and (not isinstance(row["error"], str)
+                                  or not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]{0,79}", row["error"])):
+            raise ValueError("invalid report failure category")
         if event == "attempted":
-            if cid in attempts or run_id in {x["run_id"] for x in attempts.values()}:
-                raise ValueError("duplicate attempted case or run ID")
+            if pending is not None:
+                raise ValueError("attempt lacks its durable terminal outcome")
+            if cid in attempts or run_id in run_ids or digest in digests:
+                raise ValueError("duplicate case, run ID or message digest")
             attempts[cid] = row
-        elif event in ("smtp_accepted", "failed"):
-            if cid not in attempts or any(row.get(k) != attempts[cid].get(k) for k in ("case_id", "id", "label", "cohort", "run_id")):
-                raise ValueError("result without matching attempt")
-            if cid in accepted or cid in failed:
-                raise ValueError("duplicate terminal event")
-            (accepted if event == "smtp_accepted" else failed).add(cid)
+            run_ids.add(run_id)
+            digests.add(digest)
+            pending = cid
         else:
-            raise ValueError("invalid report event")
-    if len(attempts) != planned_count or len(accepted) != planned_count or failed:
+            if pending != cid or cid not in attempts:
+                raise ValueError("terminal event does not follow its attempt")
+            if any(row[key] != attempts[cid][key]
+                   for key in ("case_id", "id", "label", "cohort", "run_id")):
+                raise ValueError("terminal event contradicts its attempt")
+            (accepted if event == "smtp_accepted" else failed).add(cid)
+            pending = None
+    if pending is not None or len(attempts) != planned_count or len(accepted) != planned_count or failed:
         raise ValueError("incomplete or failed SMTP intake: no classifier qualification")
+
     observations = {}
     for row in observed:
-        if set(row) != {"run_id", "action"} or row["action"] not in ACTIONS:
-            raise ValueError("observation requires only run_id and actual action")
+        if (not isinstance(row, dict) or set(row) != {"run_id", "action"}
+                or not isinstance(row["run_id"], str) or not RUN_ID.fullmatch(row["run_id"])
+                or not isinstance(row["action"], str) or row["action"] not in ACTIONS):
+            raise ValueError("observation requires a valid run_id and actual action")
         if row["run_id"] in observations:
             raise ValueError("duplicate observed run ID")
         observations[row["run_id"]] = row["action"]
-    if set(observations) != {x["run_id"] for x in attempts.values()}:
+    if set(observations) != run_ids:
         raise ValueError("missing or unrelated observed actions; no implicit accept verdicts")
+
     rows = []
-    seen = set()
     for case in attempts.values():
-        if case["id"] in seen or not re.fullmatch(r"[0-9a-f]{64}", str(case["id"])):
-            raise ValueError("invalid or duplicated SHA-256 fixture identity")
-        seen.add(case["id"])
-        if case["label"] not in ("ham", "spam") or case["cohort"] not in COHORTS:
-            raise ValueError("invalid label or cohort in report")
         rows.append({"id": case["id"], "label": case["label"],
                      "cohort": case["cohort"], "action": observations[case["run_id"]]})
     # Publish only complete label sets; never overwrite prior evidence.
