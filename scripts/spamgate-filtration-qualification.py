@@ -46,9 +46,15 @@ def reject_nonfinite_json(value):
 def load_jsonl(path, limit):
     records = []
     with open(path, "rb") as handle:
-        for number, raw in enumerate(handle, 1):
-            # Bound physical lines as well as nonempty records. Otherwise an
-            # unbounded blank-line file can monopolize an offline operator run.
+        number = 0
+        while True:
+            # readline(size) bounds memory even when a malicious input has no
+            # newline for gigabytes. Iterating directly over a binary file
+            # would allocate the entire oversized physical line first.
+            raw = handle.readline(65537)
+            if not raw:
+                break
+            number += 1
             if number > 4 * limit + 128:
                 raise ValueError(f"{path}: exceeds physical line limit")
             if len(raw) > 65536:
