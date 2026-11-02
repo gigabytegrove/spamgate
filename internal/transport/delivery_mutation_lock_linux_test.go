@@ -150,10 +150,14 @@ func TestManualMutationsCannotRaceActiveCrossProcessDelivery(t *testing.T) {
     }
     for name, fn := range map[string]func()error{
         "retry":func()error{return b.Retry(m.ID)},
-        "discard":func()error{return b.Discard(m.ID)},
         "audited discard":func()error{return b.DiscardWithAudit(m.ID,"admin")},
     } {
         if err := fn(); !errors.Is(err,ErrDeliveryWorkerBusy) { t.Errorf("%s raced active delivery: %v",name,err) }
+    }
+    // The deprecated unaudited API now refuses before acquiring any lease;
+    // it cannot delete the original even while a relay is in progress.
+    if err := b.Discard(m.ID); err == nil || !strings.Contains(err.Error(),"unaudited") {
+        t.Fatalf("legacy unaudited deletion unexpectedly permitted: %v",err)
     }
     rec, err := b.get(m.ID)
     if err != nil || rec.State != "delivering" { t.Fatalf("active original was changed: %+v %v",rec.QueuedMessage,err) }
