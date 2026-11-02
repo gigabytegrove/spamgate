@@ -18,7 +18,7 @@ Environment loading rejected a username with plaintext SMTP, but `Relay.Send` co
 
 `go test ./internal/transport -run 'TestRelayConfigurationValidation|TestRelayFromEnvRejectsIncompleteAndPlaintextCredentials|TestRelaySendRejectsUnsafeAuthenticationBeforeDial' -count=1`
 
-The TCP regression asserts that an invalid directly constructed relay is rejected **before any socket is accepted**. The normal engineering workflow runs the entire Go test and race suites, while the disposable Postfix/Dovecot workflow provides broader mail-path regression.
+The TCP regression asserts that an invalid directly constructed relay is rejected **before any socket is accepted**. A separate real loopback SMTP peer advertises `AUTH PLAIN` but omits `STARTTLS`; the test verifies that SpamGate disconnects without sending AUTH, MAIL, RCPT or DATA. The normal engineering workflow runs the entire Go test and race suites, while the disposable Postfix/Dovecot workflow provides broader mail-path regression.
 
 ## Remaining qualification
 
