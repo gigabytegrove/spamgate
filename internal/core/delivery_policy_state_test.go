@@ -99,3 +99,30 @@ func TestDeliveryPolicyCapacityRefusedBeforeCommit(t *testing.T) {
 		t.Fatalf("refused state was persisted: %v", err)
 	}
 }
+
+func TestDeliveryPolicyWriterCannotPersistUnreadableTimestampState(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir)
+	if err != nil { t.Fatal(err) }
+	if err := s.UpdateConfig(func(c *Config) error {
+		c.Settings.RateLimitEnabled = true
+		c.Settings.RateLimitPerHour = 100000
+		return nil
+	}); err != nil { t.Fatal(err) }
+	now := time.Now().UTC()
+	for i := 0; i < 3; i++ {
+		key := stablePolicyKey("rate", fmt.Sprintf("198.51.100.%d", i+1))
+		count := 70000
+		if i == 2 { count = 60001 }
+		stamps := make([]time.Time, count)
+		for j := range stamps { stamps[j] = now }
+		s.policy.Rates[key] = stamps
+	}
+	m := Message{Connector: "milter", ClientIP: "198.51.100.55", Action: "accept"}
+	if _, _, err := s.EvaluateDeliveryPolicy(m, now); err == nil || !strings.Contains(err.Error(), "timestamp capacity") {
+		t.Fatalf("writer accepted state that cold start would refuse: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "delivery-policy.json")); !os.IsNotExist(err) {
+		t.Fatalf("unreadable state was published: %v", err)
+	}
+}

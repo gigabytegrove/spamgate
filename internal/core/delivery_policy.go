@@ -111,8 +111,8 @@ func (s *Store) EvaluateDeliveryPolicy(m Message, now time.Time) (string, string
 			reason = "Sender retried before greylist delay elapsed"
 		}
 	}
-	if len(next.Greylist) > 20000 || len(next.Rates) > 20000 {
-		return "", "", errors.New("delivery policy state capacity reached; disable policy or investigate hostile traffic")
+	if err := validateDeliveryPolicyState(next); err != nil {
+		return "", "", err
 	}
 	if err := atomicJSON(filepath.Join(s.dir, "delivery-policy.json"), next); err != nil {
 		return "", "", err

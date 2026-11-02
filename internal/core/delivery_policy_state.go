@@ -83,28 +83,37 @@ func readDeliveryPolicyState(path string) (deliveryPolicyState, error) {
 	if state.Rates == nil {
 		state.Rates = make(map[string][]time.Time)
 	}
+	if err := validateDeliveryPolicyState(state); err != nil {
+		return empty, err
+	}
+	return state, nil
+}
+
+// The writer must obey the same limits as the reader. Otherwise a busy
+// host can commit a policy file that the next cold start refuses to load.
+func validateDeliveryPolicyState(state deliveryPolicyState) error {
 	if len(state.Greylist) > maxDeliveryPolicyKeys || len(state.Rates) > maxDeliveryPolicyKeys {
-		return empty, errors.New("delivery policy state exceeds key capacity")
+		return errors.New("delivery policy state exceeds key capacity")
 	}
 	for key, stamp := range state.Greylist {
 		if !validDeliveryPolicyKey(key) || stamp.IsZero() {
-			return empty, errors.New("delivery policy state has invalid greylist key or timestamp")
+			return errors.New("delivery policy state has invalid greylist key or timestamp")
 		}
 	}
 	total := 0
 	for key, stamps := range state.Rates {
 		if !validDeliveryPolicyKey(key) || stamps == nil || len(stamps) > maxDeliveryPolicyStampsPerKey {
-			return empty, errors.New("delivery policy state has invalid rate key or count")
+			return errors.New("delivery policy state has invalid rate key or count")
 		}
 		total += len(stamps)
 		if total > maxDeliveryPolicyRateStamps {
-			return empty, errors.New("delivery policy state exceeds timestamp capacity")
+			return errors.New("delivery policy state exceeds timestamp capacity")
 		}
 		for _, stamp := range stamps {
 			if stamp.IsZero() {
-				return empty, errors.New("delivery policy state has invalid rate timestamp")
+				return errors.New("delivery policy state has invalid rate timestamp")
 			}
 		}
 	}
-	return state, nil
+	return nil
 }
