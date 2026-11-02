@@ -266,7 +266,7 @@ class QualificationTests(unittest.TestCase):
 
         self.manifest.write_text(
             '{"case_id":"ham1","label":"ham","cohort":"direct","file":"ham.eml",'
-            '"\\\\u006cabel":"spam"}\n')
+            '"\\u006cabel":"spam"}\n')
         result = self.call('plan', '--manifest', str(self.manifest))
         self.assertEqual(result.returncode, 2)
         self.assertIn('duplicate JSON object key', result.stderr)
