@@ -53,9 +53,11 @@ func (q *DeliveryQueue) refusePendingIdentityReuse(id string) error {
 			return errors.New("unpublished SMTP original has an invalid delivery state; operator investigation required")
 		}
 		if (rec.IntegritySHA256 != "" && rec.IntegritySHA256 != spoolDigest(rec)) ||
-			(rec.StateSHA256 != "" && rec.StateSHA256 != spoolStateDigest(rec)) ||
-			(rec.Scan != nil && rec.Scan.ID != rec.ID) {
+			(rec.StateSHA256 != "" && rec.StateSHA256 != spoolStateDigest(rec)) {
 			return errors.New("unpublished SMTP original failed integrity verification; operator investigation required")
+		}
+		if err := validateSpoolScanEnvelope(rec); err != nil {
+			return errors.New("unpublished SMTP original scan envelope does not match durable original; operator investigation required")
 		}
 		if rec.ID == id {
 			return errors.New("queue ID reserved by retained unpublished SMTP original; manual investigation required")
