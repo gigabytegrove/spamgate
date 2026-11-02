@@ -35,6 +35,7 @@ type Report struct {
  PendingWithFinal int `json:"pending_with_final"`
  PendingDuplicateIDs int `json:"pending_duplicate_ids"`
  PendingConflictingIDs int `json:"pending_conflicting_ids"`
+ LifecycleAnomalies int `json:"lifecycle_anomalies"`
  LegacyUnsigned int `json:"legacy_unsigned"`
  States map[string]int `json:"states"`
  Findings []Finding `json:"findings"`
@@ -151,7 +152,7 @@ func Audit(dir string) (Report,error) {
  // A valid pending record can exist without a published counterpart after
  // an interrupted fsync/rename. Multiple such records with the same ID
  // must be reported before any operator considers manual recovery.
- pendingByID:=make(map[string]string)
+ pendingByID:=make(map[string]map[string]struct{})
  info,err:=os.Lstat(dir)
  if err!=nil{return out,err}
  if !info.IsDir()||info.Mode()&os.ModeSymlink!=0||info.Mode().Perm()&0022!=0{
@@ -194,19 +195,26 @@ func Audit(dir string) (Report,error) {
     out.LegacyUnsigned++
     out.add("legacy_unsigned",name,"one or both integrity digests are absent; provenance cannot be verified")
    }
+   for _,anomaly:=range lifecycleAnomalies(rec){
+    out.LifecycleAnomalies++
+    out.add(anomaly.code,name,anomaly.detail)
+   }
    if !pending{continue}
    digest:=immutableDigest(rec)
-   if first,exists:=pendingByID[rec.ID];exists{
+   seen,exists:=pendingByID[rec.ID]
+   if !exists {
+    seen=make(map[string]struct{})
+    pendingByID[rec.ID]=seen
+   } else {
     out.PendingDuplicateIDs++
-    if first!=digest{
+    if _,duplicate:=seen[digest];duplicate {
+     out.add("pending_duplicate",name,"multiple unpublished records share one immutable original; never automatically replay")
+    } else {
      out.PendingConflictingIDs++
      out.add("pending_id_collision",name,"multiple unpublished records share one queue ID with different immutable originals; never automatically replay")
-    }else{
-     out.add("pending_duplicate",name,"multiple unpublished records share one immutable original; never automatically replay")
     }
-   }else{
-    pendingByID[rec.ID]=digest
    }
+   seen[digest]=struct{}{}
    final,finalErr:=readRecord(filepath.Join(dir,rec.ID+".json"))
    if errors.Is(finalErr,os.ErrNotExist){
     out.PendingWithoutFinal++
@@ -228,6 +236,6 @@ func Audit(dir string) (Report,error) {
 }
 func (r Report) HasFindings() bool {return len(r.Findings)!=0||r.Truncated}
 func (r Report) Explain() string {
- return fmt.Sprintf("examined=%d published=%d pending=%d pending_without_final=%d pending_with_final=%d pending_duplicate_ids=%d pending_conflicting_ids=%d legacy_unsigned=%d findings=%d truncated=%t",
-  r.Examined,r.Published,r.Pending,r.PendingWithoutFinal,r.PendingWithFinal,r.PendingDuplicateIDs,r.PendingConflictingIDs,r.LegacyUnsigned,len(r.Findings),r.Truncated)
+ return fmt.Sprintf("examined=%d published=%d pending=%d pending_without_final=%d pending_with_final=%d pending_duplicate_ids=%d pending_conflicting_ids=%d lifecycle_anomalies=%d legacy_unsigned=%d findings=%d truncated=%t",
+  r.Examined,r.Published,r.Pending,r.PendingWithoutFinal,r.PendingWithFinal,r.PendingDuplicateIDs,r.PendingConflictingIDs,r.LifecycleAnomalies,r.LegacyUnsigned,len(r.Findings),r.Truncated)
 }
