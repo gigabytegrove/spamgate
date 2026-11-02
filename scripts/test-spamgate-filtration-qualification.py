@@ -243,11 +243,11 @@ class QualificationTests(unittest.TestCase):
         report = self.root / 'synthetic-report.jsonl'
         observed = self.root / 'synthetic-observations.jsonl'
         labels = self.root / 'synthetic-labels.jsonl'
-        observed.write_text(json.dumps({'run_id': run_id, 'action': 'accept'}) + '\\n')
+        observed.write_text(json.dumps({'run_id': run_id, 'action': 'accept'}) + '\n')
         return events, report, observed, labels
 
     def reconcile_evidence(self, events, report, observed, labels):
-        report.write_text('\\n'.join(json.dumps(event) for event in events) + '\\n')
+        report.write_text('\n'.join(json.dumps(event) for event in events) + '\n')
         return self.call('reconcile', '--report', str(report),
                          '--observations', str(observed), '--labels-out', str(labels))
 
@@ -259,21 +259,21 @@ class QualificationTests(unittest.TestCase):
 
     def test_duplicate_json_keys_refused_in_all_evidence_inputs(self):
         self.manifest.write_text(
-            '{"case_id":"ham1","label":"ham","label":"spam","cohort":"direct","file":"ham.eml"}\\n')
+            '{"case_id":"ham1","label":"ham","label":"spam","cohort":"direct","file":"ham.eml"}\n')
         result = self.call('plan', '--manifest', str(self.manifest))
         self.assertEqual(result.returncode, 2)
         self.assertIn('duplicate JSON object key', result.stderr)
 
         self.manifest.write_text(
             '{"case_id":"ham1","label":"ham","cohort":"direct","file":"ham.eml",'
-            '"\\\\u006cabel":"spam"}\\n')
+            '"\\\\u006cabel":"spam"}\n')
         result = self.call('plan', '--manifest', str(self.manifest))
         self.assertEqual(result.returncode, 2)
         self.assertIn('duplicate JSON object key', result.stderr)
 
         events, report, observed, labels = self.synthetic_evidence()
-        report.write_text('{"event":"plan","cases":1,"cases":2}\\n'
-                          + '\\n'.join(json.dumps(e) for e in events[1:]) + '\\n')
+        report.write_text('{"event":"plan","cases":1,"cases":2}\n'
+                          + '\n'.join(json.dumps(e) for e in events[1:]) + '\n')
         result = self.call('reconcile', '--report', str(report),
                            '--observations', str(observed), '--labels-out', str(labels))
         self.assertEqual(result.returncode, 2)
@@ -281,7 +281,7 @@ class QualificationTests(unittest.TestCase):
 
         events, report, observed, labels = self.synthetic_evidence()
         observed.write_text('{"run_id":"' + 'a' * 32
-                            + '","action":"accept","action":"reject"}\\n')
+                            + '","action":"accept","action":"reject"}\n')
         result = self.reconcile_evidence(events, report, observed, labels)
         self.assertEqual(result.returncode, 2)
         self.assertFalse(labels.exists())
@@ -310,7 +310,7 @@ class QualificationTests(unittest.TestCase):
                     '{"run_id":"' + 'a' * 32 + '","action":"accept","extra":1}'):
             with self.subTest(raw=raw):
                 events, report, observed, labels = self.synthetic_evidence()
-                observed.write_text(raw + '\\n')
+                observed.write_text(raw + '\n')
                 result = self.reconcile_evidence(events, report, observed, labels)
                 self.assertEqual(result.returncode, 2)
                 self.assertNotIn('Traceback', result.stderr)
@@ -318,11 +318,11 @@ class QualificationTests(unittest.TestCase):
 
     def test_manifest_wrong_file_type_and_excess_blank_lines_refused(self):
         self.manifest.write_text(
-            '{"case_id":"ham1","label":"ham","cohort":"direct","file":42}\\n')
+            '{"case_id":"ham1","label":"ham","cohort":"direct","file":42}\n')
         result = self.call('plan', '--manifest', str(self.manifest))
         self.assertEqual(result.returncode, 2)
         self.assertNotIn('Traceback', result.stderr)
-        self.manifest.write_text('\\n' * (4 * 1000 + 130))
+        self.manifest.write_text('\n' * (4 * 1000 + 130))
         result = self.call('plan', '--manifest', str(self.manifest))
         self.assertEqual(result.returncode, 2)
         self.assertIn('physical line limit', result.stderr)
