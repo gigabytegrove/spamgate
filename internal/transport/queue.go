@@ -371,7 +371,7 @@ func (q *DeliveryQueue) Enqueue(m core.Message, raw []byte) error {
 	} else if !errors.Is(e, os.ErrNotExist) {
 		return e
 	}
-	// Save the complete scan decision with the fsync'd outbox entry. The
+	// An unpublished original may own this ID even when no published file\n	// exists. Never acknowledge a second accepted original with that identity.\n	if err := q.refusePendingIdentityReuse(m.ID); err != nil {\n		return err\n	}\n	// Save the complete scan decision with the fsync'd outbox entry. The
 	// events.jsonl mirror is best-effort after SMTP 250 and may not exist
 	// after an interruption; the queue must be able to reconstruct it.
 	saved := m
