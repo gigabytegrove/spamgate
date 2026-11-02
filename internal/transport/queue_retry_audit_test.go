@@ -61,7 +61,7 @@ func TestRetryActorValidationAndDiscardIntentFailClosed(t *testing.T){
  for _,actor:=range []string{"","admin\nforged","admin\u202eforged",strings.Repeat("x",129)}{
   if err:=q.RetryWithAudit(id,actor);err==nil{t.Fatalf("unsafe actor %q accepted",actor)}
  }
- msg:=core.Message{ID:id,Sender:"original@example.invalid",Recipients:[]string{"dest@example.invalid"},Delivery:"discard_requested"}
+ msg:=core.Message{ID:id,Sender:"original@example.invalid",Recipients:[]string{"dest@example.invalid"},Delivery:"discard_requested",Timestamp:time.Now().UTC()}
  if err:=store.Save(msg);err!=nil{t.Fatal(err)}
  if err:=q.RetryWithAudit(id,"operator");err==nil{t.Fatal("discard intent was replayable")}
  after,err:=os.ReadFile(q.path(id))
