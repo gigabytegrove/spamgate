@@ -1,33 +1,35 @@
-# Native Milter SMTP temporary-failure enforcement — 2026-11-02
+# Native Milter disposition and policy regression — 2026-11-02
 
-## Production defect
+## Verified source defect and change
 
-The Milter scanner correctly persisted `soft_reject` and
-`smtp_temporary_failure_requested` after a greylist or rate-limit decision,
-but the final Milter response switch lacked a `soft_reject` case. It fell
-through to `SMFIR_CONTINUE` (`c`). This allowed mail that the audit trail
-claimed had been temporarily refused to proceed to Postfix.
+Before this change, the final Milter action switch returned
+`SMFIR_CONTINUE` for **any** action not explicitly listed, including
+unrecognized forced actions from legacy or offline-edited rules. The
+HTTP rule endpoint validates actions, but the core configuration update
+path does not enforce that allowlist. An unexpected action could therefore
+be recorded in history and silently delivered by Postfix.
 
-## Corrected contract
+The terminal Milter switch now permits unconditional continuation only
+for the explicit `accept` action. Unknown scanner actions return
+`SMFIR_TEMPFAIL` (`t`) and record an attempted SMTP temporary failure.
+The `tag` and `quarantine` cases remain capability-gated.
 
-* `soft_reject` returns `SMFIR_TEMPFAIL` (`t`) at end-of-message.
-* `reject` returns `SMFIR_REJECT` (`r`).
-* `accept` alone returns an unconditional `SMFIR_CONTINUE` (`c`).
-* `tag` and `quarantine` retain their existing capability-gated
-  header/hold behavior; missing negotiated capabilities still tempfail.
-* Unrecognized scanner actions are recorded as attempted SMTP temporary
-  failures and return `t`, not implicit acceptance.
-* A policy persistence error returns `t` without recording an
-  uncommitted message verdict.
-* New wire-level regressions cover rate-limit exhaustion, persisted state
-  across worker restart, and failed policy persistence. These assertions
-  inspect the actual Milter response, not only the audit event.
+The existing `soft_reject` branch **already** returned `t` before this
+patch; it was not the discovered defect. New in-process Milter wire
+regressions now assert that rate-limit exhaustion actually emits `t`
+rather than trusting only the stored MTAAction. They also test
+enforcement after worker restart and fail-safe behavior when policy
+persistence fails. A forced unknown-action regression proves that
+legacy/offline configuration cannot implicitly continue delivery.
 
-## Qualification boundary
+## Operational and qualification boundary
 
-These are in-process Milter wire tests and CI regression gates. The exact
-Postfix SMTP 4xx response, queue disposition, retry schedule, real mail-host
-behavior and multi-tenant false-positive impact still require independent
-Postfix/Dovecot and production ISPConfig qualification. No mail-host settings
-are changed by this patch. Native launcher, worker, persistent data path and
-Milter ports remain unchanged.
+* No change to the native foreground launcher, worker, persistent data
+  directory, Milter ports or running mail-server configuration.
+* `MTAActionState=requested` remains an intended command, not a
+  confirmed Postfix SMTP response or mailbox delivery.
+* The unknown-action fallback is defense in depth. Shared validation
+  for all offline configuration import paths remains future work.
+* In-process Milter wire tests are not independent production Postfix,
+  ISPConfig or Dovecot qualification. Exact SMTP 4xx and retry behavior,
+  multi-recipient behavior, and real-host failure injection remain open.

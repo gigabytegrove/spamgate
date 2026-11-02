@@ -142,3 +142,33 @@ func TestMilterPolicyPersistenceFailureTempfailsWithoutRecordingVerdict(t *testi
     }
     finishPolicyMilter(t, conn, done)
 }
+
+func TestMilterUnknownForcedRuleActionNeverImplicitlyAccepts(t *testing.T) {
+    dir := t.TempDir()
+    store, err := core.Open(dir)
+    if err != nil { t.Fatal(err) }
+    // The HTTP API validates rule actions, but legacy/offline configuration
+    // can still reach the scanner with an unknown forced action. The Milter
+    // must fail closed even if a caller bypassed the API validator.
+    if err := store.UpdateConfig(func(c *core.Config) error {
+        c.SetupComplete = true
+        c.Rules = []core.Rule{{
+            ID: "unsafe-rule", Name: "Unsafe forced action",
+            Kind: "sender_email", Value: "sender@example.org",
+            Action: "discard_unsafe", Enabled: true, Priority: 100,
+        }}
+        return nil
+    }); err != nil { t.Fatal(err) }
+    conn, done := newPolicyMilterWire(t, store)
+    policyMilterMessage(t, conn, "Routine status report", "Routine status report\r\n", 't')
+    events := store.List(10, "")
+    if len(events) != 1 {
+        t.Fatalf("expected one recorded unknown-action deferral, got %d", len(events))
+    }
+    if events[0].Action != "discard_unsafe" ||
+        events[0].MTAAction != "smtp_temporary_failure_requested" ||
+        events[0].MTAActionState != "requested" {
+        t.Fatalf("unknown action did not fail closed with correct evidence: %+v", events[0])
+    }
+    finishPolicyMilter(t, conn, done)
+}
