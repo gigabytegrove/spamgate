@@ -279,6 +279,9 @@ func (q *DeliveryQueue) get(id string) (spoolRecord, error) {
 	if rec.StateSHA256 != "" && rec.StateSHA256 != spoolStateDigest(rec) {
 		return spoolRecord{}, fmt.Errorf("queue job %s failed mutable delivery-state integrity check", id)
 	}
+	if err := validateSpoolScanEnvelope(rec); err != nil {
+		return spoolRecord{}, fmt.Errorf("queue job %s has inconsistent scan envelope: %w", id, err)
+	}
 	return rec, nil
 }
 func (q *DeliveryQueue) snapshotLocked() (QueueSummary, error) {
