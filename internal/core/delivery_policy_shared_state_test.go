@@ -142,3 +142,22 @@ func TestDeliveryPolicyReloadsValidExternalState(t *testing.T) {
 		t.Fatalf("first store failed to reload peer state: %q %v", action, err)
 	}
 }
+
+func TestDeliveryPolicyRejectsSymlinkedLockFile(t *testing.T) {
+	if runtime.GOOS != "linux" { t.Skip("native Linux no-follow lock contract") }
+	dir := t.TempDir()
+	s := policyTestStore(t, dir, 10)
+	target := filepath.Join(dir, "external")
+	original := []byte("operator evidence must remain unchanged")
+	if err := os.WriteFile(target, original, 0600); err != nil { t.Fatal(err) }
+	if err := os.Symlink(target, filepath.Join(dir, ".delivery-policy.lock")); err != nil { t.Fatal(err) }
+	m := Message{Connector:"milter", ClientIP:"198.51.100.36", Action:"accept"}
+	if _, _, err := s.EvaluateDeliveryPolicy(m, time.Now().UTC()); err == nil {
+		t.Fatal("followed symlinked policy lock")
+	}
+	after, err := os.ReadFile(target)
+	if err != nil || !bytes.Equal(after, original) { t.Fatal("unsafe lock target was modified") }
+	if _, err := os.Stat(filepath.Join(dir, "delivery-policy.json")); !os.IsNotExist(err) {
+		t.Fatalf("policy state written without a safe lock: %v", err)
+	}
+}
