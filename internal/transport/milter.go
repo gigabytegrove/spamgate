@@ -157,7 +157,17 @@ func milterAddress(b []byte) string {
 	if family != '4' && family != '6' {
 		return ""
 	}
-	address := firstMilterString(b[zero+4:])
+	// The family and two-byte network-order port precede a single
+	// NUL-terminated address. Never use a truncated or trailing-data
+	// callback as authenticated SMTP client-IP evidence.
+	if len(b) < zero+6 || b[len(b)-1] != 0 {
+		return ""
+	}
+	raw := b[zero+4 : len(b)-1]
+	if len(raw) == 0 || bytes.IndexByte(raw, 0) >= 0 || bytes.ContainsAny(raw, "<> \t\r\n") {
+		return ""
+	}
+	address := string(raw)
 	if net.ParseIP(address) == nil {
 		return ""
 	}
@@ -178,8 +188,10 @@ func milterQueueID(data []byte) string {
 	}
 	var id string
 	for i := 0; i < len(parts); i += 2 {
-		name := strings.Trim(string(parts[i]), "{}")
-		if name != "i" {
+		// Only the two documented spellings denote the queue ID.
+		// Trimming arbitrary braces would accept a malformed macro alias.
+		name := string(parts[i])
+		if name != "i" && name != "{i}" {
 			continue
 		}
 		if id != "" {
@@ -204,7 +216,7 @@ func milterHeader(data []byte) ([]byte, error) {
 		return nil, errors.New("invalid milter header name")
 	}
 	for _, c := range fields[0] {
-		if c < 33 || c > 126 {
+		if c < 33 || c > 126 || c == ':' {
 			return nil, errors.New("invalid milter header byte")
 		}
 	}
@@ -265,6 +277,7 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 		body         bytes.Buffer
 		hasEOH       bool
 		queueID      string
+		queueIDConflict bool
 		spoofHeaders []string
 		poisoned     bool // any failed callback invalidates this entire transaction
 	}
@@ -313,10 +326,18 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 			}
 			continue
 		case 'D': // Macro definition does not expect a response.
-			// Only a new queue ID after MAIL FROM is associated with the
-			// current transaction, preventing reuse from a previous email.
+			// Queue IDs may arrive in multiple macro packets for one message.
+			// A conflicting value must not silently replace the first value:
+			// doing so can misattribute a Postfix HOLD to another queue entry.
 			if id := milterQueueID(data); id != "" && msg.mailSeen {
-				msg.queueID = id
+				if msg.queueID != "" && msg.queueID != id {
+					msg.queueIDConflict = true
+					msg.poisoned = true
+					msg.queueID = ""
+					slog.Warn("milter refused conflicting queue ID macros", "reason", "ambiguous_queue_identity")
+				} else if !msg.queueIDConflict {
+					msg.queueID = id
+				}
 			}
 			continue
 		case 'C':
