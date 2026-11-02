@@ -191,13 +191,17 @@ func runPostfixRelease(ctx context.Context, queueID string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
+	// A helper descendant must not keep inherited pipes open indefinitely.
+	cmd.WaitDelay = time.Second
 	var output, errOutput queueLimit
 	output.max = 8 << 10
 	errOutput.max = 8 << 10
 	cmd.Stdout = &output
 	cmd.Stderr = &errOutput
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("postsuper release failed: %w: %s", err, strings.TrimSpace(errOutput.String()))
+		// Privileged stderr may include host paths or configuration details.
+		// Preserve only the execution failure class for the caller.
+		return "", fmt.Errorf("postsuper release failed: %w", err)
 	}
 	return strings.TrimSpace(output.String() + " " + errOutput.String()), nil
 }
@@ -214,16 +218,12 @@ func (s *Server) postfixReleaseMessage(w http.ResponseWriter, r *http.Request) {
 		fail(w, 409, "Postfix hold actions require explicit local administrator opt-in and queue inventory; no mail was changed")
 		return
 	}
-	var req struct {
-		QueueID string `json:"queue_id"`
-		Confirm string `json:"confirm"`
-		Reason  string `json:"reason"`
-	}
-	if err := decode(r, &req); err != nil {
+	req, err := decodePostfixReleaseRequest(r)
+	if err != nil {
 		fail(w, 400, "Invalid release request")
 		return
 	}
-	if !validPostfixEvidenceID(req.QueueID) || req.Confirm != "release Postfix hold "+req.QueueID || len(strings.TrimSpace(req.Reason)) < 12 || len(req.Reason) > 512 {
+	if !validPostfixEvidenceID(req.QueueID) || req.Confirm != "release Postfix hold "+req.QueueID || !validPostfixReleaseReason(req.Reason) {
 		fail(w, 400, "An exact queue ID, explicit confirmation, and 12–512 character reason are required")
 		return
 	}
@@ -296,12 +296,12 @@ func (s *Server) postfixReleaseMessage(w http.ResponseWriter, r *http.Request) {
 	if cmd == nil {
 		cmd = runPostfixRelease
 	}
-	output, err := cmd(r.Context(), req.QueueID)
+	_, err = cmd(r.Context(), req.QueueID)
 	if err != nil {
 		m.Findings = append(m.Findings, core.Finding{Symbol: "POSTFIX_HOLD_RELEASE_COMMAND_FAILED", Source: "postfix/postsuper", Detail: err.Error()})
 		_ = s.Store.Save(m)
 		s.log.Error("Postfix hold release command failed", "queue_id", req.QueueID, "actor", actor.Name, "error", err)
-		fail(w, 503, "Postfix release command failed; review queue state before retry: "+err.Error())
+		fail(w, 503, "Postfix release command failed; inspect the queue and logs before any manual retry")
 		return
 	}
 	m.MTAActionState = "release_submitted"
@@ -313,7 +313,8 @@ func (s *Server) postfixReleaseMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("Postfix hold release submitted", "queue_id", req.QueueID, "actor", actor.Name)
-	jsonReply(w, 202, map[string]any{"submitted": true, "queue_id": req.QueueID, "postfix_output": output, "detail": "postsuper accepted the release command; queued delivery and mailbox placement remain unverified"})
+	// Raw helper output is not an API contract and may disclose host details.
+	jsonReply(w, 202, map[string]any{"submitted": true, "queue_id": req.QueueID, "detail": "postsuper accepted the release command; queued delivery and mailbox placement remain unverified"})
 }
 
 func absDuration(d time.Duration) time.Duration {
