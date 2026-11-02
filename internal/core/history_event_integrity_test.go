@@ -16,8 +16,8 @@ func TestHistoryJournalStrictDecoderRejectsAmbiguousEvidence(t *testing.T) {
 	cases := map[string][]byte{
 		"duplicate action": []byte(`{"id":"` + id + `","action":"accept","action":"reject"}`),
 		"case alias": []byte(`{"id":"` + id + `","action":"accept","Action":"reject"}`),
-		"unicode key alias": []byte(`{"id":"` + id + `","action":"accept","a\\u0063tion":"reject"}`),
-		"unpaired surrogate": []byte(`{"id":"` + id + `","subject":"\\uD800","action":"accept"}`),
+		"unicode key alias": []byte(`{"id":"` + id + `","action":"accept","a\u0063tion":"reject"}`),
+		"unpaired surrogate": []byte(`{"id":"` + id + `","subject":"\uD800","action":"accept"}`),
 		"trailing value": append(append([]byte(nil), valid...), []byte(" true")...),
 		"invalid utf8": append(append([]byte(nil), valid[:len(valid)-1]...), 0xff, '}'),
 	}
