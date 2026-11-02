@@ -41,6 +41,7 @@ func TestColdBackupOmitsRuntimeLocksButPreservesOriginals(t *testing.T) {
     keep := map[string]string{
         "config.json": "{\"settings\":{}}",
         ".delivery-policy.initialized": "spamgate-delivery-policy-v1\n",
+        "delivery-policy.json": "{\"greylist\":{},\"rates\":{}}",
         "delivery-queue/.pending-forensic-original": "never discard this evidence",
         "delivery-queue/0123456789abcdef0123456789abcdef.json": "retained mail original",
         "operations/monitor.json": "{\"healthy\":true}",

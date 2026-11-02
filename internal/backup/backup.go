@@ -181,6 +181,18 @@ func Create(source, archive string) (err error) {
 		zw.Close()
 		return walkErr
 	}
+	// A marker without its enforcement counters is an interrupted or
+	// corrupted policy publication, not a recoverable cold snapshot.
+	seenPolicy := map[string]bool{}
+	for _, entry := range manifest.Entries {
+		if entry.Path == ".delivery-policy.initialized" || entry.Path == "delivery-policy.json" {
+			seenPolicy[entry.Path] = true
+		}
+	}
+	if seenPolicy[".delivery-policy.initialized"] && !seenPolicy["delivery-policy.json"] {
+		zw.Close()
+		return errors.New("delivery policy initialization evidence exists without its state; refusing incomplete backup")
+	}
 	if len(manifest.Entries) == 0 {
 		zw.Close()
 		return errors.New("data directory contains no files")
@@ -259,6 +271,14 @@ func inspect(path string) (Manifest, *zip.ReadCloser, error) {
 			if _, conflict := files[name[:i]]; conflict {
 				return fail(fmt.Errorf("conflicting archive file/directory paths: %q and %q", name[:i], name))
 			}
+		}
+	}
+	// A forged archive can have internally valid per-file hashes while
+	// omitting the counters required by the permanent initialization marker.
+	// Reject it before restoring or publishing any directory.
+	if _, marker := files[".delivery-policy.initialized"]; marker {
+		if _, state := files["delivery-policy.json"]; !state {
+			return fail(errors.New("backup contains delivery policy initialization evidence without state"))
 		}
 	}
 	mf, ok := files[manifestPath]

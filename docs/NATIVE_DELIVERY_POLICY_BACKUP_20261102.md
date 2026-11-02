@@ -7,3 +7,5 @@ The persistent `.delivery-policy.initialized` marker and `delivery-policy.json` 
 The regression creates a real core Store, writes rate-limit state, creates/verifies/restores a ZIP, reopens the restored Store and proves the pre-backup counter still enforces the hourly ceiling. It also proves the marker and counters are present and the lock is absent. Existing archive verification still hashes legacy excluded lock entries before skipping extraction.
 
 Cold backups require SpamGate stopped; this is not a substitute for real power-loss, disk-full, ISPConfig integration or a production restore drill. No running Postfix or Dovecot configuration is changed.
+
+Backup creation now refuses an initialized marker without `delivery-policy.json`; archive verification and restoration independently reject the same inconsistent pair even when a forged archive has self-consistent hashes. A new negative regression verifies that an incomplete backup is never published and an incomplete archive never publishes a restored directory. Legacy archives containing policy state but no marker remain accepted for upgrade compatibility.
