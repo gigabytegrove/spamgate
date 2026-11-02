@@ -179,39 +179,13 @@ func milterAddress(b []byte) string {
 // Parse a trusted MTA-supplied queue ID from the Sendmail Milter macro packet.
 // Macro keys are NUL-delimited, preceded by one callback-stage byte.
 func milterQueueID(data []byte) string {
-	// Require a stage byte and complete NUL-terminated name/value pairs.
-	// Incomplete or ambiguous MTA queue evidence must never be trusted.
-	if len(data) < 4 || data[len(data)-1] != 0 {
+	id, _, err := milterQueueIDEvidence(data)
+	if err != nil {
 		return ""
-	}
-	parts := bytes.Split(data[1:len(data)-1], []byte{0})
-	if len(parts)%2 != 0 {
-		return ""
-	}
-	var id string
-	for i := 0; i < len(parts); i += 2 {
-		// Only the two documented spellings denote the queue ID.
-		// Trimming arbitrary braces would accept a malformed macro alias.
-		name := string(parts[i])
-		if name != "i" && name != "{i}" {
-			continue
-		}
-		if id != "" {
-			return "" // duplicate queue ID macro is ambiguous
-		}
-		value := string(parts[i+1])
-		if len(value) < 1 || len(value) > 32 {
-			return ""
-		}
-		for _, c := range value {
-			if !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
-				return ""
-			}
-		}
-		id = value
 	}
 	return id
 }
+
 func milterHeader(data []byte) ([]byte, error) {
 	fields := bytes.SplitN(data, []byte{0}, 3)
 	if len(fields) != 3 || len(fields[2]) != 0 || len(fields[0]) == 0 || bytes.ContainsAny(fields[0], "\r\n:") {
@@ -328,16 +302,17 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 			}
 			continue
 		case 'D': // Macro definition does not expect a response.
-			// Queue IDs may arrive in multiple macro packets for one message.
-			// A conflicting value must not silently replace the first value:
-			// doing so can misattribute a Postfix HOLD to another queue entry.
-			if id := milterQueueID(data); id != "" && msg.mailSeen {
-				if msg.queueID != "" && msg.queueID != id {
+			// Invalid or contradictory queue identity evidence must not be
+			// silently ignored: an earlier valid ID could otherwise be used
+			// to authorize a HOLD release for a different Postfix message.
+			id, claimed, macroErr := milterQueueIDEvidence(data)
+			if msg.mailSeen {
+				if macroErr != nil || (claimed && id != "" && msg.queueID != "" && msg.queueID != id) {
 					msg.queueIDConflict = true
 					msg.poisoned = true
 					msg.queueID = ""
-					slog.Warn("milter refused conflicting queue ID macros", "reason", "ambiguous_queue_identity")
-				} else if !msg.queueIDConflict {
+					slog.Warn("milter refused ambiguous queue ID macro evidence", "reason", "ambiguous_queue_identity", "invalid_macro", macroErr != nil)
+				} else if claimed && id != "" && !msg.queueIDConflict {
 					msg.queueID = id
 				}
 			}
