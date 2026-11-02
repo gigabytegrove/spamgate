@@ -13,8 +13,8 @@ import (
 )
 
 // These tests exercise the actual Milter wire reply, not merely the stored
-// intended MTAAction. A previous bug persisted a temporary-failure request
-// but sent SMFIR_CONTINUE, silently accepting rate-limited mail.
+// intended MTAAction. The existing soft_reject branch already tempfailed;
+// the regression protects it while testing the unknown-action fail-closed fix.
 func newPolicyMilterWire(t *testing.T, store *core.Store) (net.Conn, <-chan error) {
     t.Helper()
     m := &Milter{Store: store, Scanner: &core.Scanner{Store: store, Resolver: milterStubDNS{}}}
@@ -55,7 +55,7 @@ func finishPolicyMilter(t *testing.T, conn net.Conn, done <-chan error) {
     }
 }
 
-func TestMilterRateLimitSendsRealSMTPTempfailAndPersistsEvidence(t *testing.T) {
+func TestMilterRateLimitEmitsMilterTempfailAndPersistsEvidence(t *testing.T) {
     store, err := core.Open(t.TempDir())
     if err != nil { t.Fatal(err) }
     if err := store.UpdateConfig(func(c *core.Config) error {
