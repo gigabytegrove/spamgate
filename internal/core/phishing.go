@@ -9,15 +9,8 @@ import (
     "mime/multipart"
     "net/mail"
     "net/url"
-    "regexp"
     "strings"
 )
-
-// Match complete opening tags, including quoted '>' characters. Attribute
-// values are parsed separately so data-href and quoted text containing "href"
-// cannot masquerade as the browser's actual destination.
-var anchorPattern = regexp.MustCompile(`(?is)<a\b((?:[^>"']|"[^"]*"|'[^']*')*)>(.*?)</a\s*>`)
-var stripMarkup = regexp.MustCompile(`(?s)<[^>]+>`)
 
 func htmlAttrSpace(b byte) bool {
     return b == ' ' || b == '\t' || b == '\n' || b == '\r' || b == '\f'
@@ -76,20 +69,18 @@ func phishingVisibleLinksWithCoverage(body string, coverage *mimeCoverage) []str
     var findings []string
     // Only browser-visible anchor text may justify a phishing score.
     body = phishingRenderedHTML(body, coverage)
-    anchors := anchorPattern.FindAllStringSubmatch(body, 51)
-    if len(anchors) > 50 {
-        coverage.mark("More than 50 HTML anchors; remaining links not inspected")
-        anchors = anchors[:50]
-    }
-    for anchorIndex, match := range anchors {
-        href := strings.TrimSpace(html.UnescapeString(anchorHref(match[1])))
+    // Quote-aware HTML tokenization prevents false positives from literal
+    // <a> strings embedded in attributes of non-clickable elements.
+    anchors := phishingAnchorClaims(body, coverage)
+    for anchorIndex, claim := range anchors {
+        href := strings.TrimSpace(html.UnescapeString(claim.href))
         if len(href) == 0 || len(href) > 4096 { continue }
         if strings.HasPrefix(href, "//") { href = "https:" + href }
         dest, err := url.Parse(href)
         if err != nil || (dest.Scheme != "https" && dest.Scheme != "http") { continue }
         destHost := strings.ToLower(strings.TrimSuffix(dest.Hostname(), "."))
         if !ValidReputationDomain(destHost) { continue }
-        shown := strings.TrimSpace(html.UnescapeString(stripMarkup.ReplaceAllString(match[2], " ")))
+        shown := strings.TrimSpace(html.UnescapeString(claim.text))
         if len(shown) > 256 { continue }
         shownLower := strings.ToLower(shown)
         if !strings.HasPrefix(shownLower, "https://") && !strings.HasPrefix(shownLower, "http://") && !strings.HasPrefix(shownLower, "www.") { continue }
