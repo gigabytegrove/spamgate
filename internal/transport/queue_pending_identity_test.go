@@ -107,7 +107,7 @@ func TestEnqueueFailsClosedOnAmbiguousPendingEvidence(t *testing.T) {
 func TestEnqueueFailsClosedOnTamperedPendingDigest(t *testing.T) {
 	q, _, _ := newIntegrityQueue(t)
 	_, pending, before := retainAcceptedOriginal(t, q)
-	changed := bytes.Replace(before, []byte("original"), []byte("altered!"), 1)
+	changed := bytes.Replace(before, []byte("sender@example.invalid"), []byte("altered@example.invalid"), 1)
 	if bytes.Equal(changed, before) {
 		t.Fatal("fixture did not alter original")
 	}
