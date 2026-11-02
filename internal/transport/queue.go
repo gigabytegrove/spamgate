@@ -572,6 +572,15 @@ func (q *DeliveryQueue) ProcessDue(ctx context.Context) error {
 				return fmt.Errorf("cannot persist authoritative queue envelope for %s: %w", rec.ID, err)
 			}
 		}
+		// An interrupted relay may have consumed an attempt even when no
+		// SMTP response was durably recorded. Never exceed the automatic
+		// attempt ceiling on repeated crashes or worker restarts.
+		if rec.Attempts >= MaxDeliveryAttempts {
+			err = q.parkExhaustedLocked(&rec, &msg)
+			q.mu.Unlock()
+			if err != nil { return err }
+			continue
+		}
 		rec.State = "delivering"
 		rec.Updated = q.now()
 		rec.NextAttempt = q.now().Add(2 * time.Minute)
