@@ -405,32 +405,21 @@ func (q *DeliveryQueue) Retry(id string) error {
 	rec.LastError = ""
 	return q.put(rec)
 }
+// Discard is retained only for source compatibility with older integrations.
+// Deleting an accepted SMTP original without a durable actor audit is unsafe.
+// All real operator actions must use DiscardWithAudit instead.
 func (q *DeliveryQueue) Discard(id string) error {
-	unlockWorker, lockErr := acquireDeliveryWorkerLock(context.Background(), q.dir)
-	if lockErr != nil { return fmt.Errorf("cannot discard while delivery is active: %w", lockErr) }
-	defer unlockWorker()
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	rec, e := q.get(id)
-	if e != nil {
-		return e
+	if !validQueueID(id) {
+		return os.ErrNotExist
 	}
-	if rec.State == "discard_pending" { return errors.New("finish pending discard through DiscardWithAudit") }
-	if rec.State == "delivering" || rec.State == "delivered" {
-		return errors.New("cannot discard an in-flight or delivered message")
-	}
-	if e = os.Remove(q.path(id)); e != nil {
-		return e
-	}
-	return q.syncDirectory()
+	return errors.New("unaudited queue deletion disabled; use DiscardWithAudit")
 }
 // DiscardWithAudit durably journals intent before deleting the only original.
 // If journal persistence fails, the queued original must remain untouched.
 func (q *DeliveryQueue) DiscardWithAudit(id, actor string) error {
- actor = strings.TrimSpace(actor)
- if actor == "" || len(actor) > 128 || strings.ContainsAny(actor, "\r\n") {
-  return errors.New("valid audit actor required")
- }
+ var actorErr error
+ actor, actorErr = validateQueueDiscardActor(actor)
+ if actorErr != nil { return actorErr }
  unlockWorker, lockErr := acquireDeliveryWorkerLock(context.Background(), q.dir)
  if lockErr != nil { return fmt.Errorf("cannot discard while delivery is active: %w", lockErr) }
  defer unlockWorker()

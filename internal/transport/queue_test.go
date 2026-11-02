@@ -93,12 +93,19 @@ func TestDeliveryQueueManualDiscardAndValidation(t *testing.T) {
 	if err := q.Enqueue(m, []byte("message")); err == nil {
 		t.Fatal("duplicate ID allowed")
 	}
-	if err := q.Discard(m.ID); err != nil {
-		t.Fatal(err)
+	if err := q.Discard(m.ID); err == nil {
+		t.Fatal("unaudited deletion unexpectedly allowed")
 	}
 	s, _ := q.Snapshot()
+	if s.Total != 1 {
+		t.Fatal("unaudited deletion changed durable spool")
+	}
+	if err := q.DiscardWithAudit(m.ID, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	s, _ = q.Snapshot()
 	if s.Total != 0 {
-		t.Fatal("not discarded")
+		t.Fatal("audited discard did not finish")
 	}
 	if err := q.Discard("../../foo"); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("path traversal not denied: %v", err)

@@ -109,3 +109,37 @@ func TestDigestMatchesExactEnvelopeAndState(t *testing.T){
  r.Recipients[0]="elsewhere@example.invalid"
  if immutableDigest(r)==r.IntegritySHA256{t.Fatal("recipient tampering not detected")}
 }
+
+func TestPendingDuplicateAndConflictingOriginalsAreNotSilentlyGrouped(t *testing.T) {
+ dir:=privateDir(t)
+ first:=fixture(idA)
+ write(t,dir,".pending-first",first)
+ write(t,dir,".pending-second",first)
+ r,err:=Audit(dir)
+ if err!=nil||r.Pending!=2||r.PendingDuplicateIDs!=1||r.PendingConflictingIDs!=0||
+  !hasCode(r,"pending_duplicate")||!r.HasFindings(){
+  t.Fatalf("duplicate unpublished original was not surfaced: %+v %v",r,err)
+ }
+ conflicting:=fixture(idA)
+ conflicting.Sender="different-private-sender@example.invalid"
+ conflicting.IntegritySHA256=immutableDigest(conflicting)
+ conflicting.StateSHA256=stateDigest(conflicting)
+ write(t,dir,".pending-second",conflicting)
+ before,err:=os.ReadFile(filepath.Join(dir,".pending-second"))
+ if err!=nil{t.Fatal(err)}
+ r,err=Audit(dir)
+ if err!=nil||r.PendingDuplicateIDs!=1||r.PendingConflictingIDs!=1||
+  !hasCode(r,"pending_id_collision")||!hasCode(r,"pending_without_final"){
+  t.Fatalf("conflicting unpublished original was not surfaced: %+v %v",r,err)
+ }
+ after,err:=os.ReadFile(filepath.Join(dir,".pending-second"))
+ if err!=nil||string(before)!=string(after){t.Fatal("read-only audit modified original")}
+ encoded,err:=json.Marshal(r)
+ if err!=nil{t.Fatal(err)}
+ if strings.Contains(string(encoded),"different-private-sender")||strings.Contains(string(encoded),"secret@example.invalid"){
+  t.Fatal("pending collision report leaked envelope contents")
+ }
+ if !strings.Contains(r.Explain(),"pending_conflicting_ids=1"){
+  t.Fatal("human report omitted collision count")
+ }
+}
