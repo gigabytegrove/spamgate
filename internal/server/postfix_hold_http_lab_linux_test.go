@@ -58,7 +58,11 @@ func TestRealPostfixHoldReleaseThroughAdminHTTP(t *testing.T) {
 	t.Setenv("SPAMGATE_TEST_RECIPIENTS", recipient)
 	t.Setenv("SPAMGATE_POSTFIX_HOLD_INVENTORY", "true")
 	t.Setenv("SPAMGATE_POSTFIX_HOLD_ACTIONS", "true")
-	store, err := core.Open(t.TempDir())
+	dataDir := t.TempDir()
+	// The CI sudo account may inherit a group-writable umask. Native
+	// history and privileged-release locks require a private data root.
+	if err := os.Chmod(dataDir, 0700); err != nil { t.Fatal(err) }
+	store, err := core.Open(dataDir)
 	if err != nil { t.Fatal(err) }
 	if err := store.UpdateConfig(func(c *core.Config) error {
 		c.SetupComplete = true
