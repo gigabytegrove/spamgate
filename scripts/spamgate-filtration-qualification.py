@@ -23,9 +23,9 @@ MAX_CASES = 1000
 MAX_BYTES = 128 * 1024
 COHORTS = {"direct", "forwarded", "attachment", "internationalized", "bulk", "other"}
 ACTIONS = {"accept", "tag", "quarantine", "reject", "soft_reject"}
-CASE_ID = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}\\Z")
-DIGEST = re.compile(r"[0-9a-f]{64}\\Z")
-RUN_ID = re.compile(r"[0-9a-f]{32}\\Z")
+CASE_ID = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}\Z")
+DIGEST = re.compile(r"[0-9a-f]{64}\Z")
+RUN_ID = re.compile(r"[0-9a-f]{32}\Z")
 
 
 def reject_duplicate_json_keys(pairs):
