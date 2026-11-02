@@ -326,6 +326,11 @@ class QualificationTests(unittest.TestCase):
         result = self.call('plan', '--manifest', str(self.manifest))
         self.assertEqual(result.returncode, 2)
         self.assertIn('physical line limit', result.stderr)
+        self.manifest.write_bytes(b'{' + b'x' * (2 << 20))
+        result = self.call('plan', '--manifest', str(self.manifest))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('exceeds 64 KiB', result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
 
 
     def test_non_object_plan_and_event_types_refused_without_traceback(self):
