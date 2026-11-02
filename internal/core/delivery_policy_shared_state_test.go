@@ -60,7 +60,7 @@ func TestDeliveryPolicyConcurrentStoresDoNotLoseCounters(t *testing.T) {
 			defer wg.Done()
 			s := a
 			if i%2 == 1 { s = b }
-			action, _, err := s.EvaluateDeliveryPolicy(m, now.Add(time.Duration(i)*time.Millisecond))
+			action, _, err := s.EvaluateDeliveryPolicy(m, now)
 			actions <- action
 			if err != nil { errs <- err }
 		}(i)
