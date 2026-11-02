@@ -22,8 +22,15 @@ type deliveryPolicyState struct {
 }
 
 func (s *Store) loadDeliveryPolicy() error {
+	initialized, err := deliveryPolicyMarkerExists(s.dir)
+	if err != nil {
+		return fmt.Errorf("delivery policy initialization evidence: %w", err)
+	}
 	next, err := readDeliveryPolicyState(filepath.Join(s.dir, "delivery-policy.json"))
 	if errors.Is(err, os.ErrNotExist) {
+		if initialized {
+			return errors.New("delivery policy state disappeared; persistent initialization evidence exists")
+		}
 		s.policy = deliveryPolicyState{Greylist: map[string]time.Time{}, Rates: map[string][]time.Time{}}
 		s.policyFileSeen = false
 		return nil
@@ -65,11 +72,17 @@ func (s *Store) EvaluateDeliveryPolicy(m Message, now time.Time) (string, string
 		return "", "", fmt.Errorf("lock delivery policy: %w", err)
 	}
 	defer unlock()
+	// The permanent marker survives worker restarts and prevents a worker
+	// that never saw the counters from recreating deleted enforcement state.
+	initialized, err := deliveryPolicyMarkerExists(s.dir)
+	if err != nil {
+		return "", "", fmt.Errorf("inspect delivery policy initialization evidence: %w", err)
+	}
 	path := filepath.Join(s.dir, "delivery-policy.json")
 	persisted, err := readDeliveryPolicyState(path)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		if s.policyFileSeen {
+		if initialized || s.policyFileSeen {
 			return "", "", errors.New("delivery policy state disappeared; refusing to reset enforcement counters")
 		}
 	case err != nil:
@@ -137,6 +150,14 @@ func (s *Store) EvaluateDeliveryPolicy(m Message, now time.Time) (string, string
 	}
 	if err := validateDeliveryPolicyState(next); err != nil {
 		return "", "", err
+	}
+	// Publish and fsync the initialization marker BEFORE the first state
+	// write. If a crash or ENOSPC interrupts publication, the next worker
+	// refuses a missing state rather than silently granting fresh allowance.
+	if !initialized {
+		if err := createDeliveryPolicyMarker(s.dir); err != nil {
+			return "", "", fmt.Errorf("persist delivery policy initialization evidence: %w", err)
+		}
 	}
 	if err := atomicJSON(path, next); err != nil {
 		return "", "", err
