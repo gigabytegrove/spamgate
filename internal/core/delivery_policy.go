@@ -17,6 +17,9 @@ import (
 // recipient addresses are stored: triplets and source IPs are SHA-256 hashed.
 // This is a single-host implementation, not distributed shared reputation.
 type deliveryPolicyState struct {
+	// Initialized binds new-format persisted counters to the permanent marker.
+	// Older installations without this field remain readable for migration.
+	Initialized bool `json:"initialized,omitempty"`
 	Greylist map[string]time.Time   `json:"greylist"`
 	Rates    map[string][]time.Time `json:"rates"`
 }
@@ -37,6 +40,9 @@ func (s *Store) loadDeliveryPolicy() error {
 	}
 	if err != nil {
 		return err
+	}
+	if next.Initialized && !initialized {
+		return errors.New("delivery policy initialization marker disappeared; refusing witnessed counters")
 	}
 	s.policy = next
 	s.policyFileSeen = true
@@ -78,6 +84,9 @@ func (s *Store) EvaluateDeliveryPolicy(m Message, now time.Time) (string, string
 	if err != nil {
 		return "", "", fmt.Errorf("inspect delivery policy initialization evidence: %w", err)
 	}
+	if s.policy.Initialized && !initialized {
+		return "", "", errors.New("delivery policy initialization marker disappeared; refusing witnessed counters")
+	}
 	path := filepath.Join(s.dir, "delivery-policy.json")
 	persisted, err := readDeliveryPolicyState(path)
 	switch {
@@ -88,6 +97,9 @@ func (s *Store) EvaluateDeliveryPolicy(m Message, now time.Time) (string, string
 	case err != nil:
 		return "", "", fmt.Errorf("reload delivery policy state: %w", err)
 	default:
+		if persisted.Initialized && !initialized {
+			return "", "", errors.New("delivery policy initialization marker disappeared; refusing witnessed counters")
+		}
 		s.policy = persisted
 		s.policyFileSeen = true
 	}
@@ -95,6 +107,7 @@ func (s *Store) EvaluateDeliveryPolicy(m Message, now time.Time) (string, string
 	// fsync/rename must not silently consume a rate allowance or expire a
 	// greylist entry in memory while the on-disk policy remains unchanged.
 	next := deliveryPolicyState{
+		Initialized: true,
 		Greylist: make(map[string]time.Time, len(s.policy.Greylist)),
 		Rates:    make(map[string][]time.Time, len(s.policy.Rates)),
 	}

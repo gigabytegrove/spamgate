@@ -193,6 +193,12 @@ func Create(source, archive string) (err error) {
 		zw.Close()
 		return errors.New("delivery policy initialization evidence exists without its state; refusing incomplete backup")
 	}
+	if seenPolicy["delivery-policy.json"] {
+		if err := verifySourcePolicyWitness(source, seenPolicy[".delivery-policy.initialized"]); err != nil {
+			zw.Close()
+			return err
+		}
+	}
 	if len(manifest.Entries) == 0 {
 		zw.Close()
 		return errors.New("data directory contains no files")
@@ -327,6 +333,9 @@ func inspect(path string) (Manifest, *zip.ReadCloser, error) {
 		if n != entry.Bytes || hex.EncodeToString(hash.Sum(nil)) != entry.SHA256 {
 			return fail(fmt.Errorf("SHA-256 mismatch: %s", entry.Path))
 		}
+	}
+	if err := verifyArchivePolicyWitness(files); err != nil {
+		return fail(err)
 	}
 	return manifest, z, nil
 }
