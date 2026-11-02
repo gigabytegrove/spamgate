@@ -22,7 +22,7 @@ func TestHistoryJournalStrictDecoderRejectsAmbiguousEvidence(t *testing.T) {
 		"invalid utf8": append(append([]byte(nil), valid[:len(valid)-1]...), 0xff, '}'),
 	}
 	for name, raw := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
 			path := filepath.Join(dir, "events.jsonl")
 			if err := os.WriteFile(path, append(append([]byte(nil), raw...), '\n'), 0600); err != nil {
@@ -69,7 +69,7 @@ func TestAuditHistoryDetectsFullRecordDriftAndMalformedEvidence(t *testing.T) {
 		{"delivery", `"delivery":"queued"`, `"delivery":"relayed"`, "mismatch"},
 		{"action alias", `"action":"accept"`, `"action":"accept","Action":"reject"`, "corrupt"},
 	} {
-		t.Run(name, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			s, err := Open(dir)
 			if err != nil { t.Fatal(err) }
