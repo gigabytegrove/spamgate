@@ -168,7 +168,9 @@ func milterAddress(b []byte) string {
 		return ""
 	}
 	address := string(raw)
-	if net.ParseIP(address) == nil {
+	ip := net.ParseIP(address)
+	if ip == nil || (family == '4' && (ip.To4() == nil || strings.Contains(address, ":"))) ||
+		(family == '6' && !strings.Contains(address, ":")) {
 		return ""
 	}
 	return address
@@ -341,22 +343,53 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 			}
 			continue
 		case 'C':
+			// CONNECT is connection-scoped evidence. Never let an out-of-order
+			// callback replace the client address during an SMTP transaction.
+			if msg.mailSeen {
+				msg.poisoned = true
+				reply = 't'
+				break
+			}
 			clientIP = milterAddress(data)
 		case 'H':
+			if msg.mailSeen {
+				msg.poisoned = true
+				reply = 't'
+				break
+			}
 			helo = firstMilterString(data)
 		case 'M':
+			// A second MAIL callback without EOM/ABORT is not a new message.
+			// Resetting here previously discarded a poisoned or partial envelope.
+			if msg.mailSeen {
+				msg.poisoned = true
+				reply = 't'
+				break
+			}
 			reset()
 			msg.mailSeen = true
-			msg.sender = firstMilterString(data)
+			sender, parseErr := milterEnvelopeAddress(data, true)
+			if parseErr != nil {
+				msg.poisoned = true
+				reply = 't'
+				slog.Warn("milter rejected MAIL callback", "reason", "invalid_envelope")
+				break
+			}
+			msg.sender = sender
 		case 'R':
 			if !msg.mailSeen || msg.poisoned || msg.hasEOH {
 				msg.poisoned = true
 				reply = 't'
 				break
 			}
-			if v := firstMilterString(data); v != "" {
-				msg.recipients = append(msg.recipients, v)
+			recipient, parseErr := milterEnvelopeAddress(data, false)
+			if parseErr != nil {
+				msg.poisoned = true
+				reply = 't'
+				slog.Warn("milter rejected RCPT callback", "reason", "invalid_envelope")
+				break
 			}
+			msg.recipients = append(msg.recipients, recipient)
 		case 'L':
 			if !msg.mailSeen || msg.poisoned || msg.hasEOH {
 				msg.poisoned = true
