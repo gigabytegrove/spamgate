@@ -1,7 +1,7 @@
 # Native delivery-policy state integrity — 2026-11-02
 
 ## Production gates
-Issues #3 (SMTP enforcement), #6 (diagnostics), and #7 (tenant/policy safety). This is an incremental protection, not policy qualification.
+Issues #3 (SMTP enforcement), #6 (diagnostics), and #4 (tenant/recipient policy lifecycle). This is an incremental protection, not policy qualification.
 
 ## Failure mode
 The persisted greylist/rate-limit file previously used permissive JSON unmarshalling: duplicate or case-folded keys could silently override counters, and malformed or unexpectedly large data could be accepted or consume unbounded startup resources. The live evaluator also checked the 20,000-key capacity before adding a new triplet, permitting a 20,001st key to be committed.
