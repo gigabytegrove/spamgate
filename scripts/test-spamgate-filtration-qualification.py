@@ -328,5 +328,39 @@ class QualificationTests(unittest.TestCase):
         self.assertIn('physical line limit', result.stderr)
 
 
+    def test_non_object_plan_and_event_types_refused_without_traceback(self):
+        for plan in ('[]', '[{"event":"plan","cases":1}]', 'null',
+                     '{"event":"plan","cases":NaN}'):
+            with self.subTest(plan=plan):
+                events, report, observed, labels = self.synthetic_evidence()
+                report.write_text(plan + '\n' + '\n'.join(json.dumps(e) for e in events[1:]) + '\n')
+                result = self.call('reconcile', '--report', str(report),
+                                   '--observations', str(observed), '--labels-out', str(labels))
+                self.assertEqual(result.returncode, 2)
+                self.assertNotIn('Traceback', result.stderr)
+                self.assertFalse(labels.exists())
+        for bad in ([], {'event': []}, {'event': {}}, {'event': None}):
+            with self.subTest(event=bad):
+                events, report, observed, labels = self.synthetic_evidence()
+                events[1] = bad
+                result = self.reconcile_evidence(events, report, observed, labels)
+                self.assertEqual(result.returncode, 2)
+                self.assertNotIn('Traceback', result.stderr)
+                self.assertFalse(labels.exists())
+
+    def test_duplicate_message_digest_cannot_inflate_reconciled_corpus(self):
+        events, report, observed, labels = self.synthetic_evidence()
+        second = {**events[1], 'case_id': 'spam2', 'run_id': 'c' * 32,
+                  'label': 'spam'}
+        events[0]['cases'] = 2
+        events.extend([second, {**second, 'event': 'smtp_accepted'}])
+        observed.write_text(json.dumps({'run_id': 'a' * 32, 'action': 'accept'}) + '\n'
+                            + json.dumps({'run_id': 'c' * 32, 'action': 'reject'}) + '\n')
+        result = self.reconcile_evidence(events, report, observed, labels)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('duplicate case, run ID or message digest', result.stderr)
+        self.assertFalse(labels.exists())
+
+
 if __name__ == '__main__':
     unittest.main()
