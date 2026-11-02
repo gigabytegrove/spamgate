@@ -37,14 +37,20 @@ func RelayFromEnv() (*Relay, error) {
 		return nil, errors.New("SPAMGATE_RELAY_TLS must be required, implicit or none")
 	}
 	r := &Relay{Address: addr, Username: os.Getenv("SPAMGATE_RELAY_USERNAME"), Password: os.Getenv("SPAMGATE_RELAY_PASSWORD"), TLSMode: mode}
-	if r.Username != "" && mode == "none" {
-		return nil, errors.New("authentication over plaintext SMTP is forbidden")
+	if err := r.validateConfiguration(); err != nil {
+		return nil, err
 	}
 	return r, nil
 }
 func (r *Relay) Send(ctx context.Context, m core.Message, raw []byte) error {
 	if r == nil {
 		return errors.New("no relay configured")
+	}
+	// Validate at the last responsible boundary as well as environment
+	// construction: tests, integrations and future callers build Relay directly.
+	// Never open a socket before rejecting unsafe authentication settings.
+	if err := r.validateConfiguration(); err != nil {
+		return err
 	}
 	host, _, e := net.SplitHostPort(r.Address)
 	if e != nil {
