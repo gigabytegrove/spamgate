@@ -11,6 +11,7 @@ package backup
 func runtimeLockPath(path string) bool {
     switch path {
     case ".worker.lock",
+        ".delivery-policy.lock",
         ".events-journal.lock",
         ".postfix-hold-release.lock",
         "delivery-queue/.delivery-worker.lock",

@@ -12,6 +12,7 @@ import (
 
 var ephemeralLockPaths = []string{
     ".worker.lock",
+    ".delivery-policy.lock",
     ".events-journal.lock",
     ".postfix-hold-release.lock",
     "delivery-queue/.delivery-worker.lock",
@@ -39,6 +40,7 @@ func TestColdBackupOmitsRuntimeLocksButPreservesOriginals(t *testing.T) {
     if err := os.MkdirAll(filepath.Join(source, "delivery-queue"), 0700); err != nil { t.Fatal(err) }
     keep := map[string]string{
         "config.json": "{\"settings\":{}}",
+        ".delivery-policy.initialized": "spamgate-delivery-policy-v1\n",
         "delivery-queue/.pending-forensic-original": "never discard this evidence",
         "delivery-queue/0123456789abcdef0123456789abcdef.json": "retained mail original",
         "operations/monitor.json": "{\"healthy\":true}",
