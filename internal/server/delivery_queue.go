@@ -22,14 +22,15 @@ func (s *Server) deliveryQueue(w http.ResponseWriter, r *http.Request) {
 	jsonReply(w, 200, summary)
 }
 func (s *Server) retryDelivery(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.authorized(w, r, true, true); !ok {
+	identity, ok := s.authorized(w, r, true, true)
+ if !ok {
 		return
 	}
 	if s.Queue == nil {
 		fail(w, 409, "Durable delivery queue is disabled")
 		return
 	}
-	if err := s.Queue.Retry(r.PathValue("id")); err != nil {
+	if err := s.Queue.RetryWithAudit(r.PathValue("id"), identity.Name); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			fail(w, 404, "Queue entry not found")
 		} else {

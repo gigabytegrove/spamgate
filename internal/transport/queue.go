@@ -390,28 +390,10 @@ func (q *DeliveryQueue) Enqueue(m core.Message, raw []byte) error {
 	rec.IntegritySHA256 = spoolDigest(rec)
 	return q.put(rec)
 }
+// Retry is retained for programmatic compatibility; even legacy callers must
+// durably journal a conspicuously unattributed replay rather than bypass audit.
 func (q *DeliveryQueue) Retry(id string) error {
-	// Admin mutations must not race a different process that has already
-	// selected a job for SMTP delivery. Never wait for that relay to finish.
-	unlockWorker, lockErr := acquireDeliveryWorkerLock(context.Background(), q.dir)
-	if lockErr != nil { return fmt.Errorf("cannot retry while delivery is active: %w", lockErr) }
-	defer unlockWorker()
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	rec, e := q.get(id)
-	if e != nil {
-		return e
-	}
-	if rec.State == "discard_pending" { return errors.New("finish the audited discard before retrying") }
-	if rec.State == "delivering" || rec.State == "delivered" {
-		return errors.New("message is in flight or already delivered")
-	}
-	rec.State = "queued"
-	rec.NextAttempt = q.now()
-	rec.Updated = q.now()
-	rec.Attempts = 0
-	rec.LastError = ""
-	return q.put(rec)
+ return q.RetryWithAudit(id, "legacy API (unattributed)")
 }
 // Discard is retained only for source compatibility with older integrations.
 // Deleting an accepted SMTP original without a durable actor audit is unsafe.
