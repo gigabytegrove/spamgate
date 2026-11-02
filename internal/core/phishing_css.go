@@ -1,6 +1,10 @@
 package core
 
-import "strings"
+import (
+	"math"
+	"strconv"
+	"strings"
+)
 
 // phishingInlineCSSHidden evaluates only literal inline display/visibility
 // declarations. It never interprets CSS text inside strings, URLs, comments,
@@ -12,14 +16,15 @@ func phishingInlineCSSHidden(style string) bool {
 		important bool
 		set       bool
 	}
-	var display, visibility declaration
+	var display, visibility, opacity, contentVisibility declaration
 	for _, item := range phishingCSSDeclarations(style) {
 		colon := strings.IndexByte(item, ':')
 		if colon < 0 {
 			continue
 		}
 		property := strings.ToLower(strings.TrimSpace(item[:colon]))
-		if property != "display" && property != "visibility" {
+		if property != "display" && property != "visibility" &&
+			property != "opacity" && property != "content-visibility" {
 			continue
 		}
 		value, important := phishingCSSValue(item[colon+1:])
@@ -27,14 +32,23 @@ func phishingInlineCSSHidden(style string) bool {
 			continue
 		}
 		current := &display
-		if property == "visibility" {
+		switch property {
+		case "visibility":
 			current = &visibility
+		case "opacity":
+			current = &opacity
+		case "content-visibility":
+			current = &contentVisibility
 		}
 		if !current.set || !current.important || important {
 			*current = declaration{value: value, important: important, set: true}
 		}
 	}
-	return display.value == "none" || visibility.value == "hidden" || visibility.value == "collapse"
+	alpha, validAlpha := phishingCSSOpacity(opacity.value)
+	return display.value == "none" ||
+		visibility.value == "hidden" || visibility.value == "collapse" ||
+		contentVisibility.value == "hidden" ||
+		(validAlpha && alpha == 0)
 }
 
 // Split on declaration semicolons, not semicolons in quoted strings or
@@ -117,6 +131,17 @@ func phishingCSSValue(input string) (string, bool) {
 }
 
 func phishingCSSKnownValue(property, value string) bool {
+	if property == "opacity" {
+		_, ok := phishingCSSOpacity(value)
+		return ok
+	}
+	if property == "content-visibility" {
+		switch value {
+		case "hidden", "visible", "auto", "initial", "inherit", "unset", "revert":
+			return true
+		}
+		return false
+	}
 	if property == "visibility" {
 		switch value {
 		case "visible", "hidden", "collapse", "initial", "inherit", "unset", "revert":
@@ -129,4 +154,30 @@ func phishingCSSKnownValue(property, value string) bool {
 		return true
 	}
 	return false
+}
+
+// phishingCSSOpacity accepts only literal CSS decimal numbers/percentages.
+// Unknown expressions (var(), calc(), etc.) are not assumed to hide text.
+// A zero-opacity element and its descendants cannot be made visible by
+// overriding opacity on a child, unlike visibility or font-size inheritance.
+func phishingCSSOpacity(value string) (float64, bool) {
+	if value == "" {
+		return 0, false
+	}
+	if strings.HasSuffix(value, "%") {
+		value = strings.TrimSpace(strings.TrimSuffix(value, "%"))
+	}
+	if value == "" {
+		return 0, false
+	}
+	for _, c := range value {
+		if !strings.ContainsRune("0123456789.+-eE", c) {
+			return 0, false
+		}
+	}
+	n, err := strconv.ParseFloat(value, 64)
+	if err != nil || math.IsNaN(n) || math.IsInf(n, 0) {
+		return 0, false
+	}
+	return n, true
 }

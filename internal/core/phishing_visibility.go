@@ -92,7 +92,13 @@ func phishingRenderedHTML(input string, coverage *mimeCoverage) string {
 		stack = append(stack, frame{name: name, hidden: nextHidden})
 		hidden = nextHidden
 		// Raw-text elements are not parsed as markup by HTML renderers.
-		if name == "script" || name == "style" || name == "textarea" || name == "title" {
+		if name == "plaintext" {
+			// HTML plaintext consumes the rest of the document as literal
+			// text. Angle brackets below are not clickable anchor tags.
+			break
+		}
+		if name == "script" || name == "style" || name == "textarea" || name == "title" ||
+			name == "xmp" || name == "iframe" || name == "noembed" || name == "noframes" {
 			lower := lowerInput[i:]
 			needle := "</" + name
 			position := 0
@@ -162,7 +168,8 @@ func phishingTagParts(tag string) (name string, closing bool, attrs string, vali
 
 func phishingNonRenderedElement(name string) bool {
 	switch name {
-	case "script", "style", "template", "textarea", "title", "head", "noscript", "svg", "math":
+	case "script", "style", "template", "textarea", "title", "head", "noscript", "svg", "math",
+		"xmp", "iframe", "noembed", "noframes", "plaintext":
 		return true
 	}
 	return false
