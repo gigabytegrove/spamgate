@@ -8,7 +8,7 @@ Previously, the Milter callback handler accepted a valid Postfix queue-ID macro 
 
 The native Milter now retains one unambiguous queue ID per MAIL FROM transaction. Repeated identical values are allowed; conflicting values poison that transaction and cause an SMTP temporary-failure request at end-of-message, without saving an incorrect scan-to-queue association. The next MAIL FROM starts with fresh queue evidence. Macro names must be exactly `i` or `{i}`.
 
-The client-IP callback now requires a single, complete, NUL-terminated IP address with no trailing data or embedded terminator; malformed address evidence is not used as the client's IP. Header callback names now reject RFC 5322 forbidden spaces and colon characters as well as control characters. Existing valid IPv4/IPv6 and folded-header behavior is preserved.
+The client-IP callback now requires a single, complete, NUL-terminated IP address with no trailing data or embedded terminator; malformed address evidence is not used as the client's IP. Existing RFC 5322 header field-name rejection (spaces, colon, and control characters) is explicitly regression-covered, but was not newly implemented in this pass. Existing valid IPv4/IPv6 and folded-header behavior is preserved.
 
 ## Regression execution
 
