@@ -49,6 +49,11 @@ func decodePolicyWitness(r io.Reader) (bool, error) {
 }
 
 func verifySourcePolicyWitness(source string, hasMarker bool) error {
+	if hasMarker {
+		if err := verifySourcePolicyMarker(source); err != nil {
+			return err
+		}
+	}
 	path := filepath.Join(source, "delivery-policy.json")
 	before, err := os.Lstat(path)
 	if err != nil { return err }
@@ -68,6 +73,9 @@ func verifySourcePolicyWitness(source string, hasMarker bool) error {
 }
 
 func verifyArchivePolicyWitness(files map[string]*zip.File) error {
+	if err := verifyArchivePolicyMarker(files); err != nil {
+		return err
+	}
 	state, exists := files["delivery-policy.json"]
 	if !exists { return nil }
 	r, err := state.Open()
