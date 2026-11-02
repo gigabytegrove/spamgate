@@ -22,7 +22,7 @@ func TestHistoryJournalStrictDecoderRejectsAmbiguousEvidence(t *testing.T) {
 		"invalid utf8": append(append([]byte(nil), valid[:len(valid)-1]...), 0xff, '}'),
 	}
 	for name, raw := range cases {
-		t.Run(name, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			path := filepath.Join(dir, "events.jsonl")
 			if err := os.WriteFile(path, append(append([]byte(nil), raw...), '\n'), 0600); err != nil {
@@ -63,7 +63,7 @@ func TestHistoryReconciliationRefusesAmbiguousAppendWithoutMutation(t *testing.T
 }
 
 func TestAuditHistoryDetectsFullRecordDriftAndMalformedEvidence(t *testing.T) {
-	for name, from, to, want := range []struct{ name, from, to, want string }{
+	for _, tc := range []struct{ name, from, to, want string }{
 		{"sender", `"sender":"original@example.invalid"`, `"sender":"forged@example.invalid"`, "mismatch"},
 		{"recipient", `"recipients":["intended@example.invalid"]`, `"recipients":["other@example.invalid"]`, "mismatch"},
 		{"delivery", `"delivery":"queued"`, `"delivery":"relayed"`, "mismatch"},
@@ -78,12 +78,12 @@ func TestAuditHistoryDetectsFullRecordDriftAndMalformedEvidence(t *testing.T) {
 			path := filepath.Join(dir, "events.jsonl")
 			before, err := os.ReadFile(path)
 			if err != nil { t.Fatal(err) }
-			changed := bytes.Replace(before, []byte(from), []byte(to), 1)
-			if bytes.Equal(changed, before) { t.Fatalf("fixture did not modify %s", name) }
+			changed := bytes.Replace(before, []byte(tc.from), []byte(tc.to), 1)
+			if bytes.Equal(changed, before) { t.Fatalf("fixture did not modify %s", tc.name) }
 			if err := os.WriteFile(path, changed, 0600); err != nil { t.Fatal(err) }
 			result, err := s.AuditHistory(context.Background())
 			if err != nil { t.Fatal(err) }
-			if result.Status != want { t.Fatalf("unexpected audit result: %+v", result) }
+			if result.Status != tc.want { t.Fatalf("unexpected audit result: %+v", result) }
 			if strings.Contains(result.Detail, "original@") || strings.Contains(result.Detail, "intended@") || strings.Contains(result.Detail, "private subject") {
 				t.Fatal("audit leaked private message data")
 			}
