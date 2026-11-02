@@ -545,9 +545,14 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 			case "reject":
 				scanned.MTAAction = "smtp_reject_requested"
 				scanned.MTAActionNote = "Requested Postfix to reject the message in SMTP. Confirm using Postfix logs."
-			default:
+			case "accept":
 				scanned.MTAAction = "continue_requested"
 				scanned.MTAActionNote = "Requested Postfix to continue delivery; SpamGate has no downstream delivery receipt."
+			default:
+				// An unrecognized action must not turn into SMTP acceptance.
+				// Persist the attempted safe disposition for the operator timeline.
+				scanned.MTAAction = "smtp_temporary_failure_requested"
+				scanned.MTAActionNote = "Unrecognized scanner action; requested SMTP temporary failure rather than delivery."
 			}
 			scanned.MTAActionState = "requested"
 			if err = m.Store.Save(scanned); err != nil {
@@ -625,8 +630,12 @@ func (m *Milter) handle(ctx context.Context, conn net.Conn) error {
 					slog.Warn("milter could not enforce message verdict", "reason", "add_header_action_not_negotiated", "scan_id", scanned.ID)
 					reply = 't'
 				}
-			default:
+			case "accept":
 				reply = 'c'
+			default:
+				// Unknown forced actions are not authorization to deliver.
+				slog.Error("milter refused unrecognized scanner action", "scan_id", scanned.ID, "action", scanned.Action)
+				reply = 't'
 			}
 			reset()
 		default:
