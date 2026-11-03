@@ -153,6 +153,9 @@ func Audit(dir string) (Report,error) {
  // an interrupted fsync/rename. Multiple such records with the same ID
  // must be reported before any operator considers manual recovery.
  pendingByID:=make(map[string]map[string]struct{})
+ // Count each verified pending-to-final identity only once, even when
+ // interrupted writes left multiple identical pending files behind.
+ reconciledIDs:=make(map[string]struct{})
  info,err:=os.Lstat(dir)
  if err!=nil{return out,err}
  if !info.IsDir()||info.Mode()&os.ModeSymlink!=0||info.Mode().Perm()&0022!=0{
@@ -192,7 +195,8 @@ func Audit(dir string) (Report,error) {
    }
    // Misnamed records still receive lifecycle and digest diagnostics,
    // but must not contribute to trusted delivery state totals.
-   if published&&rec.ID==strings.TrimSuffix(name,".json"){out.States[rec.State]++}
+   if published&&rec.ID==strings.TrimSuffix(name,".json")&&
+    rec.IntegritySHA256!=""&&rec.StateSHA256!="" {out.States[rec.State]++}
    if rec.IntegritySHA256==""||rec.StateSHA256==""{
     out.LegacyUnsigned++
     out.add("legacy_unsigned",name,"one or both integrity digests are absent; provenance cannot be verified")
@@ -244,6 +248,11 @@ func Audit(dir string) (Report,error) {
      out.add("pending_final_unsigned",name,"matching unpublished and published originals lack complete integrity evidence; reconciliation unverified; do not replay")
      continue
     }
+    if _,already:=reconciledIDs[rec.ID];already {
+     out.add("pending_final_duplicate",name,"another unpublished record already reconciled to this published queue ID; do not replay")
+     continue
+    }
+    reconciledIDs[rec.ID]=struct{}{}
     out.PendingWithFinal++
     out.add("pending_with_final",name,"signed unpublished original exists alongside matching signed published record; do not replay")
    }
