@@ -184,7 +184,9 @@ func phishingVoidElement(name string) bool {
 	return false
 }
 
-// Only inline attributes with unambiguous hidden semantics are recognized.
+// Only attributes that suppress visual or pointer rendering are recognized.
+// aria-hidden affects accessibility-tree exposure, not visual rendering;
+// an aria-hidden anchor can still be clicked and must remain inspectable.
 // A hidden="false" attribute still hides the element under HTML semantics.
 func phishingHiddenAttributes(attrs string) bool {
 	for i := 0; i < len(attrs); {
@@ -231,10 +233,6 @@ func phishingHiddenAttributes(attrs string) bool {
 		switch name {
 		case "hidden", "inert":
 			return true
-		case "aria-hidden":
-			if strings.EqualFold(strings.TrimSpace(html.UnescapeString(value)), "true") {
-				return true
-			}
 		case "style":
 			if phishingInlineCSSHidden(html.UnescapeString(value)) {
 				return true
