@@ -40,7 +40,7 @@ func TestAuditRejectsNestedDuplicateEvidence(t *testing.T) {
  }
  for _, input := range cases {
   t.Run(input, func(t *testing.T) {
-   got, err := analyze(strings.NewReader(input+"\\n"))
+   got, err := analyze(strings.NewReader(input+"\n"))
    if err != nil { t.Fatal(err) }
    if got.Malformed != 1 || got.Total != 0 { t.Fatalf("nested ambiguous evidence counted: %+v", got) }
   })
@@ -48,10 +48,31 @@ func TestAuditRejectsNestedDuplicateEvidence(t *testing.T) {
 }
 
 func TestAuditAcceptsDistinctNestedEvidence(t *testing.T) {
- input := `{"connector":"milter","action":"quarantine","findings":[{"rule":"a","detail":{"score":3}},{"rule":"b","detail":{"score":4}}]}`+"\\n"
+ input := `{"connector":"milter","action":"quarantine","findings":[{"rule":"a","detail":{"score":3}},{"rule":"b","detail":{"score":4}}]}`+"\n"
  got, err := analyze(strings.NewReader(input))
  if err != nil { t.Fatal(err) }
  if got.Malformed != 0 || got.Total != 1 || got.WithFindings != 1 || got.UnconfirmedQuarantine != 1 {
   t.Fatalf("valid nested evidence rejected: %+v", got)
  }
+}
+
+func TestAuditRejectsCaseAmbiguousEventFields(t *testing.T) {
+ cases := []string{
+  `{"connector":"milter","action":"accept","ACTION":"reject"}`,
+  `{"connector":"milter","Connector":"smtp","action":"accept"}`,
+  `{"connector":"milter","action":"accept","\\u0041ction":"reject"}`,
+ }
+ for _, input := range cases {
+  got, err := analyze(strings.NewReader(input+"\n"))
+  if err != nil { t.Fatal(err) }
+  if got.Malformed != 1 || got.Total != 0 { t.Fatalf("ambiguous fields counted: %+v",got) }
+ }
+}
+
+func TestAuditRejectsInvalidUTF8Evidence(t *testing.T) {
+ input := append([]byte(`{"connector":"milter","action":"accept","note":"`), 0xff)
+ input = append(input, []byte(`"}`+"\n")...)
+ got, err := analyze(strings.NewReader(string(input)))
+ if err != nil { t.Fatal(err) }
+ if got.Malformed != 1 || got.Total != 0 { t.Fatalf("invalid UTF-8 counted: %+v",got) }
 }
