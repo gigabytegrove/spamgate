@@ -199,3 +199,44 @@ func TestPendingSameIDButDifferentSignedOriginalIsNotReconciled(t *testing.T) {
   t.Fatalf("matching signed original not reconciled: %+v %v",report,err)
  }
 }
+
+
+func TestPendingUnsignedRecordsCannotClaimVerifiedFinal(t *testing.T) {
+ for _,tc:=range []struct{
+  name string
+  unsignedPending bool
+  unsignedFinal bool
+ }{
+  {"unsigned_pending",true,false},
+  {"unsigned_final",false,true},
+  {"both_unsigned",true,true},
+ } {
+  t.Run(tc.name,func(t *testing.T){
+   dir:=privateDir(t)
+   pending:=fixture(idA)
+   final:=fixture(idA)
+   if tc.unsignedPending {pending.IntegritySHA256="";pending.StateSHA256=""}
+   if tc.unsignedFinal {final.IntegritySHA256="";final.StateSHA256=""}
+   write(t,dir,".pending-interrupted",pending)
+   write(t,dir,idA+".json",final)
+   before,err:=os.ReadFile(filepath.Join(dir,idA+".json"))
+   if err!=nil{t.Fatal(err)}
+   report,err:=Audit(dir)
+   if err!=nil{t.Fatal(err)}
+   if report.PendingWithFinal!=0||!hasCode(report,"pending_final_unsigned")||
+    hasCode(report,"pending_with_final")||!report.HasFindings(){
+    t.Fatalf("unsigned original counted as verified: %+v",report)
+   }
+   after,err:=os.ReadFile(filepath.Join(dir,idA+".json"))
+   if err!=nil||string(before)!=string(after){t.Fatal("audit changed published record")}
+  })
+ }
+ // Fully signed matching originals still reconcile.
+ dir:=privateDir(t)
+ write(t,dir,".pending-interrupted",fixture(idA))
+ write(t,dir,idA+".json",fixture(idA))
+ report,err:=Audit(dir)
+ if err!=nil||report.PendingWithFinal!=1||hasCode(report,"pending_final_unsigned"){
+  t.Fatalf("signed positive control failed: %+v %v",report,err)
+ }
+}
