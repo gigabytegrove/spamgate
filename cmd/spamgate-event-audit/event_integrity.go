@@ -19,15 +19,14 @@ func decodeAuditEvent(line []byte, out *event) error {
  tok, err := dec.Token()
  if err != nil { return err }
  if tok != json.Delim('{') { return errors.New("event must be a JSON object") }
- seen := make(map[string]struct{})
+ seen := make([]string, 0, 8)
  for dec.More() {
   keyToken, err := dec.Token()
   if err != nil { return err }
   key, ok := keyToken.(string)
   if !ok { return errors.New("event key is not a string") }
-  canonical := strings.ToLower(key)
-  if _, exists := seen[canonical]; exists { return fmt.Errorf("ambiguous event key %q", key) }
-  seen[canonical] = struct{}{}
+  for _, prior := range seen { if strings.EqualFold(prior, key) { return fmt.Errorf("ambiguous event key %q", key) } }
+  seen = append(seen, key)
   if err := validateAuditValue(dec, 1); err != nil { return fmt.Errorf("field %q: %w", key, err) }
  }
  if _, err := dec.Token(); err != nil { return err }
@@ -56,15 +55,14 @@ func validateAuditValue(dec *json.Decoder, depth int) error {
  if !ok { return nil }
  switch delim {
  case '{':
-  seen := make(map[string]struct{})
+  seen := make([]string, 0, 8)
   for dec.More() {
    keyToken, err := dec.Token()
    if err != nil { return err }
    key, ok := keyToken.(string)
    if !ok { return errors.New("object key is not a string") }
-   canonical := strings.ToLower(key)
-   if _, exists := seen[canonical]; exists { return fmt.Errorf("ambiguous nested JSON key %q", key) }
-   seen[canonical] = struct{}{}
+   for _, prior := range seen { if strings.EqualFold(prior, key) { return fmt.Errorf("ambiguous nested JSON key %q", key) } }
+   seen = append(seen, key)
    if err := validateAuditValue(dec, depth+1); err != nil { return err }
   }
   end, err := dec.Token()
