@@ -38,7 +38,7 @@ func analyze(r io.Reader) (report,error) {
  for scan.Scan() {
   line:=strings.TrimSpace(scan.Text()); if line=="" {continue}
   var e event
-  if err:=json.Unmarshal([]byte(line),&e); err!=nil {out.Malformed++;continue}
+  if err:=decodeAuditEvent([]byte(line),&e); err!=nil {out.Malformed++;continue}
   if e.Connector!="milter" {continue}
   out.Total++
   action:=strings.ToLower(strings.TrimSpace(e.Action))
