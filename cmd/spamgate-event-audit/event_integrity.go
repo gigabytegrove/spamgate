@@ -57,7 +57,7 @@ func validateAuditValue(dec *json.Decoder, depth int) error {
  if !ok { return nil }
  switch delim {
  case '{':
-  seen := make([]string, 0, 8)
+  seen := make(map[string]struct{}, 8)
   for dec.More() {
    keyToken, err := dec.Token()
    if err != nil { return err }
