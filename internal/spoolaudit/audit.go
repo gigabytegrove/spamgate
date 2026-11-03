@@ -193,15 +193,15 @@ func Audit(dir string) (Report,error) {
    if published&&rec.ID!=strings.TrimSuffix(name,".json"){
     out.add("id_mismatch",name,"record ID does not match its published filename")
    }
-   // Misnamed records still receive lifecycle and digest diagnostics,
-   // but must not contribute to trusted delivery state totals.
+   // Signed records with impossible lifecycles are not trusted states.
+   anomalies:=lifecycleAnomalies(rec)
    if published&&rec.ID==strings.TrimSuffix(name,".json")&&
-    rec.IntegritySHA256!=""&&rec.StateSHA256!="" {out.States[rec.State]++}
+    rec.IntegritySHA256!=""&&rec.StateSHA256!=""&&len(anomalies)==0 {out.States[rec.State]++}
    if rec.IntegritySHA256==""||rec.StateSHA256==""{
     out.LegacyUnsigned++
     out.add("legacy_unsigned",name,"one or both integrity digests are absent; provenance cannot be verified")
    }
-   for _,anomaly:=range lifecycleAnomalies(rec){
+   for _,anomaly:=range anomalies{
     out.LifecycleAnomalies++
     out.add(anomaly.code,name,anomaly.detail)
    }
@@ -246,6 +246,10 @@ func Audit(dir string) (Report,error) {
     if rec.IntegritySHA256==""||rec.StateSHA256==""||
      final.IntegritySHA256==""||final.StateSHA256=="" {
      out.add("pending_final_unsigned",name,"matching unpublished and published originals lack complete integrity evidence; reconciliation unverified; do not replay")
+     continue
+    }
+    if len(anomalies)>0||len(lifecycleAnomalies(final))>0 {
+     out.add("pending_final_lifecycle_invalid",name,"matching records have lifecycle anomalies; reconciliation unverified; do not replay")
      continue
     }
     if _,already:=reconciledIDs[rec.ID];already {
