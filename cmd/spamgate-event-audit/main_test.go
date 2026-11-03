@@ -20,7 +20,7 @@ func TestAnalyzeMilterEvents(t *testing.T) {
  }
 }
 func TestAnalyzeOversizedEventRecovers(t *testing.T) {
- input := strings.Repeat("x", (2<<20)+10) + "\\n" + `{"connector":"milter","action":"accept","score":0}` + "\\n"
+ input := strings.Repeat("x", (2<<20)+10) + "\n" + `{"connector":"milter","action":"accept","score":0}` + "\n"
  got,err:=analyze(strings.NewReader(input))
  if err!=nil || got.Malformed!=1 || got.Total!=1 || got.Actions["accept"]!=1 {
   t.Fatalf("oversized record must be counted and later valid evidence retained: %+v %v",got,err)
