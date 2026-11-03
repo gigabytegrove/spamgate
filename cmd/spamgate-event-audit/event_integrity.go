@@ -28,7 +28,7 @@ func decodeAuditEvent(line []byte, out *event) error {
   if !ok { return errors.New("event key is not a string") }
   folded := auditFoldKey(key)
   if _, exists := seen[folded]; exists { return fmt.Errorf("ambiguous event key %q", key) }
-  seen[folded] = struct{}
+  seen[folded] = struct{}{}
   if err := validateAuditValue(dec, 1); err != nil { return fmt.Errorf("field %q: %w", key, err) }
  }
  if _, err := dec.Token(); err != nil { return err }
@@ -65,7 +65,7 @@ func validateAuditValue(dec *json.Decoder, depth int) error {
    if !ok { return errors.New("object key is not a string") }
    folded := auditFoldKey(key)
    if _, exists := seen[folded]; exists { return fmt.Errorf("ambiguous nested JSON key %q", key) }
-   seen[folded] = struct{}
+   seen[folded] = struct{}{}
    if err := validateAuditValue(dec, depth+1); err != nil { return err }
   }
   end, err := dec.Token()
