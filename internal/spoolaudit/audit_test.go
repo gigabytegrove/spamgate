@@ -296,3 +296,33 @@ func TestUnsignedPublishedRecordDoesNotInflateTrustedStates(t *testing.T) {
   t.Fatalf("unsigned published record counted as verified state: %+v",report)
  }
 }
+
+func TestInvalidSignedLifecycleExcludedFromTrustedEvidence(t *testing.T) {
+ dir:=privateDir(t)
+ invalid:=fixture(idA)
+ invalid.State="delivered"
+ invalid.DeliveredAt=invalid.Updated
+ invalid.StateSHA256=stateDigest(invalid)
+ write(t,dir,idA+".json",invalid)
+ write(t,dir,".pending-interrupted",invalid)
+ write(t,dir,idB+".json",fixture(idB))
+ before,err:=os.ReadFile(filepath.Join(dir,idA+".json"))
+ if err!=nil{t.Fatal(err)}
+ report,err:=Audit(dir)
+ if err!=nil||report.States["delivered"]!=0||report.States["queued"]!=1||
+  report.PendingWithFinal!=0||!hasCode(report,"unproven_delivery_state")||
+  !hasCode(report,"pending_final_lifecycle_invalid"){
+  t.Fatalf("invalid signed lifecycle trusted: %+v %v",report,err)
+ }
+ after,err:=os.ReadFile(filepath.Join(dir,idA+".json"))
+ if err!=nil||string(before)!=string(after){t.Fatal("audit modified original")}
+ invalid.Attempts=1
+ invalid.StateSHA256=stateDigest(invalid)
+ write(t,dir,idA+".json",invalid)
+ write(t,dir,".pending-interrupted",invalid)
+ report,err=Audit(dir)
+ if err!=nil||report.States["delivered"]!=1||report.PendingWithFinal!=1||
+  hasCode(report,"pending_final_lifecycle_invalid"){
+  t.Fatalf("valid signed lifecycle rejected: %+v %v",report,err)
+ }
+}
