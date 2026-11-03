@@ -240,3 +240,26 @@ func TestPendingUnsignedRecordsCannotClaimVerifiedFinal(t *testing.T) {
   t.Fatalf("signed positive control failed: %+v %v",report,err)
  }
 }
+
+func TestMisnamedSignedPublishedRecordExcludedFromStateTotals(t *testing.T) {
+ dir:=privateDir(t)
+ // The record is correctly signed but its filename points at another ID.
+ // It must not inflate delivered or queued counts.
+ misplaced:=fixture(idB)
+ misplaced.State="delivered"
+ misplaced.DeliveredAt=misplaced.Updated
+ misplaced.StateSHA256=stateDigest(misplaced)
+ write(t,dir,idA+".json",misplaced)
+ write(t,dir,idB+".json",fixture(idB))
+ before,err:=os.ReadFile(filepath.Join(dir,idA+".json"))
+ if err!=nil{t.Fatal(err)}
+ report,err:=Audit(dir)
+ if err!=nil{t.Fatal(err)}
+ if report.Published!=2||report.States["delivered"]!=0||
+  report.States["queued"]!=1||!hasCode(report,"id_mismatch")||
+  !report.HasFindings(){
+  t.Fatalf("misnamed published record counted in state totals: %+v",report)
+ }
+ after,err:=os.ReadFile(filepath.Join(dir,idA+".json"))
+ if err!=nil||string(before)!=string(after){t.Fatal("read-only audit modified record")}
+}
