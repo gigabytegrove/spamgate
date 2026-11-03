@@ -62,8 +62,9 @@ func validateAuditValue(dec *json.Decoder, depth int) error {
    if err != nil { return err }
    key, ok := keyToken.(string)
    if !ok { return errors.New("object key is not a string") }
-   if _, exists := seen[key]; exists { return fmt.Errorf("duplicate nested JSON key %q", key) }
-   seen[key] = struct{}{}
+   canonical := strings.ToLower(key)
+   if _, exists := seen[canonical]; exists { return fmt.Errorf("ambiguous nested JSON key %q", key) }
+   seen[canonical] = struct{}{}
    if err := validateAuditValue(dec, depth+1); err != nil { return err }
   }
   end, err := dec.Token()
