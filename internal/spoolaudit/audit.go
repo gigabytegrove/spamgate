@@ -235,8 +235,15 @@ func Audit(dir string) (Report,error) {
      out.add("pending_conflict",name,"published counterpart has a different immutable envelope/original; not reconciled")
      continue
     }
+    // Legacy records without both integrity digests cannot establish a
+    // verified reconciliation. Matching bytes alone are not provenance.
+    if rec.IntegritySHA256==""||rec.StateSHA256==""||
+     final.IntegritySHA256==""||final.StateSHA256=="" {
+     out.add("pending_final_unsigned",name,"matching unpublished and published originals lack complete integrity evidence; reconciliation unverified; do not replay")
+     continue
+    }
     out.PendingWithFinal++
-    out.add("pending_with_final",name,"unpublished state copy exists alongside a published record; do not replay")
+    out.add("pending_with_final",name,"signed unpublished original exists alongside matching signed published record; do not replay")
    }
   }
   if errors.Is(err,io.EOF){break}
