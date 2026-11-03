@@ -76,3 +76,15 @@ func TestAuditRejectsInvalidUTF8Evidence(t *testing.T) {
  if err != nil { t.Fatal(err) }
  if got.Malformed != 1 || got.Total != 0 { t.Fatalf("invalid UTF-8 counted: %+v",got) }
 }
+
+func TestAuditRejectsNestedCaseAliases(t *testing.T) {
+ cases := []string{
+  `{"connector":"milter","findings":[{"rule":"a","RULE":"b"}]}`,
+  `{"connector":"milter","metadata":{"Status":"held","status":"released"}}`,
+ }
+ for _, input := range cases {
+  got, err := analyze(strings.NewReader(input+"\n"))
+  if err != nil { t.Fatal(err) }
+  if got.Malformed != 1 || got.Total != 0 { t.Fatalf("nested case aliases counted: %+v", got) }
+ }
+}
