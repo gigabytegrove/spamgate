@@ -169,6 +169,7 @@ func phishingTagParts(tag string) (name string, closing bool, attrs string, vali
 func phishingNonRenderedElement(name string) bool {
 	switch name {
 	case "script", "style", "template", "textarea", "title", "head", "noscript", "svg", "math",
+		"select", "datalist", "option", "optgroup",
 		"xmp", "iframe", "noembed", "noframes", "plaintext":
 		return true
 	}
