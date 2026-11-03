@@ -179,5 +179,19 @@ func phishingCSSOpacity(value string) (float64, bool) {
 	if err != nil || math.IsNaN(n) || math.IsInf(n, 0) {
 		return 0, false
 	}
+	// Extremely small nonzero literals can underflow float64 to zero.
+	// Treating those as opacity:0 would invent an invisible element and
+	// suppress a genuine phishing link. Keep the claim inspectable instead.
+	if n == 0 {
+		mantissa := value
+		if exponent := strings.IndexAny(mantissa, "eE"); exponent >= 0 {
+			mantissa = mantissa[:exponent]
+		}
+		for _, digit := range mantissa {
+			if digit >= '1' && digit <= '9' {
+				return 0, false
+			}
+		}
+	}
 	return n, true
 }
