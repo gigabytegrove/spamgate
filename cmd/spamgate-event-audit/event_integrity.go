@@ -6,6 +6,7 @@ import (
  "errors"
  "fmt"
  "io"
+ "unicode"
  "strings"
  "unicode/utf8"
 )
@@ -19,14 +20,15 @@ func decodeAuditEvent(line []byte, out *event) error {
  tok, err := dec.Token()
  if err != nil { return err }
  if tok != json.Delim('{') { return errors.New("event must be a JSON object") }
- seen := make([]string, 0, 8)
+ seen := make(map[string]struct{}, 8)
  for dec.More() {
   keyToken, err := dec.Token()
   if err != nil { return err }
   key, ok := keyToken.(string)
   if !ok { return errors.New("event key is not a string") }
-  for _, prior := range seen { if strings.EqualFold(prior, key) { return fmt.Errorf("ambiguous event key %q", key) } }
-  seen = append(seen, key)
+  folded := auditFoldKey(key)
+  if _, exists := seen[folded]; exists { return fmt.Errorf("ambiguous event key %q", key) }
+  seen[folded] = struct{}
   if err := validateAuditValue(dec, 1); err != nil { return fmt.Errorf("field %q: %w", key, err) }
  }
  if _, err := dec.Token(); err != nil { return err }
@@ -61,8 +63,9 @@ func validateAuditValue(dec *json.Decoder, depth int) error {
    if err != nil { return err }
    key, ok := keyToken.(string)
    if !ok { return errors.New("object key is not a string") }
-   for _, prior := range seen { if strings.EqualFold(prior, key) { return fmt.Errorf("ambiguous nested JSON key %q", key) } }
-   seen = append(seen, key)
+   folded := auditFoldKey(key)
+   if _, exists := seen[folded]; exists { return fmt.Errorf("ambiguous nested JSON key %q", key) }
+   seen[folded] = struct{}
    if err := validateAuditValue(dec, depth+1); err != nil { return err }
   }
   end, err := dec.Token()
@@ -79,4 +82,21 @@ func validateAuditValue(dec *json.Decoder, depth int) error {
   return errors.New("unexpected JSON delimiter")
  }
  return nil
+}
+
+// auditFoldKey maps every Unicode simple-fold equivalence class to its
+// smallest code point. Unlike lowercasing, this preserves EqualFold semantics
+// for Kelvin signs, long-s and other non-ASCII aliases while avoiding
+// quadratic comparisons on large attacker-controlled JSON objects.
+func auditFoldKey(key string) string {
+ var b strings.Builder
+ b.Grow(len(key))
+ for _, r := range key {
+  canonical := r
+  for next := unicode.SimpleFold(r); next != r; next = unicode.SimpleFold(next) {
+   if next < canonical { canonical = next }
+  }
+  b.WriteRune(canonical)
+ }
+ return b.String()
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+ "fmt"
  "strings"
  "testing"
 )
@@ -93,7 +94,7 @@ func TestAuditRejectsUnicodeSimpleFoldAliases(t *testing.T) {
  cases := []string{
   `{"connector":"milter","action":"accept","ACTION":"reject"}`,
   `{"connector":"milter","metadata":{"K":"safe","K":"unsafe"}}`,
-  `{"connector":"milter","metadata":{"K":"safe","\\u212a":"unsafe"}}`,
+  `{"connector":"milter","metadata":{"K":"safe","\u212a":"unsafe"}}`,
   `{"connector":"milter","metadata":{"S":"safe","ſ":"unsafe"}}`,
  }
  for _, input := range cases {
@@ -108,4 +109,35 @@ func TestAuditAcceptsDistinctUnicodeKeys(t *testing.T) {
  got, err := analyze(strings.NewReader(input))
  if err != nil { t.Fatal(err) }
  if got.Malformed != 0 || got.Total != 1 { t.Fatalf("distinct keys rejected: %+v", got) }
+}
+
+func TestAuditFoldKeyMatchesEqualFold(t *testing.T) {
+ pairs := [][2]string{
+  {"action", "ACTION"},
+  {"K", "K"},
+  {"S", "ſ"},
+  {"Σ", "ς"},
+  {"İ", "i"},
+  {"I", "ı"},
+  {"Å", "Å"},
+  {"a", "b"},
+ }
+ for _, pair := range pairs {
+  got := auditFoldKey(pair[0]) == auditFoldKey(pair[1])
+  want := strings.EqualFold(pair[0], pair[1])
+  if got != want { t.Errorf("fold mismatch for %q and %q: got %t want %t", pair[0], pair[1], got, want) }
+ }
+}
+
+func TestAuditRejectsLargeObjectCaseAlias(t *testing.T) {
+ var b strings.Builder
+ b.WriteString(`{"connector":"milter","action":"accept","metadata":{`)
+ for i:=0;i<2000;i++ {
+  if i>0 { b.WriteByte(',') }
+  b.WriteString(fmt.Sprintf("%q:%d", fmt.Sprintf("field_%04d",i),i))
+ }
+ b.WriteString(`,"K":1,"K":2}}`)
+ got,err:=analyze(strings.NewReader(b.String()+"\\n"))
+ if err!=nil { t.Fatal(err) }
+ if got.Malformed!=1 || got.Total!=0 { t.Fatalf("large ambiguous object counted: %+v",got) }
 }
