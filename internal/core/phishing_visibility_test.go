@@ -32,7 +32,7 @@ func TestPhishingVisibilitySuppressesNonRenderedURLClaims(t *testing.T) {
 		{"hidden", "<div hidden>"+mismatch+"</div>", false, false},
 		{"hidden false still hidden", "<div hidden=\"false\">"+mismatch+"</div>", false, false},
 		{"inert", "<div inert>"+mismatch+"</div>", false, false},
-		{"aria hidden", "<div aria-hidden=\"true\">"+mismatch+"</div>", false, false},
+		{"aria hidden still visible", "<div aria-hidden=\"true\">"+mismatch+"</div>", true, false},
 		{"display none", "<div style=\"display: none\">"+mismatch+"</div>", false, false},
 		{"visibility hidden", "<span style='visibility : hidden'>"+mismatch+"</span>", false, false},
 		{"nested hidden", "<div hidden><span>"+mismatch+"</span></div>", false, false},
