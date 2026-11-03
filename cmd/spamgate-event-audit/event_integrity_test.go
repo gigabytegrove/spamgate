@@ -8,7 +8,7 @@ import (
 func TestAuditRejectsAmbiguousOrInvalidEvidence(t *testing.T) {
  cases := []string{
   `{"connector":"milter","action":"accept","action":"quarantine"}`,
-  `{"connector":"milter","action":"accept","\\u0061ction":"reject"}`,
+  `{"connector":"milter","action":"accept","\u0061ction":"reject"}`,
   `{"connector":"milter","findings":{}}`,
   `{"connector":"milter","findings":"bad"}`,
   `{"connector":"milter","score":"0"}`,
