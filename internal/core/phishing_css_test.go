@@ -98,9 +98,28 @@ func TestPhishingHTMLNestingBudget(t *testing.T) {
 	}
 }
 
+// ARIA controls accessibility-tree exposure, not whether a link is
+// visually rendered or clickable. Encoded attribute values are no exception.
 func TestPhishingEncodedAriaHidden(t *testing.T) {
 	const mismatch = "<a href='https://evil.example.net'>https://bank.example.com</a>"
-	if got := phishingVisibleLinks("<div aria-hidden='tr&#117;e'>" + mismatch + "</div>"); len(got) != 0 {
-		t.Fatalf("encoded aria-hidden attribute leaked a finding: %v", got)
+	for _, tc := range []struct {
+		name string
+		html string
+		want int
+	}{
+		{"encoded true", "<div aria-hidden='tr&#117;e'>" + mismatch + "</div>", 1},
+		{"encoded mixed case", "<div ARIA-HIDDEN='Tr&#85;E'>" + mismatch + "</div>", 1},
+		{"encoded false", "<div aria-hidden='fa&#108;se'>" + mismatch + "</div>", 1},
+		{"encoded true with hidden", "<div aria-hidden='tr&#117;e' hidden>" + mismatch + "</div>", 0},
+		{"encoded true with display none", "<div aria-hidden='tr&#117;e' style='display:none'>" + mismatch + "</div>", 0},
+		{"encoded true and visible sibling", "<div aria-hidden='tr&#117;e'>" + mismatch + "</div>" + mismatch, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			coverage := &mimeCoverage{}
+			got := phishingVisibleLinksWithCoverage(tc.html, coverage)
+			if coverage.Incomplete || len(got) != tc.want {
+				t.Fatalf("findings=%v coverage=%+v want=%d", got, coverage, tc.want)
+			}
+		})
 	}
 }
