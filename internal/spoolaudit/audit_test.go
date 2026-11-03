@@ -63,7 +63,7 @@ func TestPendingWithFinalAndConflict(t *testing.T){
  changed.StateSHA256=stateDigest(changed)
  write(t,dir,".pending-old",changed)
  r,err=Audit(dir)
- if err!=nil||!hasCode(r,"pending_conflict"){t.Fatalf("audit: %+v %v",r,err)}
+ if err!=nil||r.PendingWithFinal!=0||!hasCode(r,"pending_conflict")||hasCode(r,"pending_with_final"){t.Fatalf("conflicting original counted as reconciled: %+v %v",r,err)}
 }
 func TestCorruptionAndLegacy(t *testing.T){
  dir:=privateDir(t)
@@ -170,5 +170,32 @@ func TestPendingPublishedFilenameCannotProveDifferentQueueID(t *testing.T) {
  if err!=nil||report.PendingWithFinal!=1||hasCode(report,"pending_final_id_mismatch")||
   !hasCode(report,"pending_with_final"){
   t.Fatalf("valid counterpart not recognized: %+v %v",report,err)
+ }
+}
+
+func TestPendingSameIDButDifferentSignedOriginalIsNotReconciled(t *testing.T) {
+ dir:=privateDir(t)
+ pending:=fixture(idA)
+ published:=fixture(idA)
+ published.Raw=[]byte("world")
+ published.IntegritySHA256=immutableDigest(published)
+ published.StateSHA256=stateDigest(published)
+ write(t,dir,".pending-interrupted",pending)
+ write(t,dir,idA+".json",published)
+ original,err:=os.ReadFile(filepath.Join(dir,idA+".json"))
+ if err!=nil{t.Fatal(err)}
+ report,err:=Audit(dir)
+ if err!=nil{t.Fatal(err)}
+ if report.PendingWithFinal!=0||!hasCode(report,"pending_conflict")||
+  hasCode(report,"pending_with_final")||!report.HasFindings(){
+  t.Fatalf("signed but unrelated original falsely reconciled: %+v",report)
+ }
+ after,err:=os.ReadFile(filepath.Join(dir,idA+".json"))
+ if err!=nil||string(after)!=string(original){t.Fatal("read-only audit changed final")}
+ write(t,dir,idA+".json",pending)
+ report,err=Audit(dir)
+ if err!=nil||report.PendingWithFinal!=1||!hasCode(report,"pending_with_final")||
+  hasCode(report,"pending_conflict"){
+  t.Fatalf("matching signed original not reconciled: %+v %v",report,err)
  }
 }
