@@ -59,7 +59,7 @@ func analyze(r io.Reader) (report,error) {
      trimmed := bytes.TrimSpace(line)
      if len(trimmed)>0 {
       var e event
-      if err:=decodeAuditEvent(trimmed,&e); err!=nil {out.Malformed++} else if e.Connector=="milter" {
+      if err:=decodeAuditEvent(trimmed,&e); err!=nil {out.Malformed++} else if strings.EqualFold(strings.TrimSpace(e.Connector),"milter") {
        out.Total++
        action:=strings.ToLower(strings.TrimSpace(e.Action))
        if action=="" {action="unknown"}
