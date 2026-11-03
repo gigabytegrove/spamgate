@@ -137,7 +137,7 @@ func TestAuditRejectsLargeObjectCaseAlias(t *testing.T) {
   b.WriteString(fmt.Sprintf("%q:%d", fmt.Sprintf("field_%04d",i),i))
  }
  b.WriteString(`,"K":1,"K":2}}`)
- got,err:=analyze(strings.NewReader(b.String()+"\\n"))
+ got,err:=analyze(strings.NewReader(b.String()+"\n"))
  if err!=nil { t.Fatal(err) }
  if got.Malformed!=1 || got.Total!=0 { t.Fatalf("large ambiguous object counted: %+v",got) }
 }
@@ -179,4 +179,25 @@ func TestAuditBoundaryAndEmptyLines(t *testing.T) {
  got,err:=analyze(strings.NewReader(input))
  if err!=nil {t.Fatal(err)}
  if got.Malformed!=0 || got.Total!=1 || got.Actions["accept"]!=1 {t.Fatalf("valid evidence rejected: %+v",got)}
+}
+
+func TestAuditMilterConnectorCaseAndWhitespace(t *testing.T) {
+ cases := []string{"milter", "MILTER", " Milter ", "\\tmIlTeR\\t"}
+ for _, connector := range cases {
+  t.Run(fmt.Sprintf("%q",connector),func(t *testing.T) {
+   line := fmt.Sprintf(`{"connector":%q,"action":"accept","score":0,"findings":[]}`,connector)
+   got,err:=analyze(strings.NewReader(line+"\n"))
+   if err!=nil {t.Fatal(err)}
+   if got.Malformed!=0 || got.Total!=1 || got.Actions["accept"]!=1 || got.ZeroScoreAccepted!=1 {
+    t.Fatalf("validator accepted connector but audit failed to count it: %+v",got)
+   }
+  })
+ }
+}
+
+func TestAuditDoesNotCountOtherConnector(t *testing.T) {
+ input := `{"connector":"smtp","action":"accept","score":0}`+"\n"
+ got,err:=analyze(strings.NewReader(input))
+ if err!=nil {t.Fatal(err)}
+ if got.Malformed!=0 || got.Total!=0 || got.ZeroScoreAccepted!=0 {t.Fatalf("non-Milter event counted: %+v",got)}
 }
