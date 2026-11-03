@@ -2,6 +2,8 @@ package main
 
 import (
  "bufio"
+ "bytes"
+ "errors"
  "encoding/json"
  "flag"
  "fmt"
@@ -33,33 +35,56 @@ type report struct {
 }
 func analyze(r io.Reader) (report,error) {
  out:=report{Actions:map[string]int{},MTAStates:map[string]int{}}
- scan:=bufio.NewScanner(r)
- scan.Buffer(make([]byte,64*1024),2<<20)
- for scan.Scan() {
-  line:=strings.TrimSpace(scan.Text()); if line=="" {continue}
-  var e event
-  if err:=decodeAuditEvent([]byte(line),&e); err!=nil {out.Malformed++;continue}
-  if e.Connector!="milter" {continue}
-  out.Total++
-  action:=strings.ToLower(strings.TrimSpace(e.Action))
-  if action=="" {action="unknown"}
-  out.Actions[action]++
-  state:=strings.ToLower(strings.TrimSpace(e.MTAState))
-  if state=="" {state="unknown"}
-  out.MTAStates[state]++
-  if e.Score==nil {out.MissingScore++} else if *e.Score==0 {
-   out.ZeroScore++
-   if action=="accept" {out.ZeroScoreAccepted++}
+ const maxEventLine = 2 << 20
+ reader := bufio.NewReaderSize(r, 64*1024)
+ for {
+  // ReadSlice permits recovery after an oversized record: Scanner would
+  // abort the entire audit and hide all later evidence.
+  var line []byte
+  oversized := false
+  for {
+   fragment, err := reader.ReadSlice('\n')
+   if !oversized {
+    if len(line)+len(fragment) > maxEventLine {
+     oversized = true
+     line = nil
+    } else {
+     line = append(line, fragment...)
+    }
+   }
+   if err == nil || errors.Is(err, io.EOF) {
+    if oversized {
+     out.Malformed++
+    } else {
+     trimmed := bytes.TrimSpace(line)
+     if len(trimmed)>0 {
+      var e event
+      if err:=decodeAuditEvent(trimmed,&e); err!=nil {out.Malformed++} else if e.Connector=="milter" {
+       out.Total++
+       action:=strings.ToLower(strings.TrimSpace(e.Action))
+       if action=="" {action="unknown"}
+       out.Actions[action]++
+       state:=strings.ToLower(strings.TrimSpace(e.MTAState))
+       if state=="" {state="unknown"}
+       out.MTAStates[state]++
+       if e.Score==nil {out.MissingScore++} else if *e.Score==0 {
+        out.ZeroScore++
+        if action=="accept" {out.ZeroScoreAccepted++}
+       }
+       var findings []json.RawMessage
+       if len(e.Findings)>0 && json.Unmarshal(e.Findings,&findings)==nil && len(findings)>0 {out.WithFindings++}
+       // Requested Milter actions are not independent Postfix proof.
+       if action=="quarantine" {out.UnconfirmedQuarantine++}
+      }
+     }
+    }
+    if errors.Is(err, io.EOF) {return out,nil}
+    break
+   }
+   if errors.Is(err, bufio.ErrBufferFull) {continue}
+   return out,fmt.Errorf("read events: %w",err)
   }
-  var findings []json.RawMessage
-  if len(e.Findings)>0 && json.Unmarshal(e.Findings,&findings)==nil && len(findings)>0 {out.WithFindings++}
-  // The Milter worker reports its requested action, not independent proof
-  // that Postfix held or rejected the message. Never infer confirmation
-  // from a self-reported mta_action_state value.
-  if action=="quarantine" {out.UnconfirmedQuarantine++}
  }
- if err:=scan.Err();err!=nil{return out,fmt.Errorf("read events: %w",err)}
- return out,nil
 }
 func main(){
  path:=flag.String("events","/opt/spamgate/data/events.jsonl","read-only event history path")
