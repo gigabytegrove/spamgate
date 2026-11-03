@@ -88,3 +88,24 @@ func TestAuditRejectsNestedCaseAliases(t *testing.T) {
   if got.Malformed != 1 || got.Total != 0 { t.Fatalf("nested case aliases counted: %+v", got) }
  }
 }
+
+func TestAuditRejectsUnicodeSimpleFoldAliases(t *testing.T) {
+ cases := []string{
+  `{"connector":"milter","action":"accept","aKtion":"reject"}`,
+  `{"connector":"milter","metadata":{"K":"safe","K":"unsafe"}}`,
+  `{"connector":"milter","metadata":{"K":"safe","\\u212a":"unsafe"}}`,
+  `{"connector":"milter","metadata":{"S":"safe","ſ":"unsafe"}}`,
+ }
+ for _, input := range cases {
+  got, err := analyze(strings.NewReader(input+"\n"))
+  if err != nil { t.Fatal(err) }
+  if got.Malformed != 1 || got.Total != 0 { t.Fatalf("Unicode case alias accepted: %+v", got) }
+ }
+}
+
+func TestAuditAcceptsDistinctUnicodeKeys(t *testing.T) {
+ input := `{"connector":"milter","action":"accept","metadata":{"K":"safe","L":"different"}}`+"\n"
+ got, err := analyze(strings.NewReader(input))
+ if err != nil { t.Fatal(err) }
+ if got.Malformed != 0 || got.Total != 1 { t.Fatalf("distinct keys rejected: %+v", got) }
+}
