@@ -182,7 +182,7 @@ func TestAuditBoundaryAndEmptyLines(t *testing.T) {
 }
 
 func TestAuditMilterConnectorCaseAndWhitespace(t *testing.T) {
- cases := []string{"milter", "MILTER", " Milter ", "\\tmIlTeR\\t"}
+ cases := []string{"milter", "MILTER", " Milter ", "\tmIlTeR\t"}
  for _, connector := range cases {
   t.Run(fmt.Sprintf("%q",connector),func(t *testing.T) {
    line := fmt.Sprintf(`{"connector":%q,"action":"accept","score":0,"findings":[]}`,connector)
