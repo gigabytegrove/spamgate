@@ -141,3 +141,18 @@ func TestAuditRejectsLargeObjectCaseAlias(t *testing.T) {
  if err!=nil { t.Fatal(err) }
  if got.Malformed!=1 || got.Total!=0 { t.Fatalf("large ambiguous object counted: %+v",got) }
 }
+
+func TestAuditAcceptsLargeDistinctObject(t *testing.T) {
+ var b strings.Builder
+ b.WriteString(`{"connector":"milter","action":"accept","metadata":{`)
+ for i := 0; i < 2000; i++ {
+  if i > 0 { b.WriteByte(',') }
+  b.WriteString(fmt.Sprintf("%q:%d", fmt.Sprintf("field_%04d", i), i))
+ }
+ b.WriteString(`}}`)
+ got, err := analyze(strings.NewReader(b.String()+"\n"))
+ if err != nil { t.Fatal(err) }
+ if got.Malformed != 0 || got.Total != 1 || got.Actions["accept"] != 1 {
+  t.Fatalf("large distinct object rejected: %+v", got)
+ }
+}
