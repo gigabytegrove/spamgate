@@ -222,6 +222,13 @@ func Audit(dir string) (Report,error) {
    }else if finalErr!=nil{
     out.add("pending_final_unreadable",name,"published counterpart cannot be verified")
    }else{
+    // The published filename is derived from the pending ID, but the
+    // published JSON can carry a different, individually valid queue ID.
+    // Never treat that unrelated original as the pending record's final.
+    if final.ID!=rec.ID {
+     out.add("pending_final_id_mismatch",name,"published filename matches pending ID but its signed envelope belongs to another queue ID; do not replay")
+     continue
+    }
     out.PendingWithFinal++
     if immutableDigest(rec)!=immutableDigest(final){
      out.add("pending_conflict",name,"published counterpart has a different immutable envelope/original")
