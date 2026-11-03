@@ -156,3 +156,27 @@ func TestAuditAcceptsLargeDistinctObject(t *testing.T) {
   t.Fatalf("large distinct object rejected: %+v", got)
  }
 }
+
+func TestAuditOversizedRecordDoesNotHideLaterEvidence(t *testing.T) {
+ oversized := `{"connector":"milter","action":"accept","padding":"` + strings.Repeat("x", 2<<20) + `"}`
+ valid := `{"connector":"milter","action":"quarantine","score":0,"findings":[{"rule":"test"}]}`
+ got, err := analyze(strings.NewReader(oversized+"\n"+valid+"\n"))
+ if err != nil { t.Fatal(err) }
+ if got.Malformed != 1 || got.Total != 1 || got.Actions["quarantine"] != 1 || got.UnconfirmedQuarantine != 1 || got.WithFindings != 1 {
+  t.Fatalf("lost later valid evidence: %+v",got)
+ }
+}
+
+func TestAuditOversizedUnterminatedFinalRecord(t *testing.T) {
+ input := `{"connector":"milter","padding":"`+strings.Repeat("x",2<<20)
+ got,err:=analyze(strings.NewReader(input))
+ if err!=nil {t.Fatal(err)}
+ if got.Malformed!=1 || got.Total!=0 {t.Fatalf("unexpected final oversized record result: %+v",got)}
+}
+
+func TestAuditBoundaryAndEmptyLines(t *testing.T) {
+ input := "\n  \n"+`{"connector":"milter","action":"accept"}`+"\n"
+ got,err:=analyze(strings.NewReader(input))
+ if err!=nil {t.Fatal(err)}
+ if got.Malformed!=0 || got.Total!=1 || got.Actions["accept"]!=1 {t.Fatalf("valid evidence rejected: %+v",got)}
+}
