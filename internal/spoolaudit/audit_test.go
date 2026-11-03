@@ -143,3 +143,32 @@ func TestPendingDuplicateAndConflictingOriginalsAreNotSilentlyGrouped(t *testing
   t.Fatal("human report omitted collision count")
  }
 }
+
+
+func TestPendingPublishedFilenameCannotProveDifferentQueueID(t *testing.T) {
+ dir:=privateDir(t)
+ pending:=fixture(idA)
+ published:=fixture(idB)
+ // A fully signed, valid record stored under the wrong published filename
+ // must not be mistaken for the final version of a different original.
+ write(t,dir,".pending-crash",pending)
+ write(t,dir,idA+".json",published)
+ before,err:=os.ReadFile(filepath.Join(dir,idA+".json"))
+ if err!=nil{t.Fatal(err)}
+ report,err:=Audit(dir)
+ if err!=nil{t.Fatal(err)}
+ if report.PendingWithFinal!=0||!hasCode(report,"id_mismatch")||
+  !hasCode(report,"pending_final_id_mismatch")||!report.HasFindings(){
+  t.Fatalf("unrelated signed final treated as pending counterpart: %+v",report)
+ }
+ after,err:=os.ReadFile(filepath.Join(dir,idA+".json"))
+ if err!=nil||string(before)!=string(after){t.Fatal("audit modified published original")}
+ // A correctly named, signed final is recognized only when its identity
+ // and immutable original agree with the pending record.
+ write(t,dir,idA+".json",fixture(idA))
+ report,err=Audit(dir)
+ if err!=nil||report.PendingWithFinal!=1||hasCode(report,"pending_final_id_mismatch")||
+  !hasCode(report,"pending_with_final"){
+  t.Fatalf("valid counterpart not recognized: %+v %v",report,err)
+ }
+}
