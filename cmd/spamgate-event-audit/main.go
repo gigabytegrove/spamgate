@@ -86,18 +86,56 @@ func analyze(r io.Reader) (report,error) {
   }
  }
 }
-func main(){
- path:=flag.String("events","/opt/spamgate/data/events.jsonl","read-only event history path")
- jsonOutput:=flag.Bool("json",false,"print JSON report")
- flag.Parse()
- f,err:=os.Open(*path);if err!=nil {fmt.Fprintln(os.Stderr,err);os.Exit(2)}
+// run reports incomplete or unconfirmed evidence with a nonzero exit status.
+// Exit 0: complete audit without unconfirmed holds; 1: operational findings;
+// 2: invalid invocation, unreadable input, or output failure.
+func run(args []string, stdout, stderr io.Writer) int {
+ flags := flag.NewFlagSet("spamgate-event-audit", flag.ContinueOnError)
+ flags.SetOutput(stderr)
+ path := flags.String("events", "/opt/spamgate/data/events.jsonl", "read-only event history path")
+ jsonOutput := flags.Bool("json", false, "print JSON report")
+ if err := flags.Parse(args); err != nil { return 2 }
+ if flags.NArg() != 0 {
+  fmt.Fprintln(stderr, "unexpected positional arguments")
+  return 2
+ }
+ f, err := os.Open(*path)
+ if err != nil { fmt.Fprintln(stderr, "open events:", err); return 2 }
  defer f.Close()
- result,err:=analyze(f);if err!=nil {fmt.Fprintln(os.Stderr,err);os.Exit(2)}
- if *jsonOutput {enc:=json.NewEncoder(os.Stdout);enc.SetIndent("","  ");_ =enc.Encode(result);return}
- fmt.Printf("Milter events: %d; malformed lines: %d; zero scores: %d; zero-score accepts: %d; missing scores: %d; scans with findings: %d; quarantines requiring Postfix verification: %d\n",result.Total,result.Malformed,result.ZeroScore,result.ZeroScoreAccepted,result.MissingScore,result.WithFindings,result.UnconfirmedQuarantine)
- keys:=make([]string,0,len(result.Actions));for k:=range result.Actions {keys=append(keys,k)};sort.Strings(keys)
- for _,k:=range keys {fmt.Printf("action %s: %d\n",k,result.Actions[k])}
- keys=keys[:0];for k:=range result.MTAStates {keys=append(keys,k)};sort.Strings(keys)
- for _,k:=range keys {fmt.Printf("mta state %s: %d\n",k,result.MTAStates[k])}
- if result.UnconfirmedQuarantine>0 {fmt.Fprintln(os.Stderr,"WARNING: quarantine decisions are not independent evidence of Postfix hold; correlate queue IDs with Postfix logs and queue state")}
+ result, err := analyze(f)
+ if err != nil { fmt.Fprintln(stderr, "audit events:", err); return 2 }
+ if *jsonOutput {
+  enc := json.NewEncoder(stdout)
+  enc.SetIndent("", "  ")
+  if err := enc.Encode(result); err != nil {
+   fmt.Fprintln(stderr, "write audit:", err)
+   return 2
+  }
+ } else {
+  if _, err := fmt.Fprintf(stdout, "Milter events: %d; malformed lines: %d; zero scores: %d; zero-score accepts: %d; missing scores: %d; scans with findings: %d; quarantines requiring Postfix verification: %d\n", result.Total, result.Malformed, result.ZeroScore, result.ZeroScoreAccepted, result.MissingScore, result.WithFindings, result.UnconfirmedQuarantine); err != nil {
+   fmt.Fprintln(stderr, "write audit:", err)
+   return 2
+  }
+  keys := make([]string, 0, len(result.Actions))
+  for k := range result.Actions { keys = append(keys, k) }
+  sort.Strings(keys)
+  for _, k := range keys {
+   if _, err := fmt.Fprintf(stdout, "action %s: %d\n", k, result.Actions[k]); err != nil { fmt.Fprintln(stderr, "write audit:", err); return 2 }
+  }
+  keys = keys[:0]
+  for k := range result.MTAStates { keys = append(keys, k) }
+  sort.Strings(keys)
+  for _, k := range keys {
+   if _, err := fmt.Fprintf(stdout, "mta state %s: %d\n", k, result.MTAStates[k]); err != nil { fmt.Fprintln(stderr, "write audit:", err); return 2 }
+  }
+ }
+ if result.Malformed > 0 {
+  fmt.Fprintf(stderr, "WARNING: %d malformed event records; audit evidence is incomplete\n", result.Malformed)
+ }
+ if result.UnconfirmedQuarantine > 0 {
+  fmt.Fprintln(stderr, "WARNING: quarantine decisions are not independent evidence of Postfix hold; correlate queue IDs with Postfix logs and queue state")
+ }
+ if result.Malformed > 0 || result.UnconfirmedQuarantine > 0 { return 1 }
+ return 0
 }
+func main() { os.Exit(run(os.Args[1:], os.Stdout, os.Stderr)) }
