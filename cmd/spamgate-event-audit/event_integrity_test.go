@@ -91,7 +91,7 @@ func TestAuditRejectsNestedCaseAliases(t *testing.T) {
 
 func TestAuditRejectsUnicodeSimpleFoldAliases(t *testing.T) {
  cases := []string{
-  `{"connector":"milter","action":"accept","aKtion":"reject"}`,
+  `{"connector":"milter","action":"accept","ACTION":"reject"}`,
   `{"connector":"milter","metadata":{"K":"safe","K":"unsafe"}}`,
   `{"connector":"milter","metadata":{"K":"safe","\\u212a":"unsafe"}}`,
   `{"connector":"milter","metadata":{"S":"safe","ſ":"unsafe"}}`,
