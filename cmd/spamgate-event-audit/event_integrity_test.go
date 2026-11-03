@@ -34,7 +34,7 @@ func TestAuditPreservesValidMilterAndOtherConnector(t *testing.T) {
 func TestAuditRejectsNestedDuplicateEvidence(t *testing.T) {
  cases := []string{
   `{"connector":"milter","action":"accept","findings":[{"rule":"safe","rule":"unsafe"}]}`,
-  `{"connector":"milter","findings":[{"rule":"safe","\\u0072ule":"unsafe"}]}`,
+  `{"connector":"milter","findings":[{"rule":"safe","\u0072ule":"unsafe"}]}`,
   `{"connector":"milter","metadata":{"mta":{"status":"held","status":"released"}}}`,
   `{"connector":"smtp","metadata":{"x":1,"x":2}}`,
  }
@@ -60,7 +60,7 @@ func TestAuditRejectsCaseAmbiguousEventFields(t *testing.T) {
  cases := []string{
   `{"connector":"milter","action":"accept","ACTION":"reject"}`,
   `{"connector":"milter","Connector":"smtp","action":"accept"}`,
-  `{"connector":"milter","action":"accept","\\u0041ction":"reject"}`,
+  `{"connector":"milter","action":"accept","\u0041ction":"reject"}`,
  }
  for _, input := range cases {
   got, err := analyze(strings.NewReader(input+"\n"))
