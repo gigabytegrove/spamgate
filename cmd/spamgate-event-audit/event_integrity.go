@@ -7,12 +7,14 @@ import (
  "fmt"
  "io"
  "strings"
+ "unicode/utf8"
 )
 
 // decodeAuditEvent rejects ambiguous top-level JSON keys, including keys
 // spelled differently with JSON Unicode escapes. Event histories are evidence,
 // so accepting a last-wins duplicate would misstate operational counts.
 func decodeAuditEvent(line []byte, out *event) error {
+ if !utf8.Valid(line) { return errors.New("invalid UTF-8 event evidence") }
  dec := json.NewDecoder(bytes.NewReader(line))
  tok, err := dec.Token()
  if err != nil { return err }
@@ -23,8 +25,9 @@ func decodeAuditEvent(line []byte, out *event) error {
   if err != nil { return err }
   key, ok := keyToken.(string)
   if !ok { return errors.New("event key is not a string") }
-  if _, exists := seen[key]; exists { return fmt.Errorf("duplicate event key %q", key) }
-  seen[key] = struct{}{}
+  canonical := strings.ToLower(key)
+  if _, exists := seen[canonical]; exists { return fmt.Errorf("ambiguous event key %q", key) }
+  seen[canonical] = struct{}{}
   if err := validateAuditValue(dec, 1); err != nil { return fmt.Errorf("field %q: %w", key, err) }
  }
  if _, err := dec.Token(); err != nil { return err }
