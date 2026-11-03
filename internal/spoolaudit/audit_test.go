@@ -263,3 +263,36 @@ func TestMisnamedSignedPublishedRecordExcludedFromStateTotals(t *testing.T) {
  after,err:=os.ReadFile(filepath.Join(dir,idA+".json"))
  if err!=nil||string(before)!=string(after){t.Fatal("read-only audit modified record")}
 }
+
+func TestDuplicatePendingFinalCountsOnlyOnce(t *testing.T) {
+ dir:=privateDir(t)
+ original:=fixture(idA)
+ write(t,dir,idA+".json",original)
+ write(t,dir,".pending-first",original)
+ write(t,dir,".pending-second",original)
+ report,err:=Audit(dir)
+ if err!=nil {t.Fatal(err)}
+ if report.Pending!=2||report.PendingDuplicateIDs!=1||
+  report.PendingWithFinal!=1||!hasCode(report,"pending_final_duplicate")||
+  !hasCode(report,"pending_duplicate") {
+  t.Fatalf("duplicate pending records inflated verified reconciliation: %+v",report)
+ }
+ if _,err:=os.Stat(filepath.Join(dir,".pending-second"));err!=nil {
+  t.Fatal("read-only audit modified pending file:",err)
+ }
+}
+
+func TestUnsignedPublishedRecordDoesNotInflateTrustedStates(t *testing.T) {
+ dir:=privateDir(t)
+ unsigned:=fixture(idA)
+ unsigned.IntegritySHA256=""
+ unsigned.StateSHA256=""
+ write(t,dir,idA+".json",unsigned)
+ write(t,dir,idB+".json",fixture(idB))
+ report,err:=Audit(dir)
+ if err!=nil {t.Fatal(err)}
+ if report.Published!=2||report.LegacyUnsigned!=1||
+  report.States["queued"]!=1||!hasCode(report,"legacy_unsigned") {
+  t.Fatalf("unsigned published record counted as verified state: %+v",report)
+ }
+}
