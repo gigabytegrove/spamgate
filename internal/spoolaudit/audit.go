@@ -189,11 +189,10 @@ func Audit(dir string) (Report,error) {
    if readErr!=nil {out.add("unreadable_record",name,readErr.Error());continue}
    if published&&rec.ID!=strings.TrimSuffix(name,".json"){
     out.add("id_mismatch",name,"record ID does not match its published filename")
-    // A valid JSON record stored under a different queue ID is not a
-    // trustworthy published queue entry; exclude it from state totals.
-    continue
    }
-   if published{out.States[rec.State]++}
+   // Misnamed records still receive lifecycle and digest diagnostics,
+   // but must not contribute to trusted delivery state totals.
+   if published&&rec.ID==strings.TrimSuffix(name,".json"){out.States[rec.State]++}
    if rec.IntegritySHA256==""||rec.StateSHA256==""{
     out.LegacyUnsigned++
     out.add("legacy_unsigned",name,"one or both integrity digests are absent; provenance cannot be verified")
