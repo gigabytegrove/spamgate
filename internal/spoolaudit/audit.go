@@ -229,12 +229,14 @@ func Audit(dir string) (Report,error) {
      out.add("pending_final_id_mismatch",name,"published filename matches pending ID but its signed envelope belongs to another queue ID; do not replay")
      continue
     }
-    out.PendingWithFinal++
+    // A matching queue ID alone cannot prove that the published final
+    // belongs to this pending original. Count only a digest match.
     if immutableDigest(rec)!=immutableDigest(final){
-     out.add("pending_conflict",name,"published counterpart has a different immutable envelope/original")
-    }else{
-     out.add("pending_with_final",name,"unpublished state copy exists alongside a published record; do not replay")
+     out.add("pending_conflict",name,"published counterpart has a different immutable envelope/original; not reconciled")
+     continue
     }
+    out.PendingWithFinal++
+    out.add("pending_with_final",name,"unpublished state copy exists alongside a published record; do not replay")
    }
   }
   if errors.Is(err,io.EOF){break}
