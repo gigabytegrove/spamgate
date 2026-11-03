@@ -32,6 +32,8 @@ type report struct{
  Recall float64 `json:"recall"`
  RecallLower95 float64 `json:"recall_lower_95"`
  Precision float64 `json:"precision"`
+ PrecisionLower95 float64 `json:"precision_lower_95"`
+ MinimumPrecisionLower95 float64 `json:"minimum_precision_lower_95"`
  MinimumHam int `json:"minimum_ham"`
  MinimumSpam int `json:"minimum_spam"`
  MaximumFalsePositiveUpper95 float64 `json:"maximum_false_positive_upper_95"`
@@ -128,8 +130,16 @@ func wilson(success,total int,upper bool)float64{
 }
 
 func evaluate(c counts,minHam,minSpam int,maxFPR,minRecall float64)report{
+ return evaluateWithPrecision(c,minHam,minSpam,maxFPR,minRecall,0)
+}
+
+// Precision is a separate safety gate: recall alone cannot detect a classifier
+// that flags almost every legitimate message. A zero positive-prediction sample
+// never qualifies when a positive precision threshold is required.
+func evaluateWithPrecision(c counts,minHam,minSpam int,maxFPR,minRecall,minPrecision float64)report{
  r:=report{
   Counts:c,MinimumHam:minHam,MinimumSpam:minSpam,
+  MinimumPrecisionLower95:minPrecision,
   MaximumFalsePositiveUpper95:maxFPR,MinimumRecallLower95:minRecall,
   Limitation:"Only the supplied independently labelled corpus is measured; results are not proof of live Postfix/Dovecot delivery, corpus representativeness, or future detection performance.",
  }
@@ -138,8 +148,11 @@ func evaluate(c counts,minHam,minSpam int,maxFPR,minRecall float64)report{
  r.FalsePositiveUpper95=wilson(c.FP,c.Ham,true)
  r.Recall=float64(c.TP)/float64(c.Spam)
  r.RecallLower95=wilson(c.TP,c.Spam,false)
- if c.TP+c.FP>0{r.Precision=float64(c.TP)/float64(c.TP+c.FP)}
- r.GatePassed=c.Ham>=minHam&&c.Spam>=minSpam&&r.FalsePositiveUpper95<=maxFPR&&r.RecallLower95>=minRecall
+ if c.TP+c.FP>0{
+  r.Precision=float64(c.TP)/float64(c.TP+c.FP)
+  r.PrecisionLower95=wilson(c.TP,c.TP+c.FP,false)
+ }
+ r.GatePassed=c.Ham>=minHam&&c.Spam>=minSpam&&r.FalsePositiveUpper95<=maxFPR&&r.RecallLower95>=minRecall&&(minPrecision==0||(c.TP+c.FP>0&&r.PrecisionLower95>=minPrecision))
  return r
 }
 
@@ -150,6 +163,7 @@ func run(args []string,output,errorsOut io.Writer)int{
  minSpam:=fs.Int("min-spam",1000,"minimum independently labelled spam messages")
  maxFPR:=fs.Float64("max-fpr-upper",0.01,"maximum Wilson 95% upper bound for false-positive rate")
  minRecall:=fs.Float64("min-recall-lower",0.90,"minimum Wilson 95% lower bound for recall")
+ minPrecision:=fs.Float64("min-precision-lower",0,"minimum Wilson 95% lower bound for precision (0 disables precision gating)")
  requireCohorts:=fs.Bool("require-cohorts",false,"require at least two sufficiently powered independently labelled cohorts")
  requireUniqueIDs:=fs.Bool("require-unique-ids",false,"require distinct SHA-256 message IDs to prevent repeated samples from inflating confidence")
  maxRecords:=fs.Int("max-records",1000000,"maximum labelled records accepted (memory and CPU safety limit)")
@@ -158,7 +172,7 @@ func run(args []string,output,errorsOut io.Writer)int{
  maxCohortFPR:=fs.Float64("max-cohort-fpr-upper",0.05,"maximum Wilson upper false-positive bound per cohort")
  minCohortRecall:=fs.Float64("min-cohort-recall-lower",0.75,"minimum Wilson lower recall bound per cohort")
  if err:=fs.Parse(args);err!=nil{return 2}
- if fs.NArg()!=1||*maxRecords<1||*minHam<1||*minSpam<1||math.IsNaN(*maxFPR)||math.IsNaN(*minRecall)||*maxFPR<0||*maxFPR>1||*minRecall<0||*minRecall>1||*minCohortHam<1||*minCohortSpam<1||math.IsNaN(*maxCohortFPR)||math.IsNaN(*minCohortRecall)||*maxCohortFPR<0||*maxCohortFPR>1||*minCohortRecall<0||*minCohortRecall>1{
+ if fs.NArg()!=1||*maxRecords<1||*minHam<1||*minSpam<1||math.IsNaN(*maxFPR)||math.IsNaN(*minRecall)||math.IsNaN(*minPrecision)||*minPrecision<0||*minPrecision>1||*maxFPR<0||*maxFPR>1||*minRecall<0||*minRecall>1||*minCohortHam<1||*minCohortSpam<1||math.IsNaN(*maxCohortFPR)||math.IsNaN(*minCohortRecall)||*maxCohortFPR<0||*maxCohortFPR>1||*minCohortRecall<0||*minCohortRecall>1{
   fmt.Fprintln(errorsOut,"usage: spamgate-eval [--min-ham=N --min-spam=N --max-fpr-upper=0.01 --min-recall-lower=0.90] labels.jsonl")
   return 2
  }
@@ -169,7 +183,7 @@ func run(args []string,output,errorsOut io.Writer)int{
  defer file.Close()
  c,cohorts,unspecified,err:=readLabelledCorpusWithLimit(file,*requireUniqueIDs,*maxRecords)
  if err!=nil{fmt.Fprintln(errorsOut,"invalid corpus:",err);return 2}
- result:=evaluate(c,*minHam,*minSpam,*maxFPR,*minRecall)
+ result:=evaluateWithPrecision(c,*minHam,*minSpam,*maxFPR,*minRecall,*minPrecision)
  result.Cohorts,result.CohortGatePassed=evaluateCohorts(cohorts,unspecified,*minCohortHam,*minCohortSpam,*maxCohortFPR,*minCohortRecall)
  result.UnspecifiedCohort=unspecified
  result.CohortGateRequired=*requireCohorts
