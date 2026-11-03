@@ -61,7 +61,14 @@ func readLabelledCorpus(r io.Reader)(counts,map[string]counts,int,error){
 // each independently adjudicated message exactly once across all cohorts.
 // This prevents repeated examples from inflating sample sizes and confidence.
 func readLabelledCorpusWithOptions(r io.Reader,requireUniqueIDs bool)(counts,map[string]counts,int,error){
+ return readLabelledCorpusWithLimit(r,requireUniqueIDs,1000000)
+}
+
+// Bound the number of accepted examples independently of the JSONL record size.
+// This protects the unique-ID map and per-record accounting against unbounded input.
+func readLabelledCorpusWithLimit(r io.Reader,requireUniqueIDs bool,maxRecords int)(counts,map[string]counts,int,error){
  var c counts
+ if maxRecords<1{return counts{},nil,0,errors.New("maximum records must be positive")}
  seen:=map[string]struct{}{}
  cohorts:=map[string]counts{}
  unspecified:=0
@@ -72,6 +79,7 @@ func readLabelledCorpusWithOptions(r io.Reader,requireUniqueIDs bool)(counts,map
   line++
   raw:=bytes.TrimSpace(scanner.Bytes())
   if len(raw)==0{continue}
+  if c.Ham+c.Spam>=maxRecords{return counts{},nil,0,fmt.Errorf("line %d: corpus exceeds maximum of %d records",line,maxRecords)}
   record, err := parseCorpusRecord(raw)
   if err != nil {return counts{},nil,0,fmt.Errorf("line %d: invalid labelled JSON: %w",line,err)}
   if record.Label!="ham"&&record.Label!="spam"{return counts{},nil,0,fmt.Errorf("line %d: label must be ham or spam",line)}
@@ -144,12 +152,13 @@ func run(args []string,output,errorsOut io.Writer)int{
  minRecall:=fs.Float64("min-recall-lower",0.90,"minimum Wilson 95% lower bound for recall")
  requireCohorts:=fs.Bool("require-cohorts",false,"require at least two sufficiently powered independently labelled cohorts")
  requireUniqueIDs:=fs.Bool("require-unique-ids",false,"require distinct SHA-256 message IDs to prevent repeated samples from inflating confidence")
+ maxRecords:=fs.Int("max-records",1000000,"maximum labelled records accepted (memory and CPU safety limit)")
  minCohortHam:=fs.Int("min-cohort-ham",100,"minimum ham per cohort when required")
  minCohortSpam:=fs.Int("min-cohort-spam",100,"minimum spam per cohort when required")
  maxCohortFPR:=fs.Float64("max-cohort-fpr-upper",0.05,"maximum Wilson upper false-positive bound per cohort")
  minCohortRecall:=fs.Float64("min-cohort-recall-lower",0.75,"minimum Wilson lower recall bound per cohort")
  if err:=fs.Parse(args);err!=nil{return 2}
- if fs.NArg()!=1||*minHam<1||*minSpam<1||math.IsNaN(*maxFPR)||math.IsNaN(*minRecall)||*maxFPR<0||*maxFPR>1||*minRecall<0||*minRecall>1||*minCohortHam<1||*minCohortSpam<1||math.IsNaN(*maxCohortFPR)||math.IsNaN(*minCohortRecall)||*maxCohortFPR<0||*maxCohortFPR>1||*minCohortRecall<0||*minCohortRecall>1{
+ if fs.NArg()!=1||*maxRecords<1||*minHam<1||*minSpam<1||math.IsNaN(*maxFPR)||math.IsNaN(*minRecall)||*maxFPR<0||*maxFPR>1||*minRecall<0||*minRecall>1||*minCohortHam<1||*minCohortSpam<1||math.IsNaN(*maxCohortFPR)||math.IsNaN(*minCohortRecall)||*maxCohortFPR<0||*maxCohortFPR>1||*minCohortRecall<0||*minCohortRecall>1{
   fmt.Fprintln(errorsOut,"usage: spamgate-eval [--min-ham=N --min-spam=N --max-fpr-upper=0.01 --min-recall-lower=0.90] labels.jsonl")
   return 2
  }
@@ -158,7 +167,7 @@ func run(args []string,output,errorsOut io.Writer)int{
  file,err:=os.Open(name)
  if err!=nil{fmt.Fprintln(errorsOut,"cannot open corpus:",err);return 2}
  defer file.Close()
- c,cohorts,unspecified,err:=readLabelledCorpusWithOptions(file,*requireUniqueIDs)
+ c,cohorts,unspecified,err:=readLabelledCorpusWithLimit(file,*requireUniqueIDs,*maxRecords)
  if err!=nil{fmt.Fprintln(errorsOut,"invalid corpus:",err);return 2}
  result:=evaluate(c,*minHam,*minSpam,*maxFPR,*minRecall)
  result.Cohorts,result.CohortGatePassed=evaluateCohorts(cohorts,unspecified,*minCohortHam,*minCohortSpam,*maxCohortFPR,*minCohortRecall)
