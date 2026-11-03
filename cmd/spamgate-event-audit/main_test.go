@@ -19,9 +19,12 @@ func TestAnalyzeMilterEvents(t *testing.T) {
   t.Fatalf("unexpected audit result: %+v",got)
  }
 }
-func TestAnalyzeOversizedEventFails(t *testing.T) {
- _,err:=analyze(strings.NewReader(strings.Repeat("x",2<<20+10)))
- if err==nil {t.Fatal("expected bounded scanner failure")}
+func TestAnalyzeOversizedEventRecovers(t *testing.T) {
+ input := strings.Repeat("x", (2<<20)+10) + "\\n" + `{"connector":"milter","action":"accept","score":0}` + "\\n"
+ got,err:=analyze(strings.NewReader(input))
+ if err!=nil || got.Malformed!=1 || got.Total!=1 || got.Actions["accept"]!=1 {
+  t.Fatalf("oversized record must be counted and later valid evidence retained: %+v %v",got,err)
+ }
 }
 func TestAnalyzeEmpty(t *testing.T) {
  got,err:=analyze(strings.NewReader("\n"))
