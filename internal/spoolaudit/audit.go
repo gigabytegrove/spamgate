@@ -125,6 +125,7 @@ func readRecord(path string) (record,error) {
   return record{},errors.New("spool record changed during read")
  }
  if err:=validateAuditRecordMetadata(path,after);err!=nil{return record{},fmt.Errorf("unsafe spool metadata after read: %w",err)}
+ if err:=verifyRecordPathStable(path,opened);err!=nil{return record{},err}
  var rec record
  if err:=spooljson.Validate(data);err!=nil{return record{},fmt.Errorf("invalid or ambiguous spool JSON: %w",err)}
  if err:=json.Unmarshal(data,&rec);err!=nil{return record{},errors.New("invalid spool JSON")}
