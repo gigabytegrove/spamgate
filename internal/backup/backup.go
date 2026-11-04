@@ -143,7 +143,7 @@ func Create(source, archive string) (err error) {
 		if len(manifest.Entries) >= maxFiles || info.Size() > maxBytes-total {
 			return errors.New("backup exceeds bounded size or file-count limit")
 		}
-		f, e := os.Open(path)
+		f, e := openBackupSourceFile(path)
 		if e != nil {
 			return e
 		}
