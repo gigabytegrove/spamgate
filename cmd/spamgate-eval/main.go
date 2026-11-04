@@ -236,7 +236,7 @@ func run(args []string,output,errorsOut io.Writer)int{
  }
  name:=fs.Arg(0)
  if strings.TrimSpace(name)==""{fmt.Fprintln(errorsOut,"corpus path required");return 2}
- file,err:=os.Open(name)
+ file,initialInfo,err:=openEvaluationCorpus(name)
  if err!=nil{fmt.Fprintln(errorsOut,"cannot open corpus:",err);return 2}
  defer file.Close()
  var corpusReader io.Reader=file
@@ -251,6 +251,7 @@ func run(args []string,output,errorsOut io.Writer)int{
   actual:=hex.EncodeToString(digestWriter.Sum(nil))
   if actual!=*expectedDigest {fmt.Fprintln(errorsOut,"corpus SHA-256 mismatch; refusing evaluation");return 2}
  }
+ if err:=verifyEvaluationCorpusUnchanged(file,initialInfo);err!=nil {fmt.Fprintln(errorsOut,"corpus changed during evaluation:",err);return 2}
  result:=evaluateWithPrecision(c,*minHam,*minSpam,*maxFPR,*minRecall,*minPrecision)
  result.Cohorts,result.CohortGatePassed=evaluateCohortsWithPrecision(cohorts,unspecified,*minCohortHam,*minCohortSpam,*maxCohortFPR,*minCohortRecall,*minCohortPrecision)
  result.UnspecifiedCohort=unspecified
