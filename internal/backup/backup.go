@@ -109,6 +109,9 @@ func Create(source, archive string) (err error) {
 	// Record every visited directory, not only the root: a concurrent
 	// rename or insertion in a nested directory invalidates the cold snapshot.
 	directories := map[string]os.FileInfo{source: info}
+	// Recheck copied files at the end, not only immediately after each copy.
+	// Otherwise an earlier file can change while later files are traversed.
+	copiedFiles := map[string]os.FileInfo{}
 	walkErr := filepath.WalkDir(source, func(path string, de fs.DirEntry, walkError error) error {
 		if walkError != nil {
 			return walkError
@@ -187,6 +190,7 @@ func Create(source, archive string) (err error) {
 		if e := verifyBackupSourcePath(path, info); e != nil {
 			return fmt.Errorf("source pathname changed during backup: %s: %w", relative, e)
 		}
+		copiedFiles[path] = info
 		total += n
 		manifest.Entries = append(manifest.Entries, Entry{Path: relative, Bytes: n, SHA256: hex.EncodeToString(hash.Sum(nil))})
 		return nil
@@ -199,6 +203,10 @@ func Create(source, archive string) (err error) {
 	// A file added or removed after WalkDir passed a nested directory must
 	// invalidate the archive rather than silently disappear from its manifest.
 	if e := verifyBackupDirectories(directories); e != nil {
+		zw.Close()
+		return e
+	}
+	if e := verifyBackupCopiedFiles(copiedFiles); e != nil {
 		zw.Close()
 		return e
 	}
@@ -473,6 +481,18 @@ func verifyBackupDirectories(directories map[string]os.FileInfo) error {
 	for path, snapshot := range directories {
 		if e := verifyBackupSourcePath(path, snapshot); e != nil {
 			return fmt.Errorf("backup directory changed during traversal: %s: %w", path, e)
+		}
+	}
+	return nil
+}
+
+// verifyBackupCopiedFiles rejects changes to files copied earlier in traversal.
+// This complements descriptor and immediate pathname checks; it does not
+// replace the offline writer lock or create an atomic filesystem snapshot.
+func verifyBackupCopiedFiles(files map[string]os.FileInfo) error {
+	for path, snapshot := range files {
+		if err := verifyBackupSourcePath(path, snapshot); err != nil {
+			return fmt.Errorf("backup source file changed after copy: %s: %w", path, err)
 		}
 	}
 	return nil
