@@ -251,6 +251,12 @@ func Create(source, archive string) (err error) {
 	if e = tmp.Close(); e != nil {
 		return e
 	}
+	// Verify the complete archive as a reader before publishing it. A
+	// successful ZIP writer close does not establish that every stored entry
+	// can be read, decompressed and matched to the manifest on disk.
+	if _, e = Verify(tmp.Name()); e != nil {
+		return fmt.Errorf("backup readback verification failed: %w", e)
+	}
 	// Same-filesystem hard-link publication is atomic and NOREPLACE:
 	// a destination created after the initial Lstat must not be overwritten.
 	if e = os.Link(tmp.Name(), archive); e != nil {
