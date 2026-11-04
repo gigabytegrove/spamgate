@@ -29,7 +29,7 @@ func TestNonFiniteThresholdsFailClosed(t *testing.T) {
    t.Run(name+"/"+value,func(t *testing.T) {
     var out, errout bytes.Buffer
     args:=[]string{"--"+name+"="+value,"nonexistent-corpus.jsonl"}
-    if name=="min-cohort-precision-lower" { args=append([]string{"--require-cohorts"},args...) }
+    if strings.Contains(name,"cohort") { args=append([]string{"--require-cohorts"},args...) }
     code:=run(args,&out,&errout)
     if code!=2 {t.Fatalf("expected invalid configuration exit 2; got %d: %s",code,errout.String())}
     if out.Len()!=0 {t.Fatalf("invalid threshold emitted report: %s",out.String())}
