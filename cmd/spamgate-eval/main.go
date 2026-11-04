@@ -173,6 +173,7 @@ func run(args []string,output,errorsOut io.Writer)int{
  minCohortRecall:=fs.Float64("min-cohort-recall-lower",0.75,"minimum Wilson lower recall bound per cohort")
  minCohortPrecision:=fs.Float64("min-cohort-precision-lower",0,"minimum Wilson lower precision bound per cohort (0 disables this gate)")
  if err:=fs.Parse(args);err!=nil{return 2}
+ if *minCohortPrecision>0 && !*requireCohorts {fmt.Fprintln(errorsOut,"--min-cohort-precision-lower requires --require-cohorts; refusing an unenforced precision threshold");return 2}
  if fs.NArg()!=1||*maxRecords<1||*minHam<1||*minSpam<1||math.IsNaN(*maxFPR)||math.IsNaN(*minRecall)||math.IsNaN(*minPrecision)||*minPrecision<0||*minPrecision>1||*maxFPR<0||*maxFPR>1||*minRecall<0||*minRecall>1||*minCohortHam<1||*minCohortSpam<1||math.IsNaN(*maxCohortFPR)||math.IsNaN(*minCohortRecall)||math.IsNaN(*minCohortPrecision)||*minCohortPrecision<0||*minCohortPrecision>1||*maxCohortFPR<0||*maxCohortFPR>1||*minCohortRecall<0||*minCohortRecall>1{
   fmt.Fprintln(errorsOut,"usage: spamgate-eval [--min-ham=N --min-spam=N --max-fpr-upper=0.01 --min-recall-lower=0.90] labels.jsonl")
   return 2
