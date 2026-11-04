@@ -69,12 +69,20 @@ func readLabelledCorpusWithOptions(r io.Reader,requireUniqueIDs bool)(counts,map
 // Bound the number of accepted examples independently of the JSONL record size.
 // This protects the unique-ID map and per-record accounting against unbounded input.
 func readLabelledCorpusWithLimit(r io.Reader,requireUniqueIDs bool,maxRecords int)(counts,map[string]counts,int,error){
+ return readLabelledCorpusWithBudgets(r,requireUniqueIDs,maxRecords,128<<20)
+}
+
+// A byte budget also bounds whitespace-only and malformed input that never
+// increments the accepted-record budget. One extra byte detects overflow.
+func readLabelledCorpusWithBudgets(r io.Reader,requireUniqueIDs bool,maxRecords int,maxBytes int64)(counts,map[string]counts,int,error){
  var c counts
+ if maxBytes<1 || maxBytes==math.MaxInt64{return counts{},nil,0,errors.New("maximum input bytes must be positive and allow overflow detection")}
+ limited:=&io.LimitedReader{R:r,N:maxBytes+1}
  if maxRecords<1{return counts{},nil,0,errors.New("maximum records must be positive")}
  seen:=map[string]struct{}{}
  cohorts:=map[string]counts{}
  unspecified:=0
- scanner:=bufio.NewScanner(r)
+ scanner:=bufio.NewScanner(limited)
  scanner.Buffer(make([]byte,4096),64<<10)
  line:=0
  for scanner.Scan(){
@@ -111,6 +119,7 @@ func readLabelledCorpusWithLimit(r io.Reader,requireUniqueIDs bool,maxRecords in
   }
  }
  if err:=scanner.Err();err!=nil{return counts{},nil,0,fmt.Errorf("reading labels: %w",err)}
+ if limited.N==0{return counts{},nil,0,fmt.Errorf("corpus exceeds maximum of %d input bytes",maxBytes)}
  if c.Ham==0||c.Spam==0{return counts{},nil,0,errors.New("corpus must contain both independently labelled ham and spam")}
  return c,cohorts,unspecified,nil
 }
@@ -171,6 +180,7 @@ func run(args []string,output,errorsOut io.Writer)int{
  requireCohorts:=fs.Bool("require-cohorts",false,"require at least two sufficiently powered independently labelled cohorts")
  requireUniqueIDs:=fs.Bool("require-unique-ids",false,"require distinct SHA-256 message IDs to prevent repeated samples from inflating confidence")
  maxRecords:=fs.Int("max-records",1000000,"maximum labelled records accepted (memory and CPU safety limit)")
+ maxInputBytes:=fs.Int64("max-input-bytes",128<<20,"maximum corpus bytes including whitespace (default 134217728)")
  minCohortHam:=fs.Int("min-cohort-ham",100,"minimum ham per cohort when required")
  minCohortSpam:=fs.Int("min-cohort-spam",100,"minimum spam per cohort when required")
  maxCohortFPR:=fs.Float64("max-cohort-fpr-upper",0.05,"maximum Wilson upper false-positive bound per cohort")
@@ -192,7 +202,7 @@ func run(args []string,output,errorsOut io.Writer)int{
   })
   if len(configured)>0 {fmt.Fprintf(errorsOut,"%s requires --require-cohorts; refusing unenforced cohort acceptance thresholds\n",strings.Join(configured,", "));return 2}
  }
- if fs.NArg()!=1||*maxRecords<1||*minHam<1||*minSpam<1||!finiteProbability(*maxFPR)||!finiteProbability(*minRecall)||!finiteProbability(*minPrecision)||*minPrecision<0||*minPrecision>1||*maxFPR<0||*maxFPR>1||*minRecall<0||*minRecall>1||*minCohortHam<1||*minCohortSpam<1||!finiteProbability(*maxCohortFPR)||!finiteProbability(*minCohortRecall)||!finiteProbability(*minCohortPrecision)||*minCohortPrecision<0||*minCohortPrecision>1||*maxCohortFPR<0||*maxCohortFPR>1||*minCohortRecall<0||*minCohortRecall>1{
+ if fs.NArg()!=1||*maxRecords<1||*maxInputBytes<1||*maxInputBytes==math.MaxInt64||*minHam<1||*minSpam<1||!finiteProbability(*maxFPR)||!finiteProbability(*minRecall)||!finiteProbability(*minPrecision)||*minPrecision<0||*minPrecision>1||*maxFPR<0||*maxFPR>1||*minRecall<0||*minRecall>1||*minCohortHam<1||*minCohortSpam<1||!finiteProbability(*maxCohortFPR)||!finiteProbability(*minCohortRecall)||!finiteProbability(*minCohortPrecision)||*minCohortPrecision<0||*minCohortPrecision>1||*maxCohortFPR<0||*maxCohortFPR>1||*minCohortRecall<0||*minCohortRecall>1{
   fmt.Fprintln(errorsOut,"usage: spamgate-eval [--min-ham=N --min-spam=N --max-fpr-upper=0.01 --min-recall-lower=0.90] labels.jsonl")
   return 2
  }
@@ -201,7 +211,7 @@ func run(args []string,output,errorsOut io.Writer)int{
  file,err:=os.Open(name)
  if err!=nil{fmt.Fprintln(errorsOut,"cannot open corpus:",err);return 2}
  defer file.Close()
- c,cohorts,unspecified,err:=readLabelledCorpusWithLimit(file,*requireUniqueIDs,*maxRecords)
+ c,cohorts,unspecified,err:=readLabelledCorpusWithBudgets(file,*requireUniqueIDs,*maxRecords,*maxInputBytes)
  if err!=nil{fmt.Fprintln(errorsOut,"invalid corpus:",err);return 2}
  result:=evaluateWithPrecision(c,*minHam,*minSpam,*maxFPR,*minRecall,*minPrecision)
  result.Cohorts,result.CohortGatePassed=evaluateCohortsWithPrecision(cohorts,unspecified,*minCohortHam,*minCohortSpam,*maxCohortFPR,*minCohortRecall,*minCohortPrecision)
