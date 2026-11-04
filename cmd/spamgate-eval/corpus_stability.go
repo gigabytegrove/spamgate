@@ -31,7 +31,7 @@ func openEvaluationCorpus(path string) (*os.File, os.FileInfo, error) {
 func verifyEvaluationCorpusUnchanged(f *os.File, initial os.FileInfo) error {
  current,err:=f.Stat()
  if err!=nil{return err}
- if !os.SameFile(initial,current) || current.Size()!=initial.Size() || !current.ModTime().Equal(initial.ModTime()) {
+ if !os.SameFile(initial,current) || current.Size()!=initial.Size() || !current.ModTime().Equal(initial.ModTime()) || !evaluationCorpusChangeTimeEqual(initial,current) {
   return fmt.Errorf("regular corpus file was modified during evaluation")
  }
  return nil
@@ -47,7 +47,7 @@ func verifyEvaluationCorpusPathUnchanged(path string, opened os.FileInfo) error 
  if !entry.Mode().IsRegular() || !os.SameFile(entry, opened) {
   return errors.New("corpus path was replaced or changed into a non-regular file")
  }
- if entry.Size()!=opened.Size() || !entry.ModTime().Equal(opened.ModTime()) {
+ if entry.Size()!=opened.Size() || !entry.ModTime().Equal(opened.ModTime()) || !evaluationCorpusChangeTimeEqual(opened,entry) {
   return errors.New("corpus path metadata changed during evaluation")
  }
  return nil
