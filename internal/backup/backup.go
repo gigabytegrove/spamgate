@@ -91,7 +91,7 @@ func Create(source, archive string) (err error) {
 	if resolveErr != nil { return fmt.Errorf("resolve backup source: %w", resolveErr) }
 	resolvedParent, resolveErr := filepath.EvalSymlinks(filepath.Dir(archive))
 	if resolveErr != nil { return fmt.Errorf("resolve backup destination parent: %w", resolveErr) }
-	parentIdentity, parentErr := os.Lstat(filepath.Dir(archive))
+	parentIdentity, parentErr := os.Stat(filepath.Dir(archive))
 	if parentErr != nil { return parentErr }
 	resolvedArchive := filepath.Join(resolvedParent, filepath.Base(archive))
 	if resolvedArchive == resolvedSource || strings.HasPrefix(resolvedArchive, resolvedSource+string(filepath.Separator)) {
@@ -519,7 +519,7 @@ func verifyBackupDestinationParent(path, resolved string, identity os.FileInfo) 
 	current, err := filepath.EvalSymlinks(path)
 	if err != nil { return fmt.Errorf("backup destination parent changed: %w", err) }
 	if current != resolved { return errors.New("backup destination parent changed resolution") }
-	info, err := os.Lstat(path)
+	info, err := os.Stat(path)
 	if err != nil { return err }
 	if !os.SameFile(identity, info) || info.Mode().Type() != identity.Mode().Type() {
 		return errors.New("backup destination parent changed identity")

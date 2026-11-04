@@ -19,10 +19,12 @@ func publishBackupLink(source, destination string, expected os.FileInfo) error {
  if filepath.Dir(source) != parent {
   return errors.New("backup temporary file and destination must share a parent")
  }
- fd, err := syscall.Open(parent, syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
+ resolved, err := filepath.EvalSymlinks(parent)
+ if err != nil { return fmt.Errorf("resolve backup destination directory: %w",err) }
+ fd, err := syscall.Open(resolved, syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
  if err != nil { return fmt.Errorf("open backup destination directory: %w", err) }
- defer syscall.Close(fd)
- dir := os.NewFile(uintptr(fd), parent)
+ dir := os.NewFile(uintptr(fd), resolved)
+ defer dir.Close()
  actual, err := dir.Stat()
  if err != nil { return err }
  if !os.SameFile(expected, actual) {
