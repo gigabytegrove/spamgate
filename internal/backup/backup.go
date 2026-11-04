@@ -75,6 +75,11 @@ func Create(source, archive string) (err error) {
 	release, lockErr := acquireOfflineLock(source)
 	if lockErr != nil { return fmt.Errorf("offline backup refused: %w", lockErr) }
 	defer release()
+	// Lock acquisition can create its lock inode and update directory mtime.
+	// Capture the root identity only after that expected mutation.
+	info, err = os.Lstat(source)
+	if err != nil { return err }
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 { return errors.New("source directory changed while acquiring offline lock") }
 	if err = os.MkdirAll(filepath.Dir(archive), 0700); err != nil {
 		return err
 	}
