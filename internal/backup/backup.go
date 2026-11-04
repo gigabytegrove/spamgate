@@ -106,6 +106,9 @@ func Create(source, archive string) (err error) {
 	zw := zip.NewWriter(tmp)
 	manifest := Manifest{Format: 1, Created: time.Now().UTC(), Product: "SpamGate", Entries: []Entry{}}
 	var total int64
+	// Record every visited directory, not only the root: a concurrent
+	// rename or insertion in a nested directory invalidates the cold snapshot.
+	directories := map[string]os.FileInfo{source: info}
 	walkErr := filepath.WalkDir(source, func(path string, de fs.DirEntry, walkError error) error {
 		if walkError != nil {
 			return walkError
@@ -137,13 +140,14 @@ func Create(source, archive string) (err error) {
 			return nil
 		}
 		if de.IsDir() {
+			directories[path] = info
 			return nil
 		}
 		if !info.Mode().IsRegular() {
 			return fmt.Errorf("refusing non-regular data file: %s", path)
 		}
-		if !safeName(relative) {
-			return fmt.Errorf("unsafe data filename: %q", relative)
+		if !safeName(relative) || relative == manifestPath {
+			return fmt.Errorf("unsafe or reserved data filename: %q", relative)
 		}
 		if len(manifest.Entries) >= maxFiles || info.Size() > maxBytes-total {
 			return errors.New("backup exceeds bounded size or file-count limit")
@@ -191,11 +195,14 @@ func Create(source, archive string) (err error) {
 		zw.Close()
 		return walkErr
 	}
-	// The root pathname may have been renamed or replaced while WalkDir
-	// traversed its original inode. Reject that inconsistent snapshot.
-	if e := verifyBackupSourcePath(source, info); e != nil {
-		zw.Close()
-		return fmt.Errorf("backup data directory changed during traversal: %w", e)
+	// Check all traversed directory identities and metadata, including root.
+	// A file added or removed after WalkDir passed a nested directory must
+	// invalidate the archive rather than silently disappear from its manifest.
+	for path, snapshot := range directories {
+		if e := verifyBackupSourcePath(path, snapshot); e != nil {
+			zw.Close()
+			return fmt.Errorf("backup directory changed during traversal: %s: %w", path, e)
+		}
 	}
 	// A marker without its enforcement counters is an interrupted or
 	// corrupted policy publication, not a recoverable cold snapshot.
