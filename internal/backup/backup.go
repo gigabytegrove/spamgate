@@ -259,6 +259,19 @@ func Create(source, archive string) (err error) {
 	}
 	// Same-filesystem hard-link publication is atomic and NOREPLACE:
 	// a destination created after the initial Lstat must not be overwritten.
+	// Revalidate the destination parent immediately before publication. A
+	// renamed or replaced parent can redirect the final hard link into the
+	// protected data directory after the initial EvalSymlinks check.
+	currentParent, parentErr := filepath.EvalSymlinks(filepath.Dir(archive))
+	if parentErr != nil { return fmt.Errorf("backup destination parent changed before publication: %w", parentErr) }
+	if currentParent != resolvedParent { return errors.New("backup destination parent changed before publication") }
+	parentNow, parentErr := os.Lstat(filepath.Dir(archive))
+	if parentErr != nil { return parentErr }
+	parentBefore, parentErr := os.Lstat(filepath.Dir(tmp.Name()))
+	if parentErr != nil { return parentErr }
+	if !os.SameFile(parentBefore, parentNow) || parentNow.Mode()&os.ModeSymlink != 0 {
+		return errors.New("backup destination parent identity changed before publication")
+	}
 	if e = os.Link(tmp.Name(), archive); e != nil {
 		return fmt.Errorf("cannot publish backup without overwriting destination: %w", e)
 	}
