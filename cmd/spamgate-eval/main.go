@@ -202,6 +202,16 @@ func run(args []string,output,errorsOut io.Writer)int{
   })
   if len(configured)>0 {fmt.Fprintf(errorsOut,"%s requires --require-cohorts; refusing unenforced cohort acceptance thresholds\n",strings.Join(configured,", "));return 2}
  }
+ // At least two disjoint cohorts must each contain the required ham and spam.
+ // Check by division rather than multiplication to avoid integer overflow.
+ // These are necessary, not sufficient, conditions for corpus qualification.
+ if *requireCohorts && *maxRecords>0 && *minCohortHam>0 && *minCohortSpam>0 {
+  if *minCohortHam>*maxRecords/2 || *minCohortSpam>*maxRecords/2 ||
+   *minCohortHam>(*maxRecords/2)-*minCohortSpam {
+   fmt.Fprintln(errorsOut,"cohort minimums require at least two disjoint cohorts; combined minimum exceeds --max-records")
+   return 2
+  }
+ }
  if fs.NArg()!=1||*maxRecords<1||*minHam>*maxRecords||*minSpam>*maxRecords||(*minSpam<=*maxRecords&&*minHam>*maxRecords-*minSpam)||*maxInputBytes<1||*maxInputBytes==math.MaxInt64||*minHam<1||*minSpam<1||!finiteProbability(*maxFPR)||!finiteProbability(*minRecall)||!finiteProbability(*minPrecision)||*minPrecision<0||*minPrecision>1||*maxFPR<0||*maxFPR>1||*minRecall<0||*minRecall>1||*minCohortHam<1||*minCohortSpam<1||!finiteProbability(*maxCohortFPR)||!finiteProbability(*minCohortRecall)||!finiteProbability(*minCohortPrecision)||*minCohortPrecision<0||*minCohortPrecision>1||*maxCohortFPR<0||*maxCohortFPR>1||*minCohortRecall<0||*minCohortRecall>1{
   fmt.Fprintln(errorsOut,"usage: spamgate-eval [--min-ham=N --min-spam=N --max-fpr-upper=0.01 --min-recall-lower=0.90] labels.jsonl")
   return 2
