@@ -7,6 +7,7 @@ import (
  "crypto/sha256"
  "bytes"
  "encoding/json"
+ "hash"
  "encoding/hex"
  "errors"
  "flag"
@@ -228,7 +229,7 @@ func run(args []string,output,errorsOut io.Writer)int{
  if err!=nil{fmt.Fprintln(errorsOut,"cannot open corpus:",err);return 2}
  defer file.Close()
  var corpusReader io.Reader=file
- var digestWriter io.Writer
+ var digestWriter hash.Hash
  if *expectedDigest!="" { digestWriter=sha256.New(); corpusReader=io.TeeReader(file,digestWriter) }
  c,cohorts,unspecified,err:=readLabelledCorpusWithBudgets(corpusReader,*requireUniqueIDs,*maxRecords,*maxInputBytes)
  if err!=nil{fmt.Fprintln(errorsOut,"invalid corpus:",err);return 2}
@@ -236,7 +237,7 @@ func run(args []string,output,errorsOut io.Writer)int{
   // Scanner may stop at EOF without consuming bytes beyond its final token;
   // read the remainder to ensure the digest covers the entire file.
   if _,err:=io.Copy(digestWriter,file);err!=nil {fmt.Fprintln(errorsOut,"cannot hash corpus:",err);return 2}
-  actual:=hex.EncodeToString(digestWriter.(interface{ Sum([]byte) []byte }).Sum(nil))
+  actual:=hex.EncodeToString(digestWriter.Sum(nil))
   if actual!=*expectedDigest {fmt.Fprintln(errorsOut,"corpus SHA-256 mismatch; refusing evaluation");return 2}
  }
  result:=evaluateWithPrecision(c,*minHam,*minSpam,*maxFPR,*minRecall,*minPrecision)
