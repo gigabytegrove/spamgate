@@ -171,8 +171,9 @@ func run(args []string,output,errorsOut io.Writer)int{
  minCohortSpam:=fs.Int("min-cohort-spam",100,"minimum spam per cohort when required")
  maxCohortFPR:=fs.Float64("max-cohort-fpr-upper",0.05,"maximum Wilson upper false-positive bound per cohort")
  minCohortRecall:=fs.Float64("min-cohort-recall-lower",0.75,"minimum Wilson lower recall bound per cohort")
+ minCohortPrecision:=fs.Float64("min-cohort-precision-lower",0,"minimum Wilson lower precision bound per cohort (0 disables this gate)")
  if err:=fs.Parse(args);err!=nil{return 2}
- if fs.NArg()!=1||*maxRecords<1||*minHam<1||*minSpam<1||math.IsNaN(*maxFPR)||math.IsNaN(*minRecall)||math.IsNaN(*minPrecision)||*minPrecision<0||*minPrecision>1||*maxFPR<0||*maxFPR>1||*minRecall<0||*minRecall>1||*minCohortHam<1||*minCohortSpam<1||math.IsNaN(*maxCohortFPR)||math.IsNaN(*minCohortRecall)||*maxCohortFPR<0||*maxCohortFPR>1||*minCohortRecall<0||*minCohortRecall>1{
+ if fs.NArg()!=1||*maxRecords<1||*minHam<1||*minSpam<1||math.IsNaN(*maxFPR)||math.IsNaN(*minRecall)||math.IsNaN(*minPrecision)||*minPrecision<0||*minPrecision>1||*maxFPR<0||*maxFPR>1||*minRecall<0||*minRecall>1||*minCohortHam<1||*minCohortSpam<1||math.IsNaN(*maxCohortFPR)||math.IsNaN(*minCohortRecall)||math.IsNaN(*minCohortPrecision)||*minCohortPrecision<0||*minCohortPrecision>1||*maxCohortFPR<0||*maxCohortFPR>1||*minCohortRecall<0||*minCohortRecall>1{
   fmt.Fprintln(errorsOut,"usage: spamgate-eval [--min-ham=N --min-spam=N --max-fpr-upper=0.01 --min-recall-lower=0.90] labels.jsonl")
   return 2
  }
@@ -184,7 +185,7 @@ func run(args []string,output,errorsOut io.Writer)int{
  c,cohorts,unspecified,err:=readLabelledCorpusWithLimit(file,*requireUniqueIDs,*maxRecords)
  if err!=nil{fmt.Fprintln(errorsOut,"invalid corpus:",err);return 2}
  result:=evaluateWithPrecision(c,*minHam,*minSpam,*maxFPR,*minRecall,*minPrecision)
- result.Cohorts,result.CohortGatePassed=evaluateCohorts(cohorts,unspecified,*minCohortHam,*minCohortSpam,*maxCohortFPR,*minCohortRecall)
+ result.Cohorts,result.CohortGatePassed=evaluateCohortsWithPrecision(cohorts,unspecified,*minCohortHam,*minCohortSpam,*maxCohortFPR,*minCohortRecall,*minCohortPrecision)
  result.UnspecifiedCohort=unspecified
  result.CohortGateRequired=*requireCohorts
  if *requireCohorts {result.GatePassed=result.GatePassed&&result.CohortGatePassed}
