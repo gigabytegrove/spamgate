@@ -34,5 +34,10 @@ func publishBackupLink(source, destination string, expected os.FileInfo) error {
  if err != nil { return err }
  _, _, errno := syscall.Syscall6(syscall.SYS_LINKAT, uintptr(fd), uintptr(unsafe.Pointer(src)), uintptr(fd), uintptr(unsafe.Pointer(dst)), 0, 0)
  if errno != 0 { return fmt.Errorf("atomic backup publication: %w", errno) }
+ // Durability must use the same directory descriptor as linkat. Opening
+ // the pathname again would sync a replacement directory after a rename.
+ if err := syscall.Fsync(fd); err != nil {
+  return fmt.Errorf("backup published but destination directory sync failed: %w", err)
+ }
  return nil
 }
