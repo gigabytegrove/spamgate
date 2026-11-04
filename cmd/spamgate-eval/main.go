@@ -4,6 +4,7 @@ package main
 
 import (
  "bufio"
+ "crypto/sha256"
  "bytes"
  "encoding/json"
  "encoding/hex"
@@ -180,6 +181,7 @@ func run(args []string,output,errorsOut io.Writer)int{
  requireCohorts:=fs.Bool("require-cohorts",false,"require at least two sufficiently powered independently labelled cohorts")
  requireUniqueIDs:=fs.Bool("require-unique-ids",false,"require distinct SHA-256 message IDs to prevent repeated samples from inflating confidence")
  maxRecords:=fs.Int("max-records",1000000,"maximum labelled records accepted (memory and CPU safety limit)")
+ expectedDigest:=fs.String("corpus-sha256","","expected lowercase SHA-256 of the complete corpus file (optional integrity gate)")
  maxInputBytes:=fs.Int64("max-input-bytes",128<<20,"maximum corpus bytes including whitespace (default 134217728)")
  minCohortHam:=fs.Int("min-cohort-ham",100,"minimum ham per cohort when required")
  minCohortSpam:=fs.Int("min-cohort-spam",100,"minimum spam per cohort when required")
@@ -216,13 +218,27 @@ func run(args []string,output,errorsOut io.Writer)int{
   fmt.Fprintln(errorsOut,"usage: spamgate-eval [--min-ham=N --min-spam=N --max-fpr-upper=0.01 --min-recall-lower=0.90] labels.jsonl")
   return 2
  }
+ if *expectedDigest!="" {
+  if len(*expectedDigest)!=64 || strings.ToLower(*expectedDigest)!=*expectedDigest {fmt.Fprintln(errorsOut,"--corpus-sha256 requires 64 lowercase hexadecimal characters");return 2}
+  if _,err:=hex.DecodeString(*expectedDigest);err!=nil {fmt.Fprintln(errorsOut,"--corpus-sha256 must be lowercase hexadecimal");return 2}
+ }
  name:=fs.Arg(0)
  if strings.TrimSpace(name)==""{fmt.Fprintln(errorsOut,"corpus path required");return 2}
  file,err:=os.Open(name)
  if err!=nil{fmt.Fprintln(errorsOut,"cannot open corpus:",err);return 2}
  defer file.Close()
- c,cohorts,unspecified,err:=readLabelledCorpusWithBudgets(file,*requireUniqueIDs,*maxRecords,*maxInputBytes)
+ var corpusReader io.Reader=file
+ var digestWriter io.Writer
+ if *expectedDigest!="" { digestWriter=sha256.New(); corpusReader=io.TeeReader(file,digestWriter) }
+ c,cohorts,unspecified,err:=readLabelledCorpusWithBudgets(corpusReader,*requireUniqueIDs,*maxRecords,*maxInputBytes)
  if err!=nil{fmt.Fprintln(errorsOut,"invalid corpus:",err);return 2}
+ if digestWriter!=nil {
+  // Scanner may stop at EOF without consuming bytes beyond its final token;
+  // read the remainder to ensure the digest covers the entire file.
+  if _,err:=io.Copy(digestWriter,file);err!=nil {fmt.Fprintln(errorsOut,"cannot hash corpus:",err);return 2}
+  actual:=hex.EncodeToString(digestWriter.(interface{ Sum([]byte) []byte }).Sum(nil))
+  if actual!=*expectedDigest {fmt.Fprintln(errorsOut,"corpus SHA-256 mismatch; refusing evaluation");return 2}
+ }
  result:=evaluateWithPrecision(c,*minHam,*minSpam,*maxFPR,*minRecall,*minPrecision)
  result.Cohorts,result.CohortGatePassed=evaluateCohortsWithPrecision(cohorts,unspecified,*minCohortHam,*minCohortSpam,*maxCohortFPR,*minCohortRecall,*minCohortPrecision)
  result.UnspecifiedCohort=unspecified
