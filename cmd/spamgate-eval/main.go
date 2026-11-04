@@ -184,14 +184,10 @@ func run(args []string,output,errorsOut io.Writer)int{
   "min-cohort-ham":true,"min-cohort-spam":true,
   "max-cohort-fpr-upper":true,"min-cohort-recall-lower":true,
  }
- fs.Visit(func(f *flag.Flag){
-  if f.Name=="min-cohort-precision-lower" && *minCohortPrecision>0 {cohortThresholds[f.Name]=true}
-  if _,ok:=cohortThresholds[f.Name];ok {cohortThresholds[f.Name]=true}
- })
- if !*requireCohorts {
+  if !*requireCohorts {
   var configured []string
   fs.Visit(func(f *flag.Flag){
-   if f.Name=="min-cohort-precision-lower" && *minCohortPrecision==0{return}
+   if f.Name=="min-cohort-precision-lower" && *minCohortPrecision>0 {configured=append(configured,"--"+f.Name);return}
    if cohortThresholds[f.Name]{configured=append(configured,"--"+f.Name)}
   })
   if len(configured)>0 {fmt.Fprintf(errorsOut,"%s requires --require-cohorts; refusing unenforced cohort acceptance thresholds\\n",strings.Join(configured,", "));return 2}
