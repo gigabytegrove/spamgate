@@ -36,3 +36,19 @@ func verifyEvaluationCorpusUnchanged(f *os.File, initial os.FileInfo) error {
  }
  return nil
 }
+
+// verifyEvaluationCorpusPathUnchanged also detects pathname replacement after
+// the descriptor was opened. Descriptor-only checks miss rename/unlink attacks:
+// the original inode can remain perfectly stable while the named evidence
+// corpus has been replaced with unrelated data.
+func verifyEvaluationCorpusPathUnchanged(path string, opened os.FileInfo) error {
+ entry, err := os.Lstat(path)
+ if err != nil { return fmt.Errorf("corpus path unavailable after evaluation: %w", err) }
+ if !entry.Mode().IsRegular() || !os.SameFile(entry, opened) {
+  return errors.New("corpus path was replaced or changed into a non-regular file")
+ }
+ if entry.Size()!=opened.Size() || !entry.ModTime().Equal(opened.ModTime()) {
+  return errors.New("corpus path metadata changed during evaluation")
+ }
+ return nil
+}

@@ -252,6 +252,7 @@ func run(args []string,output,errorsOut io.Writer)int{
   if actual!=*expectedDigest {fmt.Fprintln(errorsOut,"corpus SHA-256 mismatch; refusing evaluation");return 2}
  }
  if err:=verifyEvaluationCorpusUnchanged(file,initialInfo);err!=nil {fmt.Fprintln(errorsOut,"corpus changed during evaluation:",err);return 2}
+ if err:=verifyEvaluationCorpusPathUnchanged(name,initialInfo);err!=nil {fmt.Fprintln(errorsOut,"corpus changed during evaluation:",err);return 2}
  result:=evaluateWithPrecision(c,*minHam,*minSpam,*maxFPR,*minRecall,*minPrecision)
  result.Cohorts,result.CohortGatePassed=evaluateCohortsWithPrecision(cohorts,unspecified,*minCohortHam,*minCohortSpam,*maxCohortFPR,*minCohortRecall,*minCohortPrecision)
  result.UnspecifiedCohort=unspecified
