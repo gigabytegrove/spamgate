@@ -11,9 +11,8 @@ func TestBackupDirectorySnapshotsRejectNestedChanges(t *testing.T) {
  root := t.TempDir()
  nested := filepath.Join(root, "nested")
  if err := os.Mkdir(nested, 0700); err != nil { t.Fatal(err) }
- rootInfo, err := os.Lstat(root); if err != nil { t.Fatal(err) }
  nestedInfo, err := os.Lstat(nested); if err != nil { t.Fatal(err) }
- snapshots := map[string]os.FileInfo{root:rootInfo, nested:nestedInfo}
+ snapshots := map[string]os.FileInfo{nested:nestedInfo}
  if err := verifyBackupDirectories(snapshots); err != nil { t.Fatalf("stable tree rejected: %v", err) }
  // Replace a visited nested directory without modifying the root pathname.
  moved := filepath.Join(root, "previous")
