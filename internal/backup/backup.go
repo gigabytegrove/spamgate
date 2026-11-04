@@ -149,7 +149,7 @@ func Create(source, archive string) (err error) {
 		}
 		opened, e := f.Stat()
 		if e != nil { f.Close(); return e }
-		if !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
+		if !opened.Mode().IsRegular() || !os.SameFile(info, opened) || opened.Size() != info.Size() || !opened.ModTime().Equal(info.ModTime()) || !sourceChangeTimeEqual(info, opened) {
 			f.Close()
 			return fmt.Errorf("source file changed identity during open: %s", relative)
 		}
@@ -172,6 +172,12 @@ func Create(source, archive string) (err error) {
 		}
 		if n != info.Size() {
 			return fmt.Errorf("file changed during backup: %s", relative)
+		}
+		// The descriptor can remain stable while the pathname is unlinked or
+		// atomically replaced. A cold backup must reject that inconsistent view.
+		current, e := os.Lstat(path)
+		if e != nil || !current.Mode().IsRegular() || !os.SameFile(info, current) || current.Size() != info.Size() || !current.ModTime().Equal(info.ModTime()) || !sourceChangeTimeEqual(info, current) {
+			return fmt.Errorf("source pathname changed during backup: %s", relative)
 		}
 		total += n
 		manifest.Entries = append(manifest.Entries, Entry{Path: relative, Bytes: n, SHA256: hex.EncodeToString(hash.Sum(nil))})
