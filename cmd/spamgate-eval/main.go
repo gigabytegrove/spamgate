@@ -214,7 +214,7 @@ func run(args []string,output,errorsOut io.Writer)int{
   // independently misses impossible mixed configurations. Compare using
   // division/subtraction so even MaxInt thresholds cannot overflow.
   if *minCohortHam>*maxRecords/2 || *minCohortSpam>*maxRecords/2 {
-   fmt.Fprintln(errorsOut,"two-cohort minimums exceed --max-records")
+   fmt.Fprintln(errorsOut,"two disjoint cohorts require more than --max-records")
    return 2
   }
   neededHam:=*minHam
@@ -222,7 +222,7 @@ func run(args []string,output,errorsOut io.Writer)int{
   neededSpam:=*minSpam
   if two:=*minCohortSpam*2;two>neededSpam {neededSpam=two}
   if neededHam>*maxRecords || neededSpam>*maxRecords-neededHam {
-   fmt.Fprintln(errorsOut,"combined global and two-cohort ham/spam minimums exceed --max-records")
+   fmt.Fprintln(errorsOut,"combined global and two disjoint cohorts ham/spam minimums exceed --max-records")
    return 2
   }
  }
