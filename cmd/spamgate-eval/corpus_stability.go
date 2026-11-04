@@ -13,7 +13,7 @@ func openEvaluationCorpus(path string) (*os.File, os.FileInfo, error) {
  entry, err := os.Lstat(path)
  if err != nil { return nil,nil,err }
  if !entry.Mode().IsRegular() { return nil,nil,errors.New("corpus must be a regular file (symlinks and streams are refused)") }
- f, err := os.Open(path)
+ f, err := openEvaluationCorpusDescriptor(path)
  if err != nil { return nil,nil,err }
  info, err := f.Stat()
  if err != nil { f.Close();return nil,nil,err }
