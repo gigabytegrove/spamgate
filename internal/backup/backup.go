@@ -161,7 +161,7 @@ func Create(source, archive string) (err error) {
 		finished, statErr := f.Stat()
 		closeErr := f.Close()
 		if e == nil { e = statErr }
-		if e == nil && (!os.SameFile(info, finished) || finished.Size() != info.Size() || !finished.ModTime().Equal(info.ModTime())) {
+		if e == nil && (!os.SameFile(info, finished) || finished.Size() != info.Size() || !finished.ModTime().Equal(info.ModTime()) || !sourceChangeTimeEqual(info, finished)) {
 			e = fmt.Errorf("source file changed during backup: %s", relative)
 		}
 		if e == nil {
