@@ -268,7 +268,10 @@ func Create(source, archive string) (err error) {
 	if e = publishBackupLink(tmp.Name(), archive, parentIdentity); e != nil {
 		return fmt.Errorf("cannot publish backup without overwriting destination: %w", e)
 	}
-	if runtime.GOOS != "windows" {
+	// Linux publication fsyncs its anchored directory descriptor inside
+	// publishBackupLink. Reopening the pathname could sync a different inode
+	// if the parent was concurrently renamed or replaced.
+	if runtime.GOOS != "windows" && runtime.GOOS != "linux" {
 		d, openErr := os.Open(filepath.Dir(archive))
 		if openErr != nil { return fmt.Errorf("backup published but directory sync failed: %w", openErr) }
 		syncErr := d.Sync()
