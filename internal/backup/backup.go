@@ -175,9 +175,8 @@ func Create(source, archive string) (err error) {
 		}
 		// The descriptor can remain stable while the pathname is unlinked or
 		// atomically replaced. A cold backup must reject that inconsistent view.
-		current, e := os.Lstat(path)
-		if e != nil || !current.Mode().IsRegular() || !os.SameFile(info, current) || current.Size() != info.Size() || !current.ModTime().Equal(info.ModTime()) || !sourceChangeTimeEqual(info, current) {
-			return fmt.Errorf("source pathname changed during backup: %s", relative)
+		if e := verifyBackupSourcePath(path, info); e != nil {
+			return fmt.Errorf("source pathname changed during backup: %s: %w", relative, e)
 		}
 		total += n
 		manifest.Entries = append(manifest.Entries, Entry{Path: relative, Bytes: n, SHA256: hex.EncodeToString(hash.Sum(nil))})
@@ -437,3 +436,15 @@ func Restore(archive, destination string) error {
 	return publishRestoredDirectory(stage, dest)
 }
 
+
+// verifyBackupSourcePath checks the name again after copying the opened inode.
+// A rename or unlink does not invalidate the descriptor, but invalidates the
+// directory snapshot the manifest claims to represent.
+func verifyBackupSourcePath(path string, original os.FileInfo) error {
+ current, err := os.Lstat(path)
+ if err != nil { return err }
+ if !current.Mode().IsRegular() || !os.SameFile(original, current) || current.Size() != original.Size() || !current.ModTime().Equal(original.ModTime()) || !sourceChangeTimeEqual(original, current) {
+  return errors.New("source pathname identity or metadata changed")
+ }
+ return nil
+}
