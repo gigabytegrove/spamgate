@@ -91,6 +91,8 @@ func Create(source, archive string) (err error) {
 	if resolveErr != nil { return fmt.Errorf("resolve backup source: %w", resolveErr) }
 	resolvedParent, resolveErr := filepath.EvalSymlinks(filepath.Dir(archive))
 	if resolveErr != nil { return fmt.Errorf("resolve backup destination parent: %w", resolveErr) }
+	parentIdentity, parentErr := os.Lstat(filepath.Dir(archive))
+	if parentErr != nil { return parentErr }
 	resolvedArchive := filepath.Join(resolvedParent, filepath.Base(archive))
 	if resolvedArchive == resolvedSource || strings.HasPrefix(resolvedArchive, resolvedSource+string(filepath.Separator)) {
 		return errors.New("backup destination resolves inside the SpamGate data directory")
@@ -267,9 +269,7 @@ func Create(source, archive string) (err error) {
 	if currentParent != resolvedParent { return errors.New("backup destination parent changed before publication") }
 	parentNow, parentErr := os.Lstat(filepath.Dir(archive))
 	if parentErr != nil { return parentErr }
-	parentBefore, parentErr := os.Lstat(filepath.Dir(tmp.Name()))
-	if parentErr != nil { return parentErr }
-	if !os.SameFile(parentBefore, parentNow) || parentNow.Mode()&os.ModeSymlink != 0 {
+	if !os.SameFile(parentIdentity, parentNow) || parentNow.Mode()&os.ModeSymlink != 0 {
 		return errors.New("backup destination parent identity changed before publication")
 	}
 	if e = os.Link(tmp.Name(), archive); e != nil {
