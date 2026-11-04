@@ -19,7 +19,7 @@ func TestSourceChangeTimeDetectsRestoredMtimeRewrite(t *testing.T) {
     if !sourceChangeTimeEqual(before, before) { t.Fatal("identical snapshot rejected") }
     // Ensure a distinguishable ctime even on filesystems with coarse timestamps.
     time.Sleep(15 * time.Millisecond)
-    if err := os.WriteFile(path, []byte("rewritten"), 0600); err != nil { t.Fatal(err) }
+    if err := os.WriteFile(path, []byte("modified"), 0600); err != nil { t.Fatal(err) }
     if err := os.Chtimes(path, old, old); err != nil { t.Fatal(err) }
     after, err := os.Stat(path)
     if err != nil { t.Fatal(err) }
