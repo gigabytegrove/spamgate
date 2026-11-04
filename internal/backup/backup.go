@@ -264,14 +264,7 @@ func Create(source, archive string) (err error) {
 	// Revalidate the destination parent immediately before publication. A
 	// renamed or replaced parent can redirect the final hard link into the
 	// protected data directory after the initial EvalSymlinks check.
-	currentParent, parentErr := filepath.EvalSymlinks(filepath.Dir(archive))
-	if parentErr != nil { return fmt.Errorf("backup destination parent changed before publication: %w", parentErr) }
-	if currentParent != resolvedParent { return errors.New("backup destination parent changed before publication") }
-	parentNow, parentErr := os.Lstat(filepath.Dir(archive))
-	if parentErr != nil { return parentErr }
-	if !os.SameFile(parentIdentity, parentNow) || parentNow.Mode()&os.ModeSymlink != 0 {
-		return errors.New("backup destination parent identity changed before publication")
-	}
+	if e = verifyBackupDestinationParent(filepath.Dir(archive), resolvedParent, parentIdentity); e != nil { return e }
 	if e = os.Link(tmp.Name(), archive); e != nil {
 		return fmt.Errorf("cannot publish backup without overwriting destination: %w", e)
 	}
@@ -513,6 +506,20 @@ func verifyBackupCopiedFiles(files map[string]os.FileInfo) error {
 		if err := verifyBackupSourcePath(path, snapshot); err != nil {
 			return fmt.Errorf("backup source file changed after copy: %s: %w", path, err)
 		}
+	}
+	return nil
+}
+
+// verifyBackupDestinationParent prevents publishing into a replaced parent.
+// It is a best-effort check, not an atomic directory-relative link operation.
+func verifyBackupDestinationParent(path, resolved string, identity os.FileInfo) error {
+	current, err := filepath.EvalSymlinks(path)
+	if err != nil { return fmt.Errorf("backup destination parent changed: %w", err) }
+	if current != resolved { return errors.New("backup destination parent changed resolution") }
+	info, err := os.Lstat(path)
+	if err != nil { return err }
+	if !os.SameFile(identity, info) || info.Mode().Type() != identity.Mode().Type() {
+		return errors.New("backup destination parent changed identity")
 	}
 	return nil
 }
