@@ -186,6 +186,12 @@ func Create(source, archive string) (err error) {
 		zw.Close()
 		return walkErr
 	}
+	// The root pathname may have been renamed or replaced while WalkDir
+	// traversed its original inode. Reject that inconsistent snapshot.
+	if e := verifyBackupSourcePath(source, info); e != nil {
+		zw.Close()
+		return fmt.Errorf("backup data directory changed during traversal: %w", e)
+	}
 	// A marker without its enforcement counters is an interrupted or
 	// corrupted policy publication, not a recoverable cold snapshot.
 	seenPolicy := map[string]bool{}
@@ -443,7 +449,7 @@ func Restore(archive, destination string) error {
 func verifyBackupSourcePath(path string, original os.FileInfo) error {
  current, err := os.Lstat(path)
  if err != nil { return err }
- if !current.Mode().IsRegular() || !os.SameFile(original, current) || current.Size() != original.Size() || !current.ModTime().Equal(original.ModTime()) || !sourceChangeTimeEqual(original, current) {
+ if current.Mode().Type() != original.Mode().Type() || !os.SameFile(original, current) || current.Size() != original.Size() || !current.ModTime().Equal(original.ModTime()) || !sourceChangeTimeEqual(original, current) {
   return errors.New("source pathname identity or metadata changed")
  }
  return nil
