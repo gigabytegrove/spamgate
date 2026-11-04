@@ -208,10 +208,21 @@ func run(args []string,output,errorsOut io.Writer)int{
  // At least two disjoint cohorts must each contain the required ham and spam.
  // Check by division rather than multiplication to avoid integer overflow.
  // These are necessary, not sufficient, conditions for corpus qualification.
- if *requireCohorts && *maxRecords>0 && *minCohortHam>0 && *minCohortSpam>0 {
-  if *minCohortHam>*maxRecords/2 || *minCohortSpam>*maxRecords/2 ||
-   *minCohortHam>(*maxRecords/2)-*minCohortSpam {
-   fmt.Fprintln(errorsOut,"cohort minimums require at least two disjoint cohorts; combined minimum exceeds --max-records")
+ if *requireCohorts && *maxRecords>0 && *minHam>0 && *minSpam>0 && *minCohortHam>0 && *minCohortSpam>0 {
+  // The global ham/spam requirements and the two disjoint cohort
+  // requirements must hold simultaneously. Checking their totals
+  // independently misses impossible mixed configurations. Compare using
+  // division/subtraction so even MaxInt thresholds cannot overflow.
+  if *minCohortHam>*maxRecords/2 || *minCohortSpam>*maxRecords/2 {
+   fmt.Fprintln(errorsOut,"two-cohort minimums exceed --max-records")
+   return 2
+  }
+  neededHam:=*minHam
+  if two:=*minCohortHam*2;two>neededHam {neededHam=two}
+  neededSpam:=*minSpam
+  if two:=*minCohortSpam*2;two>neededSpam {neededSpam=two}
+  if neededHam>*maxRecords || neededSpam>*maxRecords-neededHam {
+   fmt.Fprintln(errorsOut,"combined global and two-cohort ham/spam minimums exceed --max-records")
    return 2
   }
  }
