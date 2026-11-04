@@ -177,7 +177,25 @@ func run(args []string,output,errorsOut io.Writer)int{
  minCohortRecall:=fs.Float64("min-cohort-recall-lower",0.75,"minimum Wilson lower recall bound per cohort")
  minCohortPrecision:=fs.Float64("min-cohort-precision-lower",0,"minimum Wilson lower precision bound per cohort (0 disables this gate)")
  if err:=fs.Parse(args);err!=nil{return 2}
- if *minCohortPrecision>0 && !*requireCohorts {fmt.Fprintln(errorsOut,"--min-cohort-precision-lower requires --require-cohorts; refusing an unenforced precision threshold");return 2}
+ // Explicit cohort acceptance thresholds must not silently become report-only.
+ // A zero precision threshold is a documented disabled gate; all other
+ // cohort thresholds, including explicit zero FPR/recall, require enforcement.
+ cohortThresholds:=map[string]bool{
+  "min-cohort-ham":true,"min-cohort-spam":true,
+  "max-cohort-fpr-upper":true,"min-cohort-recall-lower":true,
+ }
+ fs.Visit(func(f *flag.Flag){
+  if f.Name=="min-cohort-precision-lower" && *minCohortPrecision>0 {cohortThresholds[f.Name]=true}
+  if _,ok:=cohortThresholds[f.Name];ok {cohortThresholds[f.Name]=true}
+ })
+ if !*requireCohorts {
+  var configured []string
+  fs.Visit(func(f *flag.Flag){
+   if f.Name=="min-cohort-precision-lower" && *minCohortPrecision==0{return}
+   if cohortThresholds[f.Name]{configured=append(configured,"--"+f.Name)}
+  })
+  if len(configured)>0 {fmt.Fprintf(errorsOut,"%s requires --require-cohorts; refusing unenforced cohort acceptance thresholds\\n",strings.Join(configured,", "));return 2}
+ }
  if fs.NArg()!=1||*maxRecords<1||*minHam<1||*minSpam<1||!finiteProbability(*maxFPR)||!finiteProbability(*minRecall)||!finiteProbability(*minPrecision)||*minPrecision<0||*minPrecision>1||*maxFPR<0||*maxFPR>1||*minRecall<0||*minRecall>1||*minCohortHam<1||*minCohortSpam<1||!finiteProbability(*maxCohortFPR)||!finiteProbability(*minCohortRecall)||!finiteProbability(*minCohortPrecision)||*minCohortPrecision<0||*minCohortPrecision>1||*maxCohortFPR<0||*maxCohortFPR>1||*minCohortRecall<0||*minCohortRecall>1{
   fmt.Fprintln(errorsOut,"usage: spamgate-eval [--min-ham=N --min-spam=N --max-fpr-upper=0.01 --min-recall-lower=0.90] labels.jsonl")
   return 2
