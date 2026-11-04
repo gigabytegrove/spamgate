@@ -27,6 +27,9 @@ type cohortResult struct{
  Counts counts `json:"counts"`
  FalsePositiveUpper95 float64 `json:"false_positive_upper_95"`
  RecallLower95 float64 `json:"recall_lower_95"`
+ Precision float64 `json:"precision"`
+ PrecisionLower95 float64 `json:"precision_lower_95"`
+ MinimumPrecisionLower95 float64 `json:"minimum_precision_lower_95"`
  GatePassed bool `json:"gate_passed"`
 }
 
@@ -35,16 +38,21 @@ type cohortResult struct{
 // two categories must be represented, and every category must meet both sample
 // size and Wilson confidence thresholds. These are still corpus-only metrics.
 func evaluateCohorts(cohorts map[string]counts,unspecified,minHam,minSpam int,maxFPR,minRecall float64)([]cohortResult,bool){
+ return evaluateCohortsWithPrecision(cohorts,unspecified,minHam,minSpam,maxFPR,minRecall,0)
+}
+
+func evaluateCohortsWithPrecision(cohorts map[string]counts,unspecified,minHam,minSpam int,maxFPR,minRecall,minPrecision float64)([]cohortResult,bool){
  keys:=make([]string,0,len(cohorts))
  for name:=range cohorts{keys=append(keys,name)}
  sort.Strings(keys)
  results:=make([]cohortResult,0,len(keys))
  passed:=unspecified==0&&len(keys)>=2
  for _,name:=range keys{
-  r:=evaluate(cohorts[name],minHam,minSpam,maxFPR,minRecall)
+  r:=evaluateWithPrecision(cohorts[name],minHam,minSpam,maxFPR,minRecall,minPrecision)
   results=append(results,cohortResult{
    Name:name,Counts:r.Counts,FalsePositiveUpper95:r.FalsePositiveUpper95,
-   RecallLower95:r.RecallLower95,GatePassed:r.GatePassed,
+   RecallLower95:r.RecallLower95,Precision:r.Precision,
+   PrecisionLower95:r.PrecisionLower95,MinimumPrecisionLower95:minPrecision,GatePassed:r.GatePassed,
   })
   if !r.GatePassed{passed=false}
  }
