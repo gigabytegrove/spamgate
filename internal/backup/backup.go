@@ -265,7 +265,7 @@ func Create(source, archive string) (err error) {
 	// renamed or replaced parent can redirect the final hard link into the
 	// protected data directory after the initial EvalSymlinks check.
 	if e = verifyBackupDestinationParent(filepath.Dir(archive), resolvedParent, parentIdentity); e != nil { return e }
-	if e = os.Link(tmp.Name(), archive); e != nil {
+	if e = publishBackupLink(tmp.Name(), archive, parentIdentity); e != nil {
 		return fmt.Errorf("cannot publish backup without overwriting destination: %w", e)
 	}
 	if runtime.GOOS != "windows" {
