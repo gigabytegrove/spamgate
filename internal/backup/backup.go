@@ -198,11 +198,9 @@ func Create(source, archive string) (err error) {
 	// Check all traversed directory identities and metadata, including root.
 	// A file added or removed after WalkDir passed a nested directory must
 	// invalidate the archive rather than silently disappear from its manifest.
-	for path, snapshot := range directories {
-		if e := verifyBackupSourcePath(path, snapshot); e != nil {
-			zw.Close()
-			return fmt.Errorf("backup directory changed during traversal: %s: %w", path, e)
-		}
+	if e := verifyBackupDirectories(directories); e != nil {
+		zw.Close()
+		return e
 	}
 	// A marker without its enforcement counters is an interrupted or
 	// corrupted policy publication, not a recoverable cold snapshot.
@@ -465,4 +463,17 @@ func verifyBackupSourcePath(path string, original os.FileInfo) error {
   return errors.New("source pathname identity or metadata changed")
  }
  return nil
+}
+
+
+// verifyBackupDirectories rejects any visited directory whose pathname or
+// metadata changed during traversal. This is a consistency check, not an
+// atomic filesystem snapshot; keep the offline writer lock requirement.
+func verifyBackupDirectories(directories map[string]os.FileInfo) error {
+	for path, snapshot := range directories {
+		if e := verifyBackupSourcePath(path, snapshot); e != nil {
+			return fmt.Errorf("backup directory changed during traversal: %s: %w", path, e)
+		}
+	}
+	return nil
 }
