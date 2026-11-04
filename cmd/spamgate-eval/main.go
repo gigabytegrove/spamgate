@@ -190,7 +190,7 @@ func run(args []string,output,errorsOut io.Writer)int{
    if f.Name=="min-cohort-precision-lower" && *minCohortPrecision>0 {configured=append(configured,"--"+f.Name);return}
    if cohortThresholds[f.Name]{configured=append(configured,"--"+f.Name)}
   })
-  if len(configured)>0 {fmt.Fprintf(errorsOut,"%s requires --require-cohorts; refusing unenforced cohort acceptance thresholds\\n",strings.Join(configured,", "));return 2}
+  if len(configured)>0 {fmt.Fprintf(errorsOut,"%s requires --require-cohorts; refusing unenforced cohort acceptance thresholds\n",strings.Join(configured,", "));return 2}
  }
  if fs.NArg()!=1||*maxRecords<1||*minHam<1||*minSpam<1||!finiteProbability(*maxFPR)||!finiteProbability(*minRecall)||!finiteProbability(*minPrecision)||*minPrecision<0||*minPrecision>1||*maxFPR<0||*maxFPR>1||*minRecall<0||*minRecall>1||*minCohortHam<1||*minCohortSpam<1||!finiteProbability(*maxCohortFPR)||!finiteProbability(*minCohortRecall)||!finiteProbability(*minCohortPrecision)||*minCohortPrecision<0||*minCohortPrecision>1||*maxCohortFPR<0||*maxCohortFPR>1||*minCohortRecall<0||*minCohortRecall>1{
   fmt.Fprintln(errorsOut,"usage: spamgate-eval [--min-ham=N --min-spam=N --max-fpr-upper=0.01 --min-recall-lower=0.90] labels.jsonl")
