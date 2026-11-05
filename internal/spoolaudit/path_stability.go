@@ -16,7 +16,7 @@ func verifyRecordPathStable(path string, opened os.FileInfo) error {
  if !current.Mode().IsRegular() || !os.SameFile(opened,current) {
   return errors.New("spool pathname replaced during read")
  }
- if current.Size()!=opened.Size() || !current.ModTime().Equal(opened.ModTime()) {
+ if current.Size()!=opened.Size() || !current.ModTime().Equal(opened.ModTime()) || !sameAuditChangeTime(opened,current) {
   return errors.New("spool pathname metadata changed during read")
  }
  if err:=validateAuditRecordMetadata(path,current);err!=nil {
