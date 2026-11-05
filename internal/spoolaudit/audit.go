@@ -41,6 +41,7 @@ type Report struct {
  InvalidFilenames int `json:"invalid_filenames"`
  UnexpectedEntries int `json:"unexpected_entries"`
  States map[string]int `json:"states"`
+ FindingCounts map[string]int `json:"finding_counts"`
  Findings []Finding `json:"findings"`
  Truncated bool `json:"truncated"`
  DroppedFindings int `json:"dropped_findings"`
@@ -102,6 +103,8 @@ func validID(id string) bool {
  return true
 }
 func (r *Report) add(code,name,detail string) {
+ if r.FindingCounts==nil {r.FindingCounts=make(map[string]int)}
+ r.FindingCounts[code]++
  if len(r.Findings)>=maxFindings {r.Truncated=true;r.DroppedFindings++;return}
  r.Findings=append(r.Findings,Finding{code,strconv.QuoteToASCII(name),detail})
 }
@@ -153,7 +156,7 @@ func readRecord(path string) (record,error) {
 // Live scans are observations, not transactionally coherent snapshots.
 // Pending files are NEVER replayed automatically.
 func Audit(dir string) (Report,error) {
- out:=Report{States:make(map[string]int),Findings:make([]Finding,0)}
+ out:=Report{States:make(map[string]int),FindingCounts:make(map[string]int),Findings:make([]Finding,0)}
  // A valid pending record can exist without a published counterpart after
  // an interrupted fsync/rename. Multiple such records with the same ID
  // must be reported before any operator considers manual recovery.
