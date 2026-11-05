@@ -4,6 +4,7 @@ import (
  "os"
  "path/filepath"
  "strings"
+ "strconv"
  "testing"
 )
 
@@ -12,7 +13,7 @@ import (
 func TestAuditEntryLimitIsAnErrorAndPreservesQueue(t *testing.T) {
  dir := privateDir(t)
  for i := 0; i <= maxEntries; i++ {
-  name := filepath.Join(dir, "unrelated-"+strconvForTest(i))
+  name := filepath.Join(dir, "unrelated-"+strconv.Itoa(i))
   if err := os.WriteFile(name, nil, 0600); err != nil { t.Fatal(err) }
  }
  report, err := Audit(dir)
@@ -29,14 +30,3 @@ func TestAuditEntryLimitIsAnErrorAndPreservesQueue(t *testing.T) {
  }
 }
 
-func strconvForTest(n int) string {
- if n == 0 { return "0" }
- var digits [20]byte
- i := len(digits)
- for n > 0 {
-  i--
-  digits[i] = byte('0'+n%10)
-  n /= 10
- }
- return string(digits[i:])
-}
