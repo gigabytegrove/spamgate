@@ -264,6 +264,9 @@ func Audit(dir string) (Report,error) {
   }
   if errors.Is(err,io.EOF){break}
  }
+ // An opened directory descriptor remains readable after rename/unlink.
+ // Refuse to present that detached tree as the current spool pathname.
+ if err:=verifyAuditDirectoryPath(dir,opened);err!=nil{return out,fmt.Errorf("spool directory changed during audit: %w",err)}
  return out,nil
 }
 func (r Report) HasFindings() bool {return len(r.Findings)!=0||r.Truncated}
