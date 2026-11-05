@@ -37,6 +37,8 @@ type Report struct {
  PendingConflictingIDs int `json:"pending_conflicting_ids"`
  LifecycleAnomalies int `json:"lifecycle_anomalies"`
  LegacyUnsigned int `json:"legacy_unsigned"`
+ UnreadableRecords int `json:"unreadable_records"`
+ InvalidFilenames int `json:"invalid_filenames"`
  States map[string]int `json:"states"`
  Findings []Finding `json:"findings"`
  Truncated bool `json:"truncated"`
@@ -192,11 +194,12 @@ func Audit(dir string) (Report,error) {
    if !pending&&!published{continue}
    if pending{out.Pending++}else{out.Published++}
    if published&&!validID(strings.TrimSuffix(name,".json")){
+    out.InvalidFilenames++
     out.add("invalid_filename",name,"published spool filename is not a lowercase 32-character queue ID")
     continue
    }
    rec,readErr:=readRecord(filepath.Join(dir,name))
-   if readErr!=nil {out.add("unreadable_record",name,readErr.Error());continue}
+   if readErr!=nil {out.UnreadableRecords++;out.add("unreadable_record",name,readErr.Error());continue}
    if published&&rec.ID!=strings.TrimSuffix(name,".json"){
     out.add("id_mismatch",name,"record ID does not match its published filename")
    }
@@ -282,6 +285,6 @@ func Audit(dir string) (Report,error) {
 }
 func (r Report) HasFindings() bool {return len(r.Findings)!=0||r.Truncated}
 func (r Report) Explain() string {
- return fmt.Sprintf("examined=%d published=%d pending=%d pending_without_final=%d pending_with_final=%d pending_duplicate_ids=%d pending_conflicting_ids=%d lifecycle_anomalies=%d legacy_unsigned=%d findings=%d dropped_findings=%d truncated=%t",
-  r.Examined,r.Published,r.Pending,r.PendingWithoutFinal,r.PendingWithFinal,r.PendingDuplicateIDs,r.PendingConflictingIDs,r.LifecycleAnomalies,r.LegacyUnsigned,len(r.Findings),r.DroppedFindings,r.Truncated)
+ return fmt.Sprintf("examined=%d published=%d pending=%d pending_without_final=%d pending_with_final=%d pending_duplicate_ids=%d pending_conflicting_ids=%d lifecycle_anomalies=%d legacy_unsigned=%d unreadable_records=%d invalid_filenames=%d findings=%d dropped_findings=%d truncated=%t",
+  r.Examined,r.Published,r.Pending,r.PendingWithoutFinal,r.PendingWithFinal,r.PendingDuplicateIDs,r.PendingConflictingIDs,r.LifecycleAnomalies,r.LegacyUnsigned,r.UnreadableRecords,r.InvalidFilenames,len(r.Findings),r.DroppedFindings,r.Truncated)
 }
