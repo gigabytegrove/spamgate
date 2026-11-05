@@ -1,0 +1,7 @@
+# Native delivery-spool finding counts — 2026-11-05
+
+The read-only native queue audit now includes `finding_counts` in its JSON report. Each key is a fixed diagnostic finding code and each value is the number of occurrences across the **entire bounded scan**, including findings omitted from the 512-detail limit. The existing `findings` array, `dropped_findings`, `truncated`, and incomplete-audit error remain unchanged. Consumers must still treat any audit error or `truncated=true` as **incomplete**, not healthy.
+
+This corrects an operational blind spot: when several categories of queue anomalies exceeded the detailed finding limit, aggregate counts such as `unreadable_records` and `invalid_filenames` could not describe all other finding categories (for example, pending reconciliation conflicts). The new map records all categories without retaining unbounded filenames, recipients, subjects, or message bodies. It does not change delivery, queue recovery, SMTP acknowledgement, Postfix, Dovecot, Milter policy, or the running mail host.
+
+Regression tests cover 519 invalid filenames, omitted detail counts, JSON round-trip, mixed finding categories, and a clean queue. **Qualification:** GitHub commits do not prove that these tests pass. Full repository CI, real mail-host tests, live crash/failure injection, cold restore, browser acceptance, and native update/rollback must be independently verified. All production gates #1–#9 remain open until their respective acceptance criteria are satisfied.
