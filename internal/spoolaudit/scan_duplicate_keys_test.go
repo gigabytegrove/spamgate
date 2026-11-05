@@ -16,7 +16,7 @@ func TestScanEnvelopeDuplicateKeys(t *testing.T) {
   {"duplicate sender",`{"id":"`+id+`","sender":"attacker@example.test","sender":"","recipients":["a@example.test"]}`,true},
   {"duplicate recipients",`{"id":"`+id+`","sender":"","recipients":["b@example.test"],"recipients":["a@example.test"]}`,true},
   {"duplicate unrelated field",`{"id":"`+id+`","sender":"","recipients":["a@example.test"],"score":1,"score":9}`,true},
-  {"escaped duplicate key",`{"id":"`+id+`","\\u0069d":"`+id+`","sender":"","recipients":["a@example.test"]}`,true},
+  {"escaped duplicate key",`{"id":"`+id+`","\u0069d":"`+id+`","sender":"","recipients":["a@example.test"]}`,true},
   {"nested duplicate not envelope identity",`{"id":"`+id+`","sender":"","recipients":["a@example.test"],"metadata":{"x":1,"x":2}}`,false},
   {"trailing JSON",`{"id":"`+id+`","sender":"","recipients":["a@example.test"]} true`,true},
   {"malformed value",`{"id":"`+id+`","sender":"","recipients":["a@example.test"],"score":}`,true},
