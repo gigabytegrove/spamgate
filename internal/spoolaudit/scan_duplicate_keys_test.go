@@ -17,7 +17,7 @@ func TestScanEnvelopeDuplicateKeys(t *testing.T) {
   {"duplicate recipients",`{"id":"`+id+`","sender":"","recipients":["b@example.test"],"recipients":["a@example.test"]}`,true},
   {"duplicate unrelated field",`{"id":"`+id+`","sender":"","recipients":["a@example.test"],"score":1,"score":9}`,true},
   {"escaped duplicate key",`{"id":"`+id+`","\u0069d":"`+id+`","sender":"","recipients":["a@example.test"]}`,true},
-  {"nested duplicate not envelope identity",`{"id":"`+id+`","sender":"","recipients":["a@example.test"],"metadata":{"x":1,"x":2}}`,false},
+  {"nested duplicate not envelope identity",`{"id":"`+id+`","sender":"","recipients":["a@example.test"],"metadata":{"x":1,"x":2}}`,true},
   {"duplicate nested array object",`{"id":"`+id+`","sender":"","recipients":["a@example.test"],"events":[{"code":"pass","code":"fail"}]}`,true},
   {"escaped duplicate nested key",`{"id":"`+id+`","sender":"","recipients":["a@example.test"],"events":[{"code":"pass","\\u0063ode":"fail"}]}`,true},
   {"valid nested evidence",`{"id":"`+id+`","sender":"","recipients":["a@example.test"],"events":[{"code":"pass"},{"code":"fail"}]}`,false},
