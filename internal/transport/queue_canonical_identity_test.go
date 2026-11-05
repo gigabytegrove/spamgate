@@ -10,6 +10,7 @@ func TestCanonicalSpoolRecordJSON(t *testing.T) {
  base := map[string]any{
   "id": strings.Repeat("a", 32), "sender": "", "recipients": []string{"user@example.org"},
   "raw": "SGVsbG8=", "state": "queued", "size": 5,
+  "attempts":0, "created":"2026-11-05T18:00:00Z", "updated":"2026-11-05T18:00:00Z", "next_attempt":"2026-11-05T18:00:00Z",
  }
  encode := func(m map[string]any) []byte {
   t.Helper()

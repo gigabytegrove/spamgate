@@ -5,7 +5,7 @@ import (
  "encoding/json"
  "errors"
  "strings"
-)
+ )
 
 // validateCanonicalSpoolRecordJSON runs before decoding persisted originals.
 // encoding/json accepts case-insensitive struct keys and decodes null string
@@ -28,7 +28,7 @@ func validateCanonicalSpoolRecordJSON(data []byte) error {
    }
   }
  }
- for _, name := range [...]string{"id", "sender", "recipients", "raw", "state", "size"} {
+ for _, name := range [...]string{"id", "sender", "recipients", "raw", "state", "size", "attempts", "created", "updated", "next_attempt"} {
   value, ok := fields[name]
   if !ok || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
    return errors.New("missing or null durable spool identity field")
@@ -40,6 +40,7 @@ func validateCanonicalSpoolRecordJSON(data []byte) error {
    return errors.New("invalid durable spool identity field type")
   }
  }
+ if err := validateDurableLifecycleFields(fields); err != nil { return err }
  var raw string
  if err := json.Unmarshal(fields["raw"], &raw); err != nil {
   return errors.New("invalid durable spool raw message encoding")
