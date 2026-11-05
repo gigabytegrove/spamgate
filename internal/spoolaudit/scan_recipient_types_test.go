@@ -27,7 +27,7 @@ func TestScanEnvelopeRecipientElementTypes(t *testing.T) {
   {"null array",`null`,nil,true},
   {"string instead of array",`"a@example.test"`,[]string{"a@example.test"},true},
   {"empty array matching nil original",`[]`,nil,false},
-  {"escaped equivalent string",`["a\\u0040example.test"]`,[]string{"a@example.test"},false},
+  {"escaped equivalent string",`["a\u0040example.test"]`,[]string{"a@example.test"},false},
   {"recipient order changed",`["b@example.test","a@example.test"]`,[]string{"a@example.test","b@example.test"},true},
  }
  for _,tc:=range cases {
