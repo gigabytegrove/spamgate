@@ -31,7 +31,7 @@ func validateAuditScanEnvelope(rec record) error {
  var id,sender string
  var recipients []string
  for _,field:=range []struct{name string; target any}{
-  {"id",&id},{"sender",&sender},{"recipients",&recipients},
+  {"id",&id},{"sender",&sender},
  } {
   raw,ok:=fields[field.name]
   if !ok || bytes.Equal(bytes.TrimSpace(raw),[]byte("null")) {
@@ -40,6 +40,28 @@ func validateAuditScanEnvelope(rec record) error {
   if err:=json.Unmarshal(raw,field.target);err!=nil {
    return errors.New("invalid persisted scan envelope identity field")
   }
+ }
+ // Decode each recipient separately. encoding/json otherwise accepts null
+ // array elements as empty strings, which can alias a malformed recipient
+ // with a persisted empty-string address.
+ rawRecipients,ok:=fields["recipients"]
+ if !ok || bytes.Equal(bytes.TrimSpace(rawRecipients),[]byte("null")) {
+  return errors.New("persisted scan envelope missing explicit identity fields")
+ }
+ var items []json.RawMessage
+ if err:=json.Unmarshal(rawRecipients,&items);err!=nil || items==nil {
+  return errors.New("invalid persisted scan envelope recipients")
+ }
+ recipients=make([]string,0,len(items))
+ for _,raw:=range items {
+  if bytes.Equal(bytes.TrimSpace(raw),[]byte("null")) {
+   return errors.New("invalid persisted scan envelope null recipient")
+  }
+  var address string
+  if err:=json.Unmarshal(raw,&address);err!=nil {
+   return errors.New("invalid persisted scan envelope recipient type")
+  }
+  recipients=append(recipients,address)
  }
  if id!=rec.ID || sender!=rec.Sender || !slices.Equal(recipients,rec.Recipients) {
   return errors.New("persisted scan envelope differs from durable SMTP original")
