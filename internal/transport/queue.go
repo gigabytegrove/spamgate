@@ -261,6 +261,9 @@ func (q *DeliveryQueue) get(id string) (spoolRecord, error) {
 	if err = spooljson.Validate(b); err != nil {
 		return spoolRecord{}, fmt.Errorf("invalid or ambiguous queue JSON %s: %w", id, err)
 	}
+	if err = validateCanonicalSpoolRecordJSON(b); err != nil {
+        return spoolRecord{}, fmt.Errorf("unsafe durable queue identity %s: %w", id, err)
+    }
 	if err = json.Unmarshal(b, &rec); err != nil {
 		return spoolRecord{}, err
 	}
