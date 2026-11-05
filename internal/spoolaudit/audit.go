@@ -40,6 +40,7 @@ type Report struct {
  States map[string]int `json:"states"`
  Findings []Finding `json:"findings"`
  Truncated bool `json:"truncated"`
+ DroppedFindings int `json:"dropped_findings"`
 }
 // record mirrors the JSON serialization of transport.spoolRecord.
 // Do not reorder fields in immutableDigest/stateDigest without updating
@@ -98,7 +99,7 @@ func validID(id string) bool {
  return true
 }
 func (r *Report) add(code,name,detail string) {
- if len(r.Findings)>=maxFindings {r.Truncated=true;return}
+ if len(r.Findings)>=maxFindings {r.Truncated=true;r.DroppedFindings++;return}
  r.Findings=append(r.Findings,Finding{code,strconv.QuoteToASCII(name),detail})
 }
 func readRecord(path string) (record,error) {
@@ -281,6 +282,6 @@ func Audit(dir string) (Report,error) {
 }
 func (r Report) HasFindings() bool {return len(r.Findings)!=0||r.Truncated}
 func (r Report) Explain() string {
- return fmt.Sprintf("examined=%d published=%d pending=%d pending_without_final=%d pending_with_final=%d pending_duplicate_ids=%d pending_conflicting_ids=%d lifecycle_anomalies=%d legacy_unsigned=%d findings=%d truncated=%t",
-  r.Examined,r.Published,r.Pending,r.PendingWithoutFinal,r.PendingWithFinal,r.PendingDuplicateIDs,r.PendingConflictingIDs,r.LifecycleAnomalies,r.LegacyUnsigned,len(r.Findings),r.Truncated)
+ return fmt.Sprintf("examined=%d published=%d pending=%d pending_without_final=%d pending_with_final=%d pending_duplicate_ids=%d pending_conflicting_ids=%d lifecycle_anomalies=%d legacy_unsigned=%d findings=%d dropped_findings=%d truncated=%t",
+  r.Examined,r.Published,r.Pending,r.PendingWithoutFinal,r.PendingWithFinal,r.PendingDuplicateIDs,r.PendingConflictingIDs,r.LifecycleAnomalies,r.LegacyUnsigned,len(r.Findings),r.DroppedFindings,r.Truncated)
 }
