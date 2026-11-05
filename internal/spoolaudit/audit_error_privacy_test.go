@@ -50,7 +50,7 @@ func TestAuditReportDoesNotLeakMaliciousScanJSONKey(t *testing.T) {
  encoded,err:=json.Marshal(report)
  if err!=nil{t.Fatal(err)}
  if strings.Contains(string(encoded),secret){t.Fatal("audit report leaked malicious scan key")}
- if !strings.Contains(string(encoded),"invalid persisted scan evidence") {
+ if !strings.Contains(string(encoded),"invalid or ambiguous record JSON") {
   t.Fatalf("missing actionable sanitized category: %s",encoded)
  }
 }
