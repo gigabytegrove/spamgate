@@ -150,6 +150,7 @@ func readRecord(path string) (record,error) {
  if rec.StateSHA256!=""&&rec.StateSHA256!=stateDigest(rec){
   return record{},errors.New("mutable state digest mismatch")
  }
+ if err:=validateAuditScanEnvelope(rec);err!=nil{return record{},err}
  return rec,nil
 }
 // Audit examines a bounded directory without modifying anything.
