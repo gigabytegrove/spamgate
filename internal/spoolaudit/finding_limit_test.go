@@ -22,7 +22,7 @@ func TestAuditFindingLimitFailsClosedWithoutQueueMutation(t *testing.T) {
  if err == nil || !strings.Contains(err.Error(), "finding limit exceeded") {
   t.Fatalf("incomplete audit incorrectly succeeded: report=%+v err=%v", report, err)
  }
- if !report.Truncated || !report.HasFindings() {
+ if !report.Truncated || !report.HasFindings() || report.DroppedFindings != 3 {
   t.Fatalf("missing truncation evidence: %+v", report)
  }
  if report.Examined != total || report.Published != total {
@@ -46,7 +46,23 @@ func TestAuditFindingLimitBoundaryStillReturnsCompleteReport(t *testing.T) {
  }
  report, err := Audit(dir)
  if err != nil { t.Fatalf("complete bounded audit failed: %v", err) }
- if report.Truncated || len(report.Findings) != maxFindings {
+ if report.Truncated || report.DroppedFindings != 0 || len(report.Findings) != maxFindings {
   t.Fatalf("boundary audit incorrectly marked incomplete: %+v", report)
+ }
+}
+
+// The diagnostic summary must expose omitted evidence explicitly so an
+// operator cannot mistake the retained finding count for the total.
+func TestAuditDroppedFindingsReportedInSummary(t *testing.T) {
+ dir := privateDir(t)
+ for i := 0; i < maxFindings+2; i++ {
+  name := filepath.Join(dir, "invalid-"+strconv.Itoa(i)+".json")
+  if err := os.WriteFile(name, []byte("{}"), 0600); err != nil { t.Fatal(err) }
+ }
+ report, err := Audit(dir)
+ if err == nil { t.Fatal("expected incomplete audit error") }
+ if report.DroppedFindings != 2 { t.Fatalf("omitted finding count = %d, want 2", report.DroppedFindings) }
+ if !strings.Contains(report.Explain(), "dropped_findings=2") {
+  t.Fatalf("summary hides omitted evidence: %s", report.Explain())
  }
 }
