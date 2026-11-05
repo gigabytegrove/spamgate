@@ -272,6 +272,11 @@ func Audit(dir string) (Report,error) {
  // An opened directory descriptor remains readable after rename/unlink.
  // Refuse to present that detached tree as the current spool pathname.
  if err:=verifyAuditDirectoryPath(dir,opened);err!=nil{return out,fmt.Errorf("spool directory changed during audit: %w",err)}
+ // The bounded findings array is diagnostic evidence, not a complete audit
+ // once the limit is reached. Do not certify an unreported tail as clean.
+ if out.Truncated {
+  return out,errors.New("spool audit finding limit exceeded; results incomplete")
+ }
  return out,nil
 }
 func (r Report) HasFindings() bool {return len(r.Findings)!=0||r.Truncated}
