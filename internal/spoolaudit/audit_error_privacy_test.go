@@ -54,3 +54,25 @@ func TestAuditReportDoesNotLeakMaliciousScanJSONKey(t *testing.T) {
   t.Fatalf("missing actionable sanitized category: %s",encoded)
  }
 }
+
+func TestAuditReadFailureRejectsCategorySpoofing(t *testing.T) {
+ cases:=[]struct{name string;err error;want string}{
+  {"keyword embedded in hostile error",errors.New("unknown key \"invalid or ambiguous spool JSON\""),"record could not be validated"},
+  {"digest keyword embedded in hostile error",errors.New("untrusted value: mutable state digest mismatch"),"record could not be validated"},
+  {"invalid longer prefix",errors.New("invalid spool JSONish diagnostic"),"record could not be validated"},
+  {"valid bounded JSON category",errors.New("invalid spool JSON: unexpected token"),"invalid or ambiguous record JSON"},
+  {"valid scan category",errors.New("persisted scan envelope duplicate key \"mailbox@example.invalid\""),"invalid persisted scan evidence"},
+  {"valid durable timestamp category",errors.New("invalid durable timestamp: created"),"invalid durable timestamp metadata"},
+  {"valid state category",errors.New("invalid durable state: attempts"),"invalid durable delivery-state metadata"},
+  {"valid envelope category",errors.New("invalid durable envelope: sender"),"invalid durable envelope metadata"},
+  {"known path race",errors.New("spool record changed during read"),"record changed during audit; retry read-only inspection"},
+  {"known metadata",errors.New("unsafe spool metadata: permissions"),"unsafe record file metadata"},
+  {"known size",errors.New("not a bounded regular spool record"),"record is not a bounded regular file"},
+  {"nil",nil,"record validation failed"},
+ }
+ for _,tc:=range cases {
+  t.Run(tc.name,func(t *testing.T){
+   if got:=auditReadFailure(tc.err);got!=tc.want {t.Fatalf("got %q want %q",got,tc.want)}
+  })
+ }
+}
