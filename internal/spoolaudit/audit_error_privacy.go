@@ -6,35 +6,60 @@ import (
  "strings"
 )
 
-// auditReadFailure returns a bounded, privacy-safe diagnostic for a corrupt
-// queue record. Decoder errors may contain arbitrary JSON object keys, which
-// are attacker-controlled and can contain mailbox addresses or message text.
-// Never forward those errors into retained reports or operator APIs.
+// auditReadFailure returns a fixed, privacy-safe category. In particular,
+// never search for diagnostic keywords anywhere in an error: untrusted JSON
+// object names can appear in decoder errors and spoof a different category.
 func auditReadFailure(err error) string {
  if err==nil {return "record validation failed"}
  if errors.Is(err,fs.ErrPermission) {return "record access denied"}
  if errors.Is(err,fs.ErrNotExist) {return "record disappeared during audit"}
  message:=err.Error()
  switch {
- case strings.Contains(message,"changed during"),strings.Contains(message,"path changed"):
+ case hasAuditErrorPrefix(message,"spool record changed during read"),
+      hasAuditErrorPrefix(message,"spool path changed during open"),
+      hasAuditErrorPrefix(message,"spool directory changed during audit"),
+      hasAuditErrorPrefix(message,"record changed during audit"):
   return "record changed during audit; retry read-only inspection"
- case strings.Contains(message,"unsafe spool metadata"),strings.Contains(message,"unsafe opened spool metadata"):
+ case hasAuditErrorPrefix(message,"unsafe spool metadata"),
+      hasAuditErrorPrefix(message,"unsafe opened spool metadata"):
   return "unsafe record file metadata"
- case strings.Contains(message,"not a bounded regular spool record"):
+ case hasAuditErrorPrefix(message,"not a bounded regular spool record"):
   return "record is not a bounded regular file"
- case strings.Contains(message,"digest mismatch"):
+ case hasAuditErrorPrefix(message,"immutable envelope/original digest mismatch"),
+      hasAuditErrorPrefix(message,"mutable state digest mismatch"):
   return "record integrity digest mismatch"
- case strings.Contains(message,"invalid or ambiguous spool JSON"):
+ case hasAuditErrorPrefix(message,"invalid or ambiguous spool JSON"),
+      hasAuditErrorPrefix(message,"invalid spool JSON"):
   return "invalid or ambiguous record JSON"
- case strings.Contains(message,"persisted scan"),strings.Contains(message,"scan envelope"):
+ case hasAuditErrorPrefix(message,"invalid persisted scan"),
+      hasAuditErrorPrefix(message,"persisted scan"),
+      hasAuditErrorPrefix(message,"scan envelope"):
   return "invalid persisted scan evidence"
- case strings.Contains(message,"durable timestamp"):
+ case hasAuditErrorPrefix(message,"invalid durable timestamp"),
+      hasAuditErrorPrefix(message,"durable timestamp"):
   return "invalid durable timestamp metadata"
- case strings.Contains(message,"durable state"):
+ case hasAuditErrorPrefix(message,"invalid durable state"),
+      hasAuditErrorPrefix(message,"durable state"):
   return "invalid durable delivery-state metadata"
- case strings.Contains(message,"durable envelope"),strings.Contains(message,"durable spool"):
+ case hasAuditErrorPrefix(message,"invalid durable envelope"),
+      hasAuditErrorPrefix(message,"durable envelope"),
+      hasAuditErrorPrefix(message,"durable spool"):
   return "invalid durable envelope metadata"
  default:
   return "record could not be validated"
+ }
+}
+
+// A category must be the beginning of the trusted validator message, not
+// arbitrary text embedded in a hostile field name. A word boundary prevents
+// a longer, unrelated prefix from being treated as the validator's category.
+func hasAuditErrorPrefix(message,prefix string) bool {
+ if !strings.HasPrefix(message,prefix) {return false}
+ if len(message)==len(prefix) {return true}
+ switch message[len(prefix)] {
+ case ':',' ',';',',','(':
+  return true
+ default:
+  return false
  }
 }
