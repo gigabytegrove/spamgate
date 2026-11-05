@@ -121,7 +121,7 @@ func readRecord(path string) (record,error) {
  if err!=nil{return record{},err}
  after,err:=f.Stat()
  if err!=nil{return record{},err}
- if int64(len(data))!=info.Size()||after.Size()!=info.Size()||!after.ModTime().Equal(info.ModTime())||!os.SameFile(opened,after){
+ if int64(len(data))!=info.Size()||after.Size()!=info.Size()||!after.ModTime().Equal(info.ModTime())||!os.SameFile(opened,after)||!sameAuditChangeTime(info,after){
   return record{},errors.New("spool record changed during read")
  }
  if err:=validateAuditRecordMetadata(path,after);err!=nil{return record{},fmt.Errorf("unsafe spool metadata after read: %w",err)}
