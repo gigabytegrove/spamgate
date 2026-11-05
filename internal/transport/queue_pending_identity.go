@@ -40,6 +40,9 @@ func (q *DeliveryQueue) refusePendingIdentityReuse(id string) error {
 		if err := spooljson.Validate(raw); err != nil {
 			return errors.New("unpublished SMTP original contains invalid or ambiguous JSON; operator investigation required")
 		}
+		if err := validateCanonicalSpoolRecordJSON(raw); err != nil {
+            return errors.New("unpublished SMTP original has ambiguous envelope identity; operator investigation required")
+        }
 		var rec spoolRecord
 		if err := json.Unmarshal(raw, &rec); err != nil ||
 			!validQueueID(rec.ID) || rec.Size < 1 || rec.Size > 10<<20 ||
