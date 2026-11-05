@@ -135,6 +135,7 @@ func readRecord(path string) (record,error) {
  if err:=verifyRecordPathStable(path,opened);err!=nil{return record{},err}
  var rec record
  if err:=spooljson.Validate(data);err!=nil{return record{},fmt.Errorf("invalid or ambiguous spool JSON: %w",err)}
+ if err:=validateDurableRecipients(data);err!=nil{return record{},err}
  if err:=json.Unmarshal(data,&rec);err!=nil{return record{},errors.New("invalid spool JSON")}
  if !validID(rec.ID)||rec.Size<1||rec.Size>10<<20||len(rec.Raw)!=rec.Size||
   len(rec.Recipients)==0||len(rec.Recipients)>1000||rec.Attempts<0 {
