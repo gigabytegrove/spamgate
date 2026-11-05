@@ -216,7 +216,7 @@ func Audit(dir string) (Report,error) {
     continue
    }
    rec,readErr:=readRecord(filepath.Join(dir,name))
-   if readErr!=nil {out.UnreadableRecords++;out.add("unreadable_record",name,readErr.Error());continue}
+   if readErr!=nil {out.UnreadableRecords++;out.add("unreadable_record",name,auditReadFailure(readErr));continue}
    if published&&rec.ID!=strings.TrimSuffix(name,".json"){
     out.add("id_mismatch",name,"record ID does not match its published filename")
    }
