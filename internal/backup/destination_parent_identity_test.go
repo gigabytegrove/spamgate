@@ -29,7 +29,7 @@ func TestVerifyBackupDestinationParentSymlinkSwap(t *testing.T) {
  if err := os.Mkdir(data, 0700); err != nil { t.Fatal(err) }
  link := filepath.Join(root, "destination")
  if err := os.Symlink(realParent, link); err != nil { t.Skipf("symlink unavailable: %v", err) }
- original, err := os.Lstat(link)
+ original, err := os.Stat(link)
  if err != nil { t.Fatal(err) }
  resolved, err := filepath.EvalSymlinks(link)
  if err != nil { t.Fatal(err) }
