@@ -4,8 +4,6 @@ import (
  "bytes"
  "encoding/json"
  "errors"
- "fmt"
- "io"
  "slices"
  "strings"
 )
@@ -73,23 +71,5 @@ func validateAuditScanEnvelope(rec record) error {
  // standard map decoder can silently apply its last-value-wins behavior.
  // Nested evidence remains opaque to this envelope identity validator.
 func rejectDuplicateScanKeys(raw []byte) error {
- dec:=json.NewDecoder(bytes.NewReader(raw))
- first,err:=dec.Token()
- if err!=nil {return errors.New("invalid persisted scan envelope")}
- if first!=json.Delim('{') {return errors.New("invalid persisted scan envelope object")}
- seen:=make(map[string]struct{})
- for dec.More() {
-  keyToken,err:=dec.Token()
-  if err!=nil {return errors.New("invalid persisted scan envelope key")}
-  key,ok:=keyToken.(string)
-  if !ok {return errors.New("invalid persisted scan envelope key")}
-  if _,exists:=seen[key];exists {return fmt.Errorf("persisted scan envelope duplicate key %q",key)}
-  seen[key]=struct{}{}
-  var value json.RawMessage
-  if err:=dec.Decode(&value);err!=nil {return errors.New("invalid persisted scan envelope value")}
- }
- last,err:=dec.Token()
- if err!=nil || last!=json.Delim('}') {return errors.New("invalid persisted scan envelope termination")}
- if _,err:=dec.Token();err!=io.EOF {return errors.New("invalid persisted scan envelope trailing content")}
- return nil
+ return rejectDuplicateScanKeysRecursive(raw)
 }
