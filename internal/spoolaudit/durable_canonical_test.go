@@ -32,7 +32,7 @@ func TestDurableCanonicalKeysUnicodeAndCompatibility(t *testing.T) {
   {"canonical", `{"id":"x","sender":"","recipients":[],"scan":null}`, true},
   {"unknown extension", `{"id":"x","future_extension":true}`, true},
   {"case sensitive unknown", `{"future_extension":1,"FUTURE_EXTENSION":2}`, true},
-  {"unicode escaped alias", `{"id":"x","\\u0049D":"y"}`, false},
+  {"unicode escaped alias", `{"id":"x","\u0049D":"y"}`, false},
   {"nonobject", `[]`, false},
   {"null", `null`, false},
   {"broken", `{`, false},
