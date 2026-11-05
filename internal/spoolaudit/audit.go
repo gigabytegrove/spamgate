@@ -178,7 +178,12 @@ func Audit(dir string) (Report,error) {
    if out.Examined>maxEntries {
     out.add("entry_limit","delivery-queue","more than 4096 directory entries; audit incomplete")
     out.Truncated=true
-    return out,nil
+    // An incomplete scan is never a successful queue-integrity audit.
+    // Validate the directory pathname even on the entry-limit exit.
+    if err:=verifyAuditDirectoryPath(dir,opened);err!=nil {
+     return out,fmt.Errorf("spool directory changed during truncated audit: %w",err)
+    }
+    return out,errors.New("spool audit entry limit exceeded; results incomplete")
    }
    name:=entry.Name()
    pending:=strings.HasPrefix(name,".pending-")
