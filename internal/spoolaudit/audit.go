@@ -39,6 +39,7 @@ type Report struct {
  LegacyUnsigned int `json:"legacy_unsigned"`
  UnreadableRecords int `json:"unreadable_records"`
  InvalidFilenames int `json:"invalid_filenames"`
+ UnexpectedEntries int `json:"unexpected_entries"`
  States map[string]int `json:"states"`
  Findings []Finding `json:"findings"`
  Truncated bool `json:"truncated"`
@@ -191,7 +192,16 @@ func Audit(dir string) (Report,error) {
    name:=entry.Name()
    pending:=strings.HasPrefix(name,".pending-")
    published:=strings.HasSuffix(name,".json")&&!pending
-   if !pending&&!published{continue}
+   if !pending&&!published{
+    // Non-regular objects in the queue are not harmless unrelated files:
+    // they can conceal a stale mount, symlink substitution or misplaced tree.
+    // Inspect metadata without following symlinks and retain evidence.
+    if suspicious,reason:=unexpectedSpoolEntry(entry);suspicious {
+     out.UnexpectedEntries++
+     out.add("unexpected_entry",name,reason)
+    }
+    continue
+   }
    if pending{out.Pending++}else{out.Published++}
    if published&&!validID(strings.TrimSuffix(name,".json")){
     out.InvalidFilenames++
@@ -285,6 +295,6 @@ func Audit(dir string) (Report,error) {
 }
 func (r Report) HasFindings() bool {return len(r.Findings)!=0||r.Truncated}
 func (r Report) Explain() string {
- return fmt.Sprintf("examined=%d published=%d pending=%d pending_without_final=%d pending_with_final=%d pending_duplicate_ids=%d pending_conflicting_ids=%d lifecycle_anomalies=%d legacy_unsigned=%d unreadable_records=%d invalid_filenames=%d findings=%d dropped_findings=%d truncated=%t",
-  r.Examined,r.Published,r.Pending,r.PendingWithoutFinal,r.PendingWithFinal,r.PendingDuplicateIDs,r.PendingConflictingIDs,r.LifecycleAnomalies,r.LegacyUnsigned,r.UnreadableRecords,r.InvalidFilenames,len(r.Findings),r.DroppedFindings,r.Truncated)
+ return fmt.Sprintf("examined=%d published=%d pending=%d pending_without_final=%d pending_with_final=%d pending_duplicate_ids=%d pending_conflicting_ids=%d lifecycle_anomalies=%d legacy_unsigned=%d unreadable_records=%d invalid_filenames=%d unexpected_entries=%d findings=%d dropped_findings=%d truncated=%t",
+  r.Examined,r.Published,r.Pending,r.PendingWithoutFinal,r.PendingWithFinal,r.PendingDuplicateIDs,r.PendingConflictingIDs,r.LifecycleAnomalies,r.LegacyUnsigned,r.UnreadableRecords,r.InvalidFilenames,r.UnexpectedEntries,len(r.Findings),r.DroppedFindings,r.Truncated)
 }
