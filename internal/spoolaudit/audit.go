@@ -135,6 +135,7 @@ func readRecord(path string) (record,error) {
  if err:=verifyRecordPathStable(path,opened);err!=nil{return record{},err}
  var rec record
  if err:=spooljson.Validate(data);err!=nil{return record{},fmt.Errorf("invalid or ambiguous spool JSON: %w",err)}
+ if err:=validateDurableCanonicalKeys(data);err!=nil{return record{},err}
  if err:=validateDurableIdentity(data);err!=nil{return record{},err}
  if err:=validateDurableState(data);err!=nil{return record{},err}
  if err:=validateDurableTimes(data);err!=nil{return record{},err}
