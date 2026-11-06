@@ -16,6 +16,7 @@ func validateCanonicalSpoolRecordJSON(data []byte) error {
  // encoding/json silently replaces malformed UTF-8 with U+FFFD. A durable
  // SMTP original must never acquire a different identity during recovery.
  if !utf8.Valid(data) { return errors.New("invalid UTF-8 in durable spool JSON") }
+ if err := validateDurableJSONSurrogates(data); err != nil { return err }
  if err := validateUniqueDurableJSON(data); err != nil { return err }
  var fields map[string]json.RawMessage
  if err := json.Unmarshal(data, &fields); err != nil || fields == nil {
