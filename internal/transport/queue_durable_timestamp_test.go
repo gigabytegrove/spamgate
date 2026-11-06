@@ -4,7 +4,6 @@ import (
  "encoding/json"
  "strings"
  "testing"
- "time"
 )
 
 func TestDurableTimestampValidation(t *testing.T) {
@@ -62,8 +61,8 @@ func TestDurableSpoolTimestampTypesAndClockSkew(t *testing.T) {
  // Wall-clock adjustments must not prevent recovering otherwise valid mail.
  if err := check(base); err != nil { t.Fatalf("clock skew refused: %v", err) }
  for _, key := range []string{"created", "updated", "next_attempt"} {
-  for _, value := range []any{nil, "", 42, "0001-01-01T00:00:00Z", "not-a-date"} {
-   t.Run(key+"/"+strings.ReplaceAll(strings.TrimSpace(time.Now().Format("150405")), " ", ""), func(t *testing.T) {
+  for i, value := range []any{nil, "", 42, "0001-01-01T00:00:00Z", "not-a-date"} {
+   t.Run(key+"/"+string(rune('a'+i)), func(t *testing.T) {
     copy := make(map[string]any, len(base))
     for k, v := range base { copy[k] = v }
     copy[key] = value
