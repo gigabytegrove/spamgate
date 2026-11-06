@@ -65,3 +65,44 @@ func TestDurableTimestampAliasDiagnosticsDoNotExposePayload(t *testing.T) {
         t.Fatalf("timestamp error must be sanitized: %v", err)
     }
 }
+
+func TestDurableTimestampBoundsCorruptRecordBeforeDecoding(t *testing.T) {
+    // Oversized valid-looking JSON, escaped aliases and invalid UTF-8 must
+    // fail closed without exposing any of the persisted payload.
+    cases := []struct {
+        name string
+        raw json.RawMessage
+    }{
+        {"oversized quoted timestamp", json.RawMessage(`"` + strings.Repeat("9", 4096) + `"`)},
+        {"oversized escape sequence", json.RawMessage(`"` + strings.Repeat(`\\u0030`, 1024) + `"`)},
+        {"oversized invalid utf8", json.RawMessage(append([]byte{'"'}, append([]byte(strings.Repeat("x", 1024)), 0xff, '"')...))},
+        {"oversized whitespace", json.RawMessage(strings.Repeat(" ", 4096) + `"2026-11-06T12:00:00Z"`)},
+    }
+    for _, tc := range cases {
+        t.Run(tc.name, func(t *testing.T) {
+            for _, optional := range []bool{false, true} {
+                _, err := parseDurableTimestamp(tc.raw, optional)
+                if err == nil || err.Error() != "oversized durable delivery timestamp" {
+                    t.Fatalf("expected sanitized size refusal, got %v", err)
+                }
+            }
+        })
+    }
+}
+
+func TestDurableTimestampBoundsLifecycleRecovery(t *testing.T) {
+    for _, key := range []string{"created", "updated", "next_attempt", "delivered_at"} {
+        t.Run(key, func(t *testing.T) {
+            fields := map[string]json.RawMessage{
+                "attempts": json.RawMessage("0"),
+                "created": json.RawMessage(`"2026-11-06T12:00:00Z"`),
+                "updated": json.RawMessage(`"2026-11-06T12:00:00Z"`),
+                "next_attempt": json.RawMessage(`"2026-11-06T12:00:00Z"`),
+            }
+            fields[key] = json.RawMessage(`"` + strings.Repeat("9", 4096) + `"`)
+            if err := validateDurableLifecycleFields(fields); err == nil {
+                t.Fatalf("oversized %s was accepted during recovery", key)
+            }
+        })
+    }
+}
