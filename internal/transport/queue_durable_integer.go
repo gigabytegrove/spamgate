@@ -9,7 +9,7 @@ import (
 // integer in the signed 64-bit range. Persisted queue metadata must not
 // change type or meaning during encoding/json's permissive decoding.
 func strictDurableNonnegativeInteger(raw []byte) (int64, error) {
- if len(raw) == 0 || raw[0] < '0' || raw[0] > '9' {
+ // Bound corrupted numeric tokens before scanning or converting them. A signed\n // 64-bit nonnegative integer cannot exceed 19 decimal digits.\n if len(raw) > 19 {\n  return 0, errors.New("durable integer exceeds signed range")\n }\n if len(raw) == 0 || raw[0] < '0' || raw[0] > '9' {
   return 0, errors.New("invalid durable nonnegative integer")
  }
  if len(raw) > 1 && raw[0] == '0' {
