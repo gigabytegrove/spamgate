@@ -71,3 +71,41 @@ func TestRejectedIntakeEnvelopeDoesNotPersistOrRelay(t *testing.T) {
  if err := q.ProcessDue(context.Background()); err != nil { t.Fatal(err) }
  if sends != 0 { t.Fatalf("rejected mail was relayed %d times", sends) }
 }
+
+func TestMalformedUTF8EnvelopeRejectedWithoutPersistence(t *testing.T) {
+ invalid := []struct {
+  name string
+  value string
+ }{
+  {"invalid leading byte", string([]byte{0xff}) + "@example.invalid"},
+  {"truncated multibyte", "user@" + string([]byte{0xe2, 0x82})},
+  {"overlong encoding", string([]byte{0xc0, 0xaf}) + "@example.invalid"},
+  {"surrogate encoding", string([]byte{0xed, 0xa0, 0x80}) + "@example.invalid"},
+ }
+ sends := 0
+ q, _, _ := newRecoveryQueue(t, func(context.Context, core.Message, []byte) error {
+  sends++
+  return nil
+ })
+ for _, tc := range invalid {
+  t.Run(tc.name, func(t *testing.T) {
+   for _, sender := range []bool{true, false} {
+    id := core.ID()
+    msg := core.Message{ID: id, Sender: "sender@example.invalid", Recipients: []string{"user@example.invalid"}, Action: "accept"}
+    if sender {
+     msg.Sender = tc.value
+    } else {
+     msg.Recipients = []string{tc.value}
+    }
+    if err := q.Enqueue(msg, []byte("Subject: test\r\n\r\nbody")); err == nil {
+     t.Fatal("malformed UTF-8 envelope accepted")
+    }
+    if _, err := os.Stat(q.path(id)); !os.IsNotExist(err) {
+     t.Fatalf("rejected envelope created durable record: %v", err)
+    }
+   }
+  })
+ }
+ if err := q.ProcessDue(context.Background()); err != nil { t.Fatal(err) }
+ if sends != 0 { t.Fatalf("rejected mail was relayed %d times", sends) }
+}
