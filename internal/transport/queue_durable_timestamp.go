@@ -11,6 +11,13 @@ import (
 // private record values in diagnostics. Optional zero values are retained for
 // compatibility with Go's time.Time JSON serialization.
 func parseDurableTimestamp(raw json.RawMessage, allowEmpty bool) (time.Time, error) {
+	// A valid RFC3339Nano timestamp is at most 35 bytes including JSON quotes.
+	// Bound raw input before JSON decoding so corrupt durable metadata cannot
+	// allocate unbounded strings or consume disproportionate recovery CPU.
+	// Leave room for escaped aliases to reach the canonical-encoding diagnostic.
+	if len(raw) > 128 {
+		return time.Time{}, errors.New("oversized durable delivery timestamp")
+	}
 	value := bytes.TrimSpace(raw)
 	if len(value) == 0 || value[0] != '"' {
 		return time.Time{}, errors.New("invalid durable delivery timestamp type")
