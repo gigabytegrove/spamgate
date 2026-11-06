@@ -19,6 +19,14 @@ func parseDurableTimestamp(raw json.RawMessage, allowEmpty bool) (time.Time, err
 	if err := json.Unmarshal(value, &stamp); err != nil {
 		return time.Time{}, errors.New("invalid durable delivery timestamp encoding")
 	}
+	// A timestamp is durable evidence: reject JSON escape aliases (including
+	// Unicode escapes, escaped slashes, and replacement of invalid UTF-8).
+	// The Go writer emits canonical JSON strings; decoding and re-encoding
+	// must preserve the original bytes or recovery would reinterpret evidence.
+	canonical, err := json.Marshal(stamp)
+	if err != nil || !bytes.Equal(value, canonical) {
+		return time.Time{}, errors.New("noncanonical durable delivery timestamp encoding")
+	}
 	if allowEmpty && (stamp == "" || stamp == "0001-01-01T00:00:00Z") {
 		return time.Time{}, nil
 	}
