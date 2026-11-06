@@ -31,7 +31,7 @@ func TestDurableSpoolAttemptCountCanonicalAndBounded(t *testing.T) {
  } {
   t.Run(tc.value,func(t *testing.T){
    changed:=strings.Replace(string(encoded),`"attempts":0`,`"attempts":`+tc.value,1)
-   if changed==string(encoded) {t.Fatal("attempts fixture missing")}
+   if changed==string(encoded) && tc.value!="0" {t.Fatal("attempts fixture missing")}
    err:=validateCanonicalSpoolRecordJSON([]byte(changed))
    if tc.valid && err!=nil {t.Fatalf("valid count rejected: %v",err)}
    if !tc.valid && err==nil {t.Fatalf("invalid count %s accepted",tc.value)}
