@@ -14,27 +14,14 @@ func validateDurableLifecycleFields(fields map[string]json.RawMessage) error {
  if err != nil || attempts > 1000000 {
   return errors.New("invalid durable delivery attempt count")
  }
- created, err := parseDurableTimestamp(fields["created"], false)
- if err != nil {
-  return errors.New("invalid durable created timestamp")
- }
- updated, err := parseDurableTimestamp(fields["updated"], false)
- if err != nil {
-  return errors.New("invalid durable updated timestamp")
- }
- if updated.Before(created) {
-  return errors.New("durable update precedes creation")
- }
- if _, err := parseDurableTimestamp(fields["next_attempt"], false); err != nil {
-  return errors.New("invalid durable next attempt timestamp")
+ for _, key := range [...]string{"created", "updated", "next_attempt"} {
+  if _, err := parseDurableTimestamp(fields[key], false); err != nil {
+   return errors.New("invalid durable delivery timestamp")
+  }
  }
  if raw, ok := fields["delivered_at"]; ok {
-  delivered, err := parseDurableTimestamp(raw, true)
-  if err != nil {
+  if _, err := parseDurableTimestamp(raw, true); err != nil {
    return errors.New("invalid durable delivered timestamp")
-  }
-  if !delivered.IsZero() && delivered.Before(created) {
-   return errors.New("durable delivery precedes creation")
   }
  }
  return nil
