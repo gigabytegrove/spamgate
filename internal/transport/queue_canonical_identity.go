@@ -61,11 +61,10 @@ func validateCanonicalSpoolRecordJSON(data []byte) error {
  // Reject quoted numbers, negative zero, exponent/fraction forms, and
  // overflows. json.Number accepts quoted numeric strings during decoding,
  // which would otherwise silently change a persisted field's JSON type.
- parsedSize, err := strictDurableNonnegativeInteger(fields["size"])
+ _, err := strictDurableNonnegativeInteger(fields["size"])
  if err != nil {
   return errors.New("invalid durable spool integer size")
  }
- _ = parsedSize
  var recipients []json.RawMessage
  if err := json.Unmarshal(fields["recipients"], &recipients); err != nil || len(recipients) == 0 {
   return errors.New("invalid durable spool recipient array")
