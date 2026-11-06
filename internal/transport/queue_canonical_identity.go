@@ -64,7 +64,8 @@ func validateCanonicalSpoolRecordJSON(data []byte) error {
  if err := decoder.Decode(&size); err != nil {
   return errors.New("invalid durable spool size type")
  }
- if _, err := size.Int64(); err != nil {
+ parsedSize, err := size.Int64()
+ if err != nil || parsedSize < 0 {
   return errors.New("invalid durable spool integer size")
  }
  var recipients []json.RawMessage
