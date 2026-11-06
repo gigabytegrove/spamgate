@@ -1,25 +1,33 @@
 package transport
 
-import (
- "errors"
- "strings"
-)
+import "errors"
 
-// validateIntakeEnvelope rejects values that cannot be represented safely as
-// SMTP envelope arguments. The empty reverse path is legal for DSNs, but
-// an empty recipient is never a deliverable address. Do not normalize here:
-// the persisted envelope must be the exact one accepted at intake.
+// validateIntakeEnvelope rejects raw ASCII control characters in SMTP
+// envelope arguments before a record can enter the durable queue. SMTPUTF8
+// addresses remain valid; only ASCII control bytes and DEL are prohibited.
+// An empty reverse path is valid for delivery status notifications.
 func validateIntakeEnvelope(sender string, recipients []string) error {
- if strings.ContainsAny(sender, "\r\n\x00") {
+ if containsSMTPControl(sender) {
   return errors.New("SMTP sender contains prohibited control bytes")
  }
  if len(recipients) == 0 || len(recipients) > 1000 {
   return errors.New("invalid SMTP recipient count")
  }
  for _, recipient := range recipients {
-  if recipient == "" || strings.ContainsAny(recipient, "\r\n\x00") {
+  if recipient == "" || containsSMTPControl(recipient) {
    return errors.New("SMTP recipient is empty or contains prohibited control bytes")
   }
  }
  return nil
+}
+
+// containsSMTPControl operates on raw bytes, preserving UTF-8 and never
+// echoing attacker-supplied addresses into diagnostic errors.
+func containsSMTPControl(value string) bool {
+ for i := 0; i < len(value); i++ {
+  if value[i] < 0x20 || value[i] == 0x7f {
+   return true
+  }
+ }
+ return false
 }
