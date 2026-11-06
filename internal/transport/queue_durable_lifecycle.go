@@ -19,7 +19,10 @@ func validateDurableLifecycleFields(fields map[string]json.RawMessage) error {
  }
  for _, b := range raw { if b<'0' || b>'9' { return errors.New("invalid durable delivery attempt count") } }
  attempts,err:=strconv.ParseUint(string(raw),10,32)
- if err!=nil || attempts>MaxDeliveryAttempts { return errors.New("invalid durable delivery attempt count") }
+ // Legacy records can exceed the current retry ceiling; recovery must
+ // park them without sending again, rather than refusing startup.
+ // Keep a bounded upper limit to reject nonsensical or corrupted counters.
+ if err!=nil || attempts>1000000 { return errors.New("invalid durable delivery attempt count") }
  for _, key := range []string{"created","updated","next_attempt"} {
   value:=bytes.TrimSpace(fields[key])
   if len(value)==0 || value[0]!='"' { return errors.New("missing or invalid durable delivery timestamp") }
