@@ -5,7 +5,6 @@ import (
  "encoding/json"
  "errors"
  "io"
- "strconv"
  "strings"
  "time"
 )
@@ -13,12 +12,7 @@ import (
 // validateDurableLifecycleFields refuses zero-valued state invented by Go's
 // permissive decoder. This runs on both published and crash-retained originals.
 func validateDurableLifecycleFields(fields map[string]json.RawMessage) error {
- raw := bytes.TrimSpace(fields["attempts"])
- if len(raw)==0 || raw[0]<'0' || raw[0]>'9' {
-  return errors.New("invalid durable delivery attempt count")
- }
- for _, b := range raw { if b<'0' || b>'9' { return errors.New("invalid durable delivery attempt count") } }
- attempts,err:=strconv.ParseUint(string(raw),10,32)
+ attempts,err:=strictDurableNonnegativeInteger(fields["attempts"])
  // Legacy records can exceed the current retry ceiling; recovery must
  // park them without sending again, rather than refusing startup.
  // Keep a bounded upper limit to reject nonsensical or corrupted counters.
