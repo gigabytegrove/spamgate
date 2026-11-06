@@ -83,6 +83,12 @@ func durableTimestampSyntaxValid(s string) bool {
 	if len(s)-pos != 6 || (s[pos] != '+' && s[pos] != '-') {
 		return false
 	}
-	return digit(pos+1) && digit(pos+2) && s[pos+3] == ':' &&
-		digit(pos+4) && digit(pos+5)
+	if !digit(pos+1) || !digit(pos+2) || s[pos+3] != ':' || !digit(pos+4) || !digit(pos+5) {
+		return false
+	}
+	// Go's time.Parse accepts +24:00, although RFC3339 offsets have
+	// two-digit hours in the 00..23 range. Reject this lossy boundary.
+	hours := int(s[pos+1]-'0')*10 + int(s[pos+2]-'0')
+	minutes := int(s[pos+4]-'0')*10 + int(s[pos+5]-'0')
+	return hours < 24 && minutes < 60
 }
