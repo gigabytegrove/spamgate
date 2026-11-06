@@ -42,6 +42,13 @@ func validateCanonicalSpoolRecordJSON(data []byte) error {
   }
  }
  if err := validateDurableLifecycleFields(fields); err != nil { return err }
+ // Persisted legacy records may lack integrity digests. They must still obey
+ // the same SMTP envelope safety boundary as newly admitted mail. Validate
+ // decoded values rather than raw JSON bytes so escaped controls cannot pass.
+ var sender string
+ if err := json.Unmarshal(fields["sender"], &sender); err != nil {
+  return errors.New("invalid durable spool sender")
+ }
  var raw string
  if err := json.Unmarshal(fields["raw"], &raw); err != nil {
   return errors.New("invalid durable spool raw message encoding")
@@ -59,6 +66,7 @@ func validateCanonicalSpoolRecordJSON(data []byte) error {
  if err := json.Unmarshal(fields["recipients"], &recipients); err != nil || len(recipients) == 0 {
   return errors.New("invalid durable spool recipient array")
  }
+ decodedRecipients := make([]string, 0, len(recipients))
  for _, element := range recipients {
   if len(element) == 0 || element[0] != '"' {
    return errors.New("invalid durable spool recipient element type")
@@ -67,6 +75,11 @@ func validateCanonicalSpoolRecordJSON(data []byte) error {
   if err := json.Unmarshal(element, &recipient); err != nil || recipient == "" {
    return errors.New("invalid durable spool recipient value")
   }
+  decodedRecipients = append(decodedRecipients, recipient)
+ }
+ if err := validateIntakeEnvelope(sender, decodedRecipients); err != nil {
+  // Do not include private envelope values in durable audit errors.
+  return errors.New("unsafe durable SMTP envelope")
  }
  return nil
 }
