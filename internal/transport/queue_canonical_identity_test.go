@@ -45,6 +45,9 @@ func TestCanonicalSpoolRecordJSON(t *testing.T) {
   {"null raw", func(m map[string]any){m["raw"]=nil}},
   {"null state", func(m map[string]any){m["state"]=nil}},
   {"fractional size", func(m map[string]any){m["size"]=2.5}},
+  {"negative size", func(m map[string]any){m["size"]=-1}},
+  {"minimum signed size", func(m map[string]any){m["size"]=int64(-9223372036854775807-1)}},
+  {"overflow size", func(m map[string]any){m["size"]=json.Number("9223372036854775808")}},
   {"null size", func(m map[string]any){m["size"]=nil}},
  } {
   t.Run(tc.name,func(t *testing.T){
