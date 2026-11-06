@@ -37,9 +37,10 @@ func TestAuditScanEnvelopeMismatchDoesNotRewriteOriginal(t *testing.T){
  rec.StateSHA256=stateDigest(rec)
  write(t,dir,idA+".json",rec)
  report,err:=Audit(dir)
- if err!=nil||!hasCode(report,"scan_envelope_mismatch")||report.LifecycleAnomalies!=1{
+ if err!=nil||!hasCode(report,"unreadable_record")||report.UnreadableRecords!=1||report.LifecycleAnomalies!=0{
   t.Fatalf("scan mismatch not surfaced: %+v %v",report,err)
  }
+ if len(report.Findings)!=1||report.Findings[0].Detail!="invalid persisted scan evidence" {t.Fatalf("missing sanitized scan mismatch finding: %+v",report.Findings)}
  if _,err:=os.Stat(filepath.Join(dir,idA+".json"));err!=nil{t.Fatal(err)}
 }
 func TestAuditThreePendingOriginalsClassifiesRepeatOfSecondAsDuplicate(t *testing.T){
