@@ -17,6 +17,8 @@ func TestDurableTimestampValidation(t *testing.T) {
   {"offset", `"2026-11-06T07:00:00-05:00"`, false, true},
   {"nanoseconds", `"2026-11-06T12:00:00.123456789Z"`, false, true},
   {"empty optional", `""`, true, true},
+  {"legacy zero optional", `"0001-01-01T00:00:00Z"`, true, true},
+  {"legacy zero required", `"0001-01-01T00:00:00Z"`, false, false},
   {"empty required", `""`, false, false},
   {"null optional", "null", true, false},
   {"number", "123", false, false},
@@ -70,7 +72,7 @@ func TestDurableSpoolTimestampTypesAndClockSkew(t *testing.T) {
    })
   }
  }
- for _, value := range []any{nil, 12, "0001-01-01T00:00:00Z", "invalid"} {
+ for _, value := range []any{nil, 12, "invalid"} {
   copy := make(map[string]any, len(base)+1)
   for k, v := range base { copy[k] = v }
   copy["delivered_at"] = value
@@ -78,6 +80,8 @@ func TestDurableSpoolTimestampTypesAndClockSkew(t *testing.T) {
  }
  copy := make(map[string]any, len(base)+1)
  for k, v := range base { copy[k] = v }
- copy["delivered_at"] = ""
- if err := check(copy); err != nil { t.Fatalf("legacy empty delivered_at rejected: %v", err) }
+ for _, legacy := range []string{"", "0001-01-01T00:00:00Z"} {
+  copy["delivered_at"] = legacy
+  if err := check(copy); err != nil { t.Fatalf("legacy delivered_at=%q rejected: %v", legacy, err) }
+ }
 }
