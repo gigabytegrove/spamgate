@@ -32,6 +32,9 @@ func TestDurableTimestampExactRFC3339Grammar(t *testing.T) {
 		{"invalid calendar date", "2026-02-30T12:34:56Z", false},
 		{"invalid hour", "2026-11-06T24:34:56Z", false},
 		{"invalid offset", "2026-11-06T12:34:56+24:00", false},
+		{"invalid negative offset", "2026-11-06T12:34:56-24:00", false},
+		{"invalid offset minute", "2026-11-06T12:34:56+05:60", false},
+		{"maximum lexical offset", "2026-11-06T12:34:56+23:59", true},
 		{"zero required", "0001-01-01T00:00:00Z", false},
 	}
 	for _, tc := range cases {
