@@ -22,7 +22,11 @@ func parseDurableTimestamp(raw json.RawMessage, allowEmpty bool) (time.Time, err
   return time.Time{}, nil
  }
  parsed, err := time.Parse(time.RFC3339Nano, stamp)
- if err != nil || parsed.IsZero() {
+ if err != nil {
+  return time.Time{}, errors.New("invalid durable delivery timestamp value")
+ }
+ if parsed.IsZero() { 
+  if allowEmpty && stamp == "0001-01-01T00:00:00Z" { return time.Time{}, nil }
   return time.Time{}, errors.New("invalid durable delivery timestamp value")
  }
  return parsed, nil
