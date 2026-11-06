@@ -20,6 +20,12 @@ func auditReadFailure(err error) string {
       hasAuditErrorPrefix(message,"spool directory changed during audit"),
       hasAuditErrorPrefix(message,"record changed during audit"):
   return "record changed during audit; retry read-only inspection"
+ case hasAuditErrorPrefix(message,"unsafe spool metadata: spool original must have exactly one hard link"),
+      hasAuditErrorPrefix(message,"unsafe opened spool metadata: spool original must have exactly one hard link"):
+  return "unsafe record hard link count"
+ case hasAuditErrorPrefix(message,"unsafe spool metadata: spool original must be private and owner-readable"),
+      hasAuditErrorPrefix(message,"unsafe opened spool metadata: spool original must be private and owner-readable"):
+  return "unsafe record private permissions"
  case hasAuditErrorPrefix(message,"unsafe spool metadata"),
       hasAuditErrorPrefix(message,"unsafe opened spool metadata"):
   return "unsafe record file metadata"
@@ -28,6 +34,10 @@ func auditReadFailure(err error) string {
  case hasAuditErrorPrefix(message,"immutable envelope/original digest mismatch"),
       hasAuditErrorPrefix(message,"mutable state digest mismatch"):
   return "record integrity digest mismatch"
+ case hasAuditErrorPrefix(message,"invalid or ambiguous spool JSON: spool JSON contains duplicate object key"):
+  return "invalid or ambiguous record JSON: duplicate object key"
+ case hasAuditErrorPrefix(message,"invalid or ambiguous spool JSON: spool JSON contains invalid Unicode escape"):
+  return "invalid or ambiguous record JSON: invalid Unicode escape"
  case hasAuditErrorPrefix(message,"invalid or ambiguous spool JSON"),
       hasAuditErrorPrefix(message,"invalid spool JSON"):
   return "invalid or ambiguous record JSON"
@@ -41,6 +51,8 @@ func auditReadFailure(err error) string {
  case hasAuditErrorPrefix(message,"invalid durable state"),
       hasAuditErrorPrefix(message,"durable state"):
   return "invalid durable delivery-state metadata"
+ case hasAuditErrorPrefix(message,"durable envelope noncanonical field alias"):
+  return "invalid durable envelope metadata: noncanonical field alias"
  case hasAuditErrorPrefix(message,"invalid durable envelope"),
       hasAuditErrorPrefix(message,"durable envelope"),
       hasAuditErrorPrefix(message,"durable spool"):
