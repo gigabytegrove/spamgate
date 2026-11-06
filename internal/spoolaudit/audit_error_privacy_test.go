@@ -31,7 +31,8 @@ func TestAuditReportDoesNotLeakMaliciousScanJSONKey(t *testing.T) {
  rec:=fixture(idA)
  // Preserve a valid outer envelope while injecting an attacker-controlled
  // duplicate JSON key inside the optional persisted scan evidence.
- raw,err:=json.Marshal(rec)
+ rawBytes,err:=json.Marshal(rec)
+ raw:=string(rawBytes)
  if err!=nil{t.Fatal(err)}
  secret:="private-mailbox@example.invalid"
  injected:=`{"`+secret+`":1,"`+secret+`":2}`
