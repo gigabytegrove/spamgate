@@ -19,7 +19,7 @@ func TestScanEnvelopeDuplicateKeys(t *testing.T) {
   {"escaped duplicate key",`{"id":"`+id+`","\u0069d":"`+id+`","sender":"","recipients":["a@example.test"]}`,true},
   {"nested duplicate not envelope identity",`{"id":"`+id+`","sender":"","recipients":["a@example.test"],"metadata":{"x":1,"x":2}}`,true},
   {"duplicate nested array object",`{"id":"`+id+`","sender":"","recipients":["a@example.test"],"events":[{"code":"pass","code":"fail"}]}`,true},
-  {"escaped duplicate nested key",`{"id":"`+id+`","sender":"","recipients":["a@example.test"],"events":[{"code":"pass","\\u0063ode":"fail"}]}`,true},
+  {"escaped duplicate nested key",`{"id":"`+id+`","sender":"","recipients":["a@example.test"],"events":[{"code":"pass","\u0063ode":"fail"}]}`,true},
   {"valid nested evidence",`{"id":"`+id+`","sender":"","recipients":["a@example.test"],"events":[{"code":"pass"},{"code":"fail"}]}`,false},
   {"trailing JSON",`{"id":"`+id+`","sender":"","recipients":["a@example.test"]} true`,true},
   {"malformed value",`{"id":"`+id+`","sender":"","recipients":["a@example.test"],"score":}`,true},
