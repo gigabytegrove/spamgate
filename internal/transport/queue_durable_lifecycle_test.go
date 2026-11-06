@@ -14,7 +14,7 @@ func TestDurableLifecycleRejectsAmbiguousState(t *testing.T) {
  cases:=[]struct{name,key string;value any;remove bool}{
  {"missing attempts","attempts",nil,true},{"null attempts","attempts",nil,false},{"fractional attempts","attempts",1.5,false},
  {"negative attempts","attempts",-1,false},{"overflow attempts","attempts",4294967296,false},
- {"excessive attempts","attempts",MaxDeliveryAttempts+1,false},{"string attempts","attempts","1",false},
+ {"excessive attempts","attempts",1000001,false},{"string attempts","attempts","1",false},
  {"missing created","created",nil,true},{"null updated","updated",nil,false},
  {"invalid next attempt","next_attempt","not-a-date",false},{"numeric created","created",123,false},
  {"null delivered at","delivered_at",nil,false},{"invalid delivered at","delivered_at","yesterday",false},
