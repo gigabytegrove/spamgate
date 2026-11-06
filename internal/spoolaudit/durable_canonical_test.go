@@ -73,3 +73,26 @@ func TestAuditRejectsNoncanonicalDurableAliasWithoutLeakingPrivateEnvelope(t *te
   t.Fatalf("missing actionable diagnostic category: %s",encoded)
  }
 }
+
+func TestAuditRejectsAliasWithoutDuplicateCanonicalKey(t *testing.T) {
+ dir:=privateDir(t)
+ original:=fixture(idA)
+ raw,err:=json.Marshal(original)
+ if err!=nil {t.Fatal(err)}
+ // Replace rather than append: this exercises alias validation without
+ // triggering the duplicate-key guard first.
+ canonical:=`"sender":`
+ if !strings.Contains(string(raw),canonical) {t.Fatal("fixture missing canonical sender")}
+ injected:=strings.Replace(string(raw),canonical,`"Sender":`,1)
+ if err:=os.WriteFile(filepath.Join(dir,idA+".json"),[]byte(injected),0600);err!=nil {t.Fatal(err)}
+ report,err:=Audit(dir)
+ if err!=nil {t.Fatal(err)}
+ if report.UnreadableRecords!=1||!hasCode(report,"unreadable_record") {
+  t.Fatalf("noncanonical alias was accepted: %+v",report)
+ }
+ encoded,err:=json.Marshal(report)
+ if err!=nil {t.Fatal(err)}
+ if !strings.Contains(string(encoded),"invalid durable envelope metadata: noncanonical field alias") {
+  t.Fatalf("expected alias-specific diagnostic: %s",encoded)
+ }
+}
