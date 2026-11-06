@@ -67,7 +67,9 @@ func TestAuditRejectsNoncanonicalDurableAliasWithoutLeakingPrivateEnvelope(t *te
  encoded,err:=json.Marshal(report)
  if err!=nil {t.Fatal(err)}
  if strings.Contains(string(encoded),private) {t.Fatal("audit report leaked injected address")}
- if !strings.Contains(string(encoded),"invalid durable envelope metadata") {
+ // Duplicate-key validation runs before alias validation. Both reject the record,
+ // but the diagnostic must reflect the first actual validation failure.
+ if !strings.Contains(string(encoded),"invalid or ambiguous record JSON: duplicate object key") {
   t.Fatalf("missing actionable diagnostic category: %s",encoded)
  }
 }
