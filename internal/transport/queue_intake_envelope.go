@@ -25,7 +25,7 @@ func validateIntakeEnvelope(sender string, recipients []string) error {
 }
 
 // validSMTPEnvelopeText rejects ASCII and non-ASCII controls, Unicode line
-// separators and bidirectional formatting controls. These code points can
+// separators and Unicode format controls (including zero-width and bidi). These code points can
 // cause downstream log, header or SMTP command confusion even though the UTF-8
 // byte sequence itself is well formed. Error messages never echo addresses.
 func validSMTPEnvelopeText(value string) bool {
@@ -33,14 +33,7 @@ func validSMTPEnvelopeText(value string) bool {
   return false
  }
  for _, r := range value {
-  if unicode.IsControl(r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r) {
-   return false
-  }
-  // Direction overrides/isolates and directional marks are invisible
-  // formatting controls; do not allow them to disguise mailbox identity.
-  if r == 0x061c || r == 0x200e || r == 0x200f ||
-   (r >= 0x202a && r <= 0x202e) ||
-   (r >= 0x2066 && r <= 0x2069) {
+  if unicode.IsControl(r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r) || unicode.Is(unicode.Cf, r) {
    return false
   }
  }
