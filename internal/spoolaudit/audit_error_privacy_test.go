@@ -68,6 +68,11 @@ func TestAuditReadFailureRejectsCategorySpoofing(t *testing.T) {
   {"valid envelope category",errors.New("invalid durable envelope: sender"),"invalid durable envelope metadata"},
   {"known path race",errors.New("spool record changed during read"),"record changed during audit; retry read-only inspection"},
   {"known metadata",errors.New("unsafe spool metadata: permissions"),"unsafe record file metadata"},
+  {"hard link metadata",errors.New("unsafe spool metadata: spool original must have exactly one hard link"),"unsafe record hard link count"},
+  {"private permissions",errors.New("unsafe opened spool metadata: spool original must be private and owner-readable"),"unsafe record private permissions"},
+  {"duplicate JSON",errors.New("invalid or ambiguous spool JSON: spool JSON contains duplicate object key"),"invalid or ambiguous record JSON: duplicate object key"},
+  {"malformed Unicode",errors.New("invalid or ambiguous spool JSON: spool JSON contains invalid Unicode escape"),"invalid or ambiguous record JSON: invalid Unicode escape"},
+  {"noncanonical durable alias",errors.New("durable envelope noncanonical field alias"),"invalid durable envelope metadata: noncanonical field alias"},
   {"known size",errors.New("not a bounded regular spool record"),"record is not a bounded regular file"},
   {"nil",nil,"record validation failed"},
  }
