@@ -355,6 +355,9 @@ func (q *DeliveryQueue) Enqueue(m core.Message, raw []byte) error {
 	if !validQueueID(m.ID) || len(raw) == 0 || len(raw) > 10<<20 || len(m.Recipients) == 0 || len(m.Recipients) > 1000 {
 		return errors.New("invalid queued message")
 	}
+	if err := validateIntakeEnvelope(m.Sender, m.Recipients); err != nil {
+		return err
+	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	// The inventory limit and new original must be one transaction across
