@@ -5,13 +5,14 @@ import (
  "encoding/json"
  "errors"
  "strings"
- )
+)
 
 // validateCanonicalSpoolRecordJSON runs before decoding persisted originals.
 // encoding/json accepts case-insensitive struct keys and decodes null string
 // array elements to "". Neither behavior is safe for SMTP recipient identity.
 // Unknown extension keys are retained for forward-compatible spool upgrades.
 func validateCanonicalSpoolRecordJSON(data []byte) error {
+ if err := validateUniqueDurableJSON(data); err != nil { return err }
  var fields map[string]json.RawMessage
  if err := json.Unmarshal(data, &fields); err != nil || fields == nil {
   return errors.New("invalid durable spool JSON object")
