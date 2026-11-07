@@ -9,7 +9,7 @@ import (
 func TestDurableJSONStructuralBudgets(t *testing.T) {
  cases := []struct { name, input, errorPart string }{
   {"normal nested", `{"scan":{"symbols":[{"name":"SPF"},{"name":"DKIM"}]}}`, ""},
-  {"duplicate escaped alias", `{"id":1,"\u005cu0069d":2}`, "duplicate"},
+  {"duplicate escaped alias", `{"id":1,"\u0069d":2}`, "duplicate"},
   {"maximum key length", `{"`+strings.Repeat("k",maxDurableJSONKeyBytes)+`":1}`, ""},
   {"oversized key", `{"`+strings.Repeat("k",maxDurableJSONKeyBytes+1)+`":1}`, "key too long"},
   {"key count limit", buildDurableObject(maxDurableJSONObjectKeys), ""},
