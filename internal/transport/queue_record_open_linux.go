@@ -24,5 +24,21 @@ func readQueueRecordAt(dir string, expected os.FileInfo, name string, inspected 
     f := os.NewFile(uintptr(fd), name)
     if f == nil { _ = syscall.Close(fd); return nil, errors.New("cannot wrap queue record descriptor") }
     defer f.Close()
-    return readOpenedSpoolFile(f, filepath.Join(dir, name), inspected)
+    path := filepath.Join(dir, name)
+    // The descriptor-relative open protects the read from a substituted
+    // parent pathname. Refuse a record that was unlinked or replaced while
+    // being read, rather than returning bytes from a stale queue entry.
+    before, err := os.Lstat(path)
+    if err != nil { return nil, fmt.Errorf("reinspect queue record before read: %w", err) }
+    if !os.SameFile(inspected, before) {
+        return nil, errors.New("queue record pathname changed before read")
+    }
+    raw, err := readOpenedSpoolFile(f, path, inspected)
+    if err != nil { return nil, err }
+    after, err := os.Lstat(path)
+    if err != nil { return nil, fmt.Errorf("reinspect queue record after read: %w", err) }
+    if !os.SameFile(inspected, after) {
+        return nil, errors.New("queue record pathname changed during read")
+    }
+    return raw, nil
 }
