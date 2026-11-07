@@ -228,7 +228,7 @@ func (q *DeliveryQueue) put(rec spoolRecord) error {
 // the queue read a different file between inspection and open. The read is
 // bounded even when the file grows after the initial stat.
 func readSpoolFile(path string, inspected os.FileInfo) ([]byte, error) {
- const maxRecordSize int64 = 20 << 20
+ const maxRecordSize int64 = maxDurableSpoolRecordBytes
  if !inspected.Mode().IsRegular() || inspected.Size() < 2 || inspected.Size() > maxRecordSize {
   return nil, errors.New("unsafe or oversized queue record")
  }
