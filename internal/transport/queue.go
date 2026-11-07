@@ -87,9 +87,7 @@ func NewDeliveryQueue(dataDir string, store *core.Store, deliver func(context.Co
 	if err := os.MkdirAll(path, 0700); err != nil {
 		return nil, err
 	}
-	info, err := os.Lstat(path)
-	if err != nil { return nil, err }
-	if err := validateDeliveryQueueDirectory(info); err != nil {
+	if err := validateDeliveryQueueDirectoryPath(path); err != nil {
 		return nil, err
 	}
 	q := &DeliveryQueue{dir: path, store: store, send: deliver, now: func() time.Time { return time.Now().UTC() }}
