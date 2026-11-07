@@ -267,24 +267,65 @@ var ErrUnsupported = errors.New("mail integration not supported on this host")
 // must never be interpreted as complete Milter enforcement coverage.
 func InspectMilterServiceOverrides(output string) ([]string, bool) {
 	const maxEntries = 64
-	const maxLineBytes = 512
+	const maxIdentityBytes = 512
+	const maxOutputBytes = 1 << 20
 	var found []string
 	seen := make(map[string]bool)
 	truncated := false
-	for _, line := range strings.Split(output, "\n") {
+
+	// postconf -P output is untrusted host configuration. Never split an
+	// arbitrarily large response into a second, potentially huge allocation.
+	// A partial inventory must explicitly invalidate coverage confidence.
+	if len(output) > maxOutputBytes {
+		output = output[:maxOutputBytes]
+		truncated = true
+	}
+	for len(output) > 0 {
+		line, rest, hasNext := strings.Cut(output, "\n")
+		if hasNext {
+			output = rest
+		} else {
+			output = ""
+		}
+		// A huge malformed line is not safe to publish as an identity.
+		if len(line) > maxIdentityBytes+256 {
+			truncated = true
+			continue
+		}
 		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") { continue }
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
 		key, _, ok := strings.Cut(line, "=")
-		if !ok { continue }
+		if !ok {
+			// A malformed service assignment cannot establish coverage.
+			if strings.Contains(line, "milter") {
+				truncated = true
+			}
+			continue
+		}
 		key = strings.TrimSpace(key)
 		parts := strings.Split(key, "/")
-		if len(parts) != 3 || parts[0] == "" || parts[1] == "" { continue }
+		if len(parts) != 3 || parts[0] == "" || parts[1] == "" {
+			if strings.Contains(key, "milter") {
+				truncated = true
+			}
+			continue
+		}
 		switch parts[2] {
 		case "smtpd_milters", "non_smtpd_milters", "milter_default_action", "milter_protocol", "smtpd_milter_maps":
-			if len(key) > maxLineBytes { truncated = true; continue }
-			if seen[key] { continue }
+			if len(key) > maxIdentityBytes {
+				truncated = true
+				continue
+			}
+			if seen[key] {
+				continue
+			}
 			seen[key] = true
-			if len(found) == maxEntries { truncated = true; continue }
+			if len(found) == maxEntries {
+				truncated = true
+				continue
+			}
 			found = append(found, key)
 		}
 	}
