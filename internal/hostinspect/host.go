@@ -320,7 +320,14 @@ func InspectMilterServiceOverrides(output string) ([]string, bool) {
 				truncated = true
 				continue
 			}
-			if seen[key] {
+			// Service identities are rendered in diagnostics. Reject control
+		// characters, Unicode confusables and terminal escape sequences.
+		// Invalid evidence makes the coverage inventory incomplete.
+		if !safePostfixOverrideIdentity(parts[0]) || !safePostfixOverrideIdentity(parts[1]) {
+			truncated = true
+			continue
+		}
+		if seen[key] {
 				continue
 			}
 			seen[key] = true
@@ -344,4 +351,17 @@ func ListMilterServiceOverrides(output string) []string {
 // setting exists, including overrides which happen to match global values.
 func HasMilterServiceOverrides(output string) bool {
 	return len(ListMilterServiceOverrides(output)) != 0
+}
+
+// safePostfixOverrideIdentity limits diagnostic keys to printable Postfix
+// service/transport identifiers. Never publish untrusted control sequences.
+func safePostfixOverrideIdentity(value string) bool {
+	if value == "" || len(value) > 128 { return false }
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' { continue }
+		return false
+	}
+	return true
 }
