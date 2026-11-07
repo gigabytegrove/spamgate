@@ -109,6 +109,7 @@ func (p Probe) Detect(ctx context.Context) Report {
 		current, err := run(c, postfixPath, "-h", "smtpd_milters")
 		cancel()
 		if err != nil {
+			result.PostfixCoverageUncertain = true
 			result.Notes = append(result.Notes, "Unable to read Postfix milter configuration; do not assume it is empty.")
 		}
 		if err == nil {
@@ -122,6 +123,7 @@ func (p Probe) Detect(ctx context.Context) Report {
 			defer cancel()
 			value, e := run(c, postfixPath, "-h", key)
 			if e != nil {
+				result.PostfixCoverageUncertain = true
 				result.Notes = append(result.Notes, "Could not inspect Postfix "+key+"; verify it manually.")
 				return ""
 			}
@@ -141,9 +143,17 @@ func (p Probe) Detect(ctx context.Context) Report {
 		if !result.PostfixConfigured {
 			result.Notes = append(result.Notes, "Postfix is not configured to use SpamGate Milter on both smtpd_milters and non_smtpd_milters. Mail can bypass SpamGate.")
 		}
+		if result.MilterDefaultAction != "tempfail" && result.MilterDefaultAction != "reject" {
+			result.PostfixCoverageUncertain = true
+			result.Notes = append(result.Notes, "Postfix Milter failure behavior is not confirmed fail-closed (tempfail/reject); verify milter_default_action before relying on enforcement.")
+		}
 		if result.MilterDefaultAction == "accept" {
 			result.PostfixCoverageUncertain = true
 			result.Notes = append(result.Notes, "Postfix is set to accept mail when the Milter fails; scanning can be bypassed silently. Use tempfail after verifying connectivity, understanding it defers mail during outages.")
+		}
+		if result.MilterProtocol == "" {
+			result.PostfixCoverageUncertain = true
+			result.Notes = append(result.Notes, "Postfix Milter protocol could not be confirmed; verify compatibility with SpamGate.")
 		}
 		if result.PostfixSmtpdMilterMaps != "" {
 			result.PostfixCoverageUncertain = true
