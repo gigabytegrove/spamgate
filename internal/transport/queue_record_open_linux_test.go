@@ -7,6 +7,7 @@ import (
     "path/filepath"
     "strings"
     "testing"
+    "syscall"
 )
 
 func TestReadQueueRecordAtVerifiedDirectory(t *testing.T) {
@@ -105,4 +106,45 @@ func TestReadQueueRecordAtRejectsUnlinkedRecord(t *testing.T) {
     if _, err := readQueueRecordAt(dir, expected, name, inspected); err == nil {
         t.Fatal("unlinked queue record accepted")
     }
+}
+
+func TestStatQueueRecordAtRejectsUnsafeChildren(t *testing.T) {
+    dir := t.TempDir()
+    parent, err := os.Open(dir)
+    if err != nil { t.Fatal(err) }
+    defer parent.Close()
+    name := strings.Repeat("f", 32) + ".json"
+    path := filepath.Join(dir, name)
+    if err := os.WriteFile(path, []byte("{}"), 0600); err != nil { t.Fatal(err) }
+    original, err := statQueueRecordAt(parent, name)
+    if err != nil { t.Fatal(err) }
+    if !original.Mode().IsRegular() { t.Fatal("expected regular record") }
+    if _, err := statQueueRecordAt(parent, "../"+name); err == nil { t.Fatal("traversal accepted") }
+    if err := os.Remove(path); err != nil { t.Fatal(err) }
+    if err := os.Symlink(filepath.Join(dir, "target"), path); err != nil { t.Fatal(err) }
+    if _, err := statQueueRecordAt(parent, name); err == nil { t.Fatal("symlink accepted") }
+    if err := os.Remove(path); err != nil { t.Fatal(err) }
+    if err := syscall.Mkfifo(path, 0600); err != nil { t.Fatal(err) }
+    fifo, err := statQueueRecordAt(parent, name)
+    if err != nil { t.Fatal(err) }
+    if fifo.Mode().IsRegular() { t.Fatal("FIFO misclassified as regular record") }
+}
+
+func TestStatQueueRecordAtRetainsVerifiedParentAfterRename(t *testing.T) {
+    root := t.TempDir()
+    dir := filepath.Join(root, "queue")
+    if err := os.Mkdir(dir, 0700); err != nil { t.Fatal(err) }
+    name := strings.Repeat("a", 32) + ".json"
+    if err := os.WriteFile(filepath.Join(dir, name), []byte("original"), 0600); err != nil { t.Fatal(err) }
+    parent, err := os.Open(dir)
+    if err != nil { t.Fatal(err) }
+    defer parent.Close()
+    before, err := statQueueRecordAt(parent, name)
+    if err != nil { t.Fatal(err) }
+    if err := os.Rename(dir, filepath.Join(root, "moved")); err != nil { t.Fatal(err) }
+    if err := os.Mkdir(dir, 0700); err != nil { t.Fatal(err) }
+    if err := os.WriteFile(filepath.Join(dir, name), []byte("replacement"), 0600); err != nil { t.Fatal(err) }
+    after, err := statQueueRecordAt(parent, name)
+    if err != nil { t.Fatal(err) }
+    if !os.SameFile(before, after) { t.Fatal("descriptor escaped to replacement parent") }
 }
