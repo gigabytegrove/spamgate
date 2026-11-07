@@ -52,6 +52,7 @@ func TestPostfixUnknownConfigurationNeverClaimsCertainCoverage(t *testing.T) {
      }
     },
     Reach: func(string) bool { return true },
+    MasterOverrides: func(context.Context) (string, error) { return "", nil },
    }
    got := p.Detect(context.Background())
    if !got.PostfixConfigured && tc.failKey == "" { t.Fatalf("expected global Milter settings configured: %+v", got) }
