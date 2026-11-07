@@ -138,7 +138,12 @@ func (p Probe) Detect(ctx context.Context) Report {
 		// postconf -h reads main.cf only. master.cf -o overrides can bypass
 		// those global values for submission and other SMTP services.
 		// Custom probes may inject this inspection without executing binaries.
-		if p.Run == nil || p.MasterOverrides != nil {
+		if p.Run != nil && p.MasterOverrides == nil {
+			// A custom command runner may not implement postconf -P. Do not
+			// silently treat an uninspected master.cf as proof of coverage.
+			result.PostfixCoverageUncertain = true
+			result.Notes = append(result.Notes, "Postfix master.cf service overrides were not inspected; SMTP service coverage is unverified.")
+		} else {
 			inspect := p.MasterOverrides
 			if inspect == nil {
 				inspect = func(c context.Context) (string, error) { return run(c, postfixPath, "-P") }
