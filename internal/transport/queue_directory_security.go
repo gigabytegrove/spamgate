@@ -1,20 +1,22 @@
 package transport
 
 import (
- "errors"
- "os"
+    "errors"
+    "os"
 )
 
-// validateDeliveryQueueDirectory refuses a pre-existing spool with permissions
-// that disclose accepted SMTP metadata to other local users. It deliberately
-// does not chmod or chown: operators must inspect and correct the directory,
-// and no running mail-host configuration is modified by this check.
+// validateDeliveryQueueDirectory requires an existing spool to be usable only
+// by its owner. Read and execute are necessary for recovery inventory; write
+// and execute are necessary for durable publication. Refuse special mode bits
+// rather than relying on a permissive root process to bypass permissions.
+// Never chmod an existing production directory automatically.
 func validateDeliveryQueueDirectory(info os.FileInfo) error {
- if info == nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-  return errors.New("delivery queue must be a real directory")
- }
- if info.Mode().Perm()&0077 != 0 {
-  return errors.New("delivery queue directory exposes SMTP spool metadata to group or other users; set mode 0700 after reviewing ownership")
- }
- return nil
+    if info == nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+        return errors.New("delivery queue must be a real directory")
+    }
+    mode := info.Mode()
+    if mode.Perm() != 0700 || mode&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky) != 0 {
+        return errors.New("delivery queue requires private owner read/write/search permissions (0700) without special mode bits; inspect ownership before changing permissions")
+    }
+    return nil
 }
