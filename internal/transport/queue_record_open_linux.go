@@ -6,6 +6,7 @@ import (
     "errors"
     "fmt"
     "os"
+    "path/filepath"
     "syscall"
 )
 
@@ -34,7 +35,7 @@ func readQueueRecordAt(dir string, expected os.FileInfo, name string, inspected 
     // The descriptor-relative open protects the read from a substituted
     // parent pathname. Refuse a record that was unlinked or replaced while
     // being read, rather than returning bytes from a stale queue entry.
-    raw, err := readOpenedSpoolFile(f, name, inspected)
+    raw, err := readOpenedSpoolFile(f, filepath.Join(dir, name), inspected)
     if err != nil { return nil, err }
     after, err := statQueueRecordAt(parent, name)
     if err != nil { return nil, fmt.Errorf("reinspect queue record after read: %w", err) }
