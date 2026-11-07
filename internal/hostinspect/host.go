@@ -38,6 +38,8 @@ type Probe struct {
 	Lookup func(string) (string, error)
 	Run    func(context.Context, string, ...string) (string, error)
 	Reach  func(string) bool
+	// MasterOverrides reads Postfix master.cf service parameter overrides.
+	MasterOverrides func(context.Context) (string, error)
 }
 
 func realRun(ctx context.Context, name string, args ...string) (string, error) {
@@ -133,6 +135,26 @@ func (p Probe) Detect(ctx context.Context) Report {
 		result.MilterProtocol = readPostconf("milter_protocol")
 		result.MilterDefaultAction = readPostconf("milter_default_action")
 		result.PostfixSmtpdMilterMaps = readPostconf("smtpd_milter_maps")
+		// postconf -h reads main.cf only. master.cf -o overrides can bypass
+		// those global values for submission and other SMTP services.
+		// Custom probes may inject this inspection without executing binaries.
+		if p.Run == nil || p.MasterOverrides != nil {
+			inspect := p.MasterOverrides
+			if inspect == nil {
+				inspect = func(c context.Context) (string, error) { return run(c, postfixPath, "-P") }
+			}
+			c, cancel := context.WithTimeout(ctx, 2*time.Second)
+			overrides, inspectErr := inspect(c)
+			cancel()
+			if inspectErr != nil {
+				result.PostfixCoverageUncertain = true
+				result.Notes = append(result.Notes, "Could not inspect Postfix master.cf service overrides; SMTP service coverage is unverified.")
+			} else if HasMilterServiceOverrides(overrides) {
+				result.PostfixCoverageUncertain = true
+				result.Notes = append(result.Notes, "Postfix master.cf contains service-specific Milter overrides; verify each SMTP service and submission path independently.")
+			}
+		}
+
 		result.PostfixConfigured = ContainsLocalMilter(result.ExistingMilters) && ContainsLocalMilter(result.NonSMTPDMilters)
 		if !result.PostfixConfigured || !result.MilterReady {
 			result.PostfixCoverageUncertain = true
@@ -219,3 +241,21 @@ func AppendMilter(existing string) string {
 // enforcement route. This sentinel is kept for callers requiring explicit
 // unsupported-environment errors when adding future adapters.
 var ErrUnsupported = errors.New("mail integration not supported on this host")
+
+// HasMilterServiceOverrides detects Postfix postconf -P service/parameter=value
+// records. Even a seemingly correct override requires per-service inspection.
+func HasMilterServiceOverrides(output string) bool {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") { continue }
+		key, _, ok := strings.Cut(line, "=")
+		if !ok { continue }
+		key = strings.TrimSpace(key)
+		if strings.Contains(key, "/") {
+			for _, param := range []string{"smtpd_milters", "non_smtpd_milters", "milter_default_action", "milter_protocol", "smtpd_milter_maps"} {
+				if strings.HasSuffix(key, "/"+param) { return true }
+			}
+		}
+	}
+	return false
+}
