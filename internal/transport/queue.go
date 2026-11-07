@@ -153,7 +153,7 @@ func (q *DeliveryQueue) syncDirectory() error {
 	if runtime.GOOS == "windows" {
 		return nil
 	} // directory fsync is not supported by Windows file handles
-	d, e := os.Open(q.dir)
+	d, e := openVerifiedDeliveryQueueDirectory(q.dir, q.dirIdentity)
 	if e != nil {
 		return e
 	}
@@ -297,7 +297,7 @@ func (q *DeliveryQueue) get(id string) (spoolRecord, error) {
 }
 func (q *DeliveryQueue) snapshotLocked() (QueueSummary, error) {
 	if err := checkDeliveryQueueIdentity(q.dir, q.dirIdentity); err != nil { return QueueSummary{}, err }
-	d, e := os.Open(q.dir)
+	d, e := openVerifiedDeliveryQueueDirectory(q.dir, q.dirIdentity)
 	if e != nil { return QueueSummary{}, e }
 	defer d.Close()
 	var info QueueSummary
