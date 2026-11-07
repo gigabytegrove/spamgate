@@ -237,6 +237,14 @@ func readSpoolFile(path string, inspected os.FileInfo) ([]byte, error) {
  f, err := os.Open(path)
  if err != nil { return nil, err }
  defer f.Close()
+ return readOpenedSpoolFile(f, path, inspected)
+}
+
+func readOpenedSpoolFile(f *os.File, path string, inspected os.FileInfo) ([]byte, error) {
+ const maxRecordSize int64 = maxDurableSpoolRecordBytes
+ if !inspected.Mode().IsRegular() || inspected.Size() < 2 || inspected.Size() > maxRecordSize {
+  return nil, errors.New("unsafe or oversized queue record")
+ }
  opened, err := f.Stat()
  if err != nil { return nil, err }
  if !opened.Mode().IsRegular() || !os.SameFile(inspected, opened) {
@@ -263,7 +271,7 @@ func (q *DeliveryQueue) get(id string) (spoolRecord, error) {
  path := q.path(id)
  meta, err := os.Lstat(path)
  if err != nil { return spoolRecord{}, err }
- b, err := readSpoolFile(path, meta)
+ b, err := readQueueRecordAt(q.dir, q.dirIdentity, id+".json", meta)
  if err != nil { return spoolRecord{}, fmt.Errorf("unsafe queue job %s: %w", id, err) }
 	var rec spoolRecord
 	if err = spooljson.Validate(b); err != nil {
