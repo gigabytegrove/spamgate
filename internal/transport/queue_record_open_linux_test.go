@@ -71,3 +71,38 @@ func TestReadQueueRecordAtIndependentOfWorkingDirectory(t *testing.T) {
     if err != nil { t.Fatalf("absolute metadata lookup required: %v", err) }
     if string(got) != "{}" { t.Fatalf("wrong spool record: %q", got) }
 }
+
+func TestReadQueueRecordAtRejectsReplacedRecord(t *testing.T) {
+    root := t.TempDir()
+    dir := filepath.Join(root, "delivery-queue")
+    if err := os.Mkdir(dir, 0700); err != nil { t.Fatal(err) }
+    name := strings.Repeat("d", 32) + ".json"
+    path := filepath.Join(dir, name)
+    if err := os.WriteFile(path, []byte("{}"), 0600); err != nil { t.Fatal(err) }
+    expected, err := captureDeliveryQueueIdentity(dir)
+    if err != nil { t.Fatal(err) }
+    inspected, err := os.Lstat(path)
+    if err != nil { t.Fatal(err) }
+    if err := os.Rename(path, filepath.Join(root, "original")); err != nil { t.Fatal(err) }
+    if err := os.WriteFile(path, []byte("{}"), 0600); err != nil { t.Fatal(err) }
+    if _, err := readQueueRecordAt(dir, expected, name, inspected); err == nil {
+        t.Fatal("replaced queue record accepted")
+    }
+}
+
+func TestReadQueueRecordAtRejectsUnlinkedRecord(t *testing.T) {
+    root := t.TempDir()
+    dir := filepath.Join(root, "delivery-queue")
+    if err := os.Mkdir(dir, 0700); err != nil { t.Fatal(err) }
+    name := strings.Repeat("e", 32) + ".json"
+    path := filepath.Join(dir, name)
+    if err := os.WriteFile(path, []byte("{}"), 0600); err != nil { t.Fatal(err) }
+    expected, err := captureDeliveryQueueIdentity(dir)
+    if err != nil { t.Fatal(err) }
+    inspected, err := os.Lstat(path)
+    if err != nil { t.Fatal(err) }
+    if err := os.Remove(path); err != nil { t.Fatal(err) }
+    if _, err := readQueueRecordAt(dir, expected, name, inspected); err == nil {
+        t.Fatal("unlinked queue record accepted")
+    }
+}
