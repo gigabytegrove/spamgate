@@ -72,6 +72,7 @@ type DeliveryQueue struct {
 	mu       sync.Mutex
 	workerMu sync.Mutex
 	dir      string
+	dirIdentity os.FileInfo
 	store    *core.Store
 	send     func(context.Context, core.Message, []byte) error
 	now      func() time.Time
@@ -87,10 +88,11 @@ func NewDeliveryQueue(dataDir string, store *core.Store, deliver func(context.Co
 	if err := os.MkdirAll(path, 0700); err != nil {
 		return nil, err
 	}
-	if err := validateDeliveryQueueDirectoryPath(path); err != nil {
+	identity, err := captureDeliveryQueueIdentity(path)
+	if err != nil {
 		return nil, err
 	}
-	q := &DeliveryQueue{dir: path, store: store, send: deliver, now: func() time.Time { return time.Now().UTC() }}
+	q := &DeliveryQueue{dir: path, dirIdentity: identity, store: store, send: deliver, now: func() time.Time { return time.Now().UTC() }}
 	summary, err := q.snapshotLocked()
 	if err != nil {
 		return nil, fmt.Errorf("existing spool is not readable: %w", err)
@@ -144,6 +146,7 @@ func spoolStateDigest(rec spoolRecord) string {
 }
 func (q *DeliveryQueue) path(id string) string { return filepath.Join(q.dir, id+".json") }
 func (q *DeliveryQueue) syncDirectory() error {
+	if err := checkDeliveryQueueIdentity(q.dir, q.dirIdentity); err != nil { return err }
 	if q.syncDirForTest != nil {
 		return q.syncDirForTest()
 	}
@@ -158,6 +161,7 @@ func (q *DeliveryQueue) syncDirectory() error {
 	return d.Sync()
 }
 func (q *DeliveryQueue) put(rec spoolRecord) error {
+	if err := checkDeliveryQueueIdentity(q.dir, q.dirIdentity); err != nil { return err }
 	if !validQueueID(rec.ID) { return errors.New("invalid queue record ID") }
 	rec.StateSHA256 = spoolStateDigest(rec)
 	b, e := json.Marshal(rec)
@@ -254,6 +258,7 @@ func readSpoolFile(path string, inspected os.FileInfo) ([]byte, error) {
 }
 
 func (q *DeliveryQueue) get(id string) (spoolRecord, error) {
+ if err := checkDeliveryQueueIdentity(q.dir, q.dirIdentity); err != nil { return spoolRecord{}, err }
  if !validQueueID(id) { return spoolRecord{}, os.ErrNotExist }
  path := q.path(id)
  meta, err := os.Lstat(path)
@@ -291,6 +296,7 @@ func (q *DeliveryQueue) get(id string) (spoolRecord, error) {
 	return rec, nil
 }
 func (q *DeliveryQueue) snapshotLocked() (QueueSummary, error) {
+	if err := checkDeliveryQueueIdentity(q.dir, q.dirIdentity); err != nil { return QueueSummary{}, err }
 	d, e := os.Open(q.dir)
 	if e != nil { return QueueSummary{}, e }
 	defer d.Close()
