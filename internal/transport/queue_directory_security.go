@@ -18,5 +18,8 @@ func validateDeliveryQueueDirectory(info os.FileInfo) error {
     if mode.Perm() != 0700 || mode&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky) != 0 {
         return errors.New("delivery queue requires private owner read/write/search permissions (0700) without special mode bits; inspect ownership before changing permissions")
     }
+    if err := validateDeliveryQueueOwner(info); err != nil {
+        return err
+    }
     return nil
 }
