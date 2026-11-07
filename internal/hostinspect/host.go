@@ -27,6 +27,7 @@ type Report struct {
 	MilterProtocol         string   `json:"milter_protocol,omitempty"`
 	PostfixSmtpdMilterMaps string   `json:"postfix_smtpd_milter_maps,omitempty"`
 	PostfixConfigured      bool     `json:"postfix_configured"`
+	PostfixCoverageUncertain bool `json:"postfix_coverage_uncertain"`
 	ProposedMilters        string   `json:"proposed_milters,omitempty"`
 	MilterReady            bool     `json:"milter_ready"`
 	Notes                  []string `json:"notes"`
@@ -131,6 +132,9 @@ func (p Probe) Detect(ctx context.Context) Report {
 		result.MilterDefaultAction = readPostconf("milter_default_action")
 		result.PostfixSmtpdMilterMaps = readPostconf("smtpd_milter_maps")
 		result.PostfixConfigured = ContainsLocalMilter(result.ExistingMilters) && ContainsLocalMilter(result.NonSMTPDMilters)
+		if !result.PostfixConfigured || !result.MilterReady {
+			result.PostfixCoverageUncertain = true
+		}
 		if hasWrongSpamGatePort(result.ExistingMilters) || hasWrongSpamGatePort(result.NonSMTPDMilters) {
 			result.Notes = append(result.Notes, "WRONG PORT: 38471 is SpamGate HTTP scanning, not Milter. Postfix needs inet:127.0.0.1:38472.")
 		}
@@ -138,9 +142,11 @@ func (p Probe) Detect(ctx context.Context) Report {
 			result.Notes = append(result.Notes, "Postfix is not configured to use SpamGate Milter on both smtpd_milters and non_smtpd_milters. Mail can bypass SpamGate.")
 		}
 		if result.MilterDefaultAction == "accept" {
+			result.PostfixCoverageUncertain = true
 			result.Notes = append(result.Notes, "Postfix is set to accept mail when the Milter fails; scanning can be bypassed silently. Use tempfail after verifying connectivity, understanding it defers mail during outages.")
 		}
 		if result.PostfixSmtpdMilterMaps != "" {
+			result.PostfixCoverageUncertain = true
 			result.Notes = append(result.Notes, "Postfix smtpd_milter_maps may override/disable the Milter for some SMTP clients; inspect those rules.")
 		}
 		result.Integration = "postfix-milter"
@@ -189,7 +195,7 @@ func hasWrongSpamGatePort(existing string) bool {
 func AppendMilter(existing string) string {
 	existing = strings.TrimSpace(existing)
 	for _, part := range strings.FieldsFunc(existing, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' || r == '\n' }) {
-		if part == LocalMilter {
+		if part == LocalMilter || part == "inet:localhost:38472" {
 			return existing
 		}
 	}
