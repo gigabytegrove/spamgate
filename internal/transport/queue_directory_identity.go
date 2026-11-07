@@ -6,39 +6,63 @@ import (
     "os"
 )
 
-// captureDeliveryQueueIdentity pins the directory object accepted at startup.
-// This is an additional fail-closed check, not a replacement for descriptor-
-// relative openat/renameat operations in a future filesystem hardening pass.
-func captureDeliveryQueueIdentity(path string) (os.FileInfo, error) {
-    if err := validateDeliveryQueueDirectoryPath(path); err != nil {
-        return nil, err
-    }
-    info, err := os.Lstat(path)
+// inspectDeliveryQueueIdentity opens the directory and verifies that the
+// pathname still names the opened object. A symlink or replacement must never
+// be accepted as the queue's durable storage.
+func inspectDeliveryQueueIdentity(path string) (os.FileInfo, error) {
+    before, err := os.Lstat(path)
     if err != nil {
-        return nil, fmt.Errorf("inspect delivery queue identity: %w", err)
+        return nil, fmt.Errorf("inspect delivery queue directory: %w", err)
     }
-    if err := validateDeliveryQueueDirectory(info); err != nil {
+    if err := validateDeliveryQueueDirectory(before); err != nil {
         return nil, err
     }
-    return info, nil
+    opened, err := os.Open(path)
+    if err != nil {
+        return nil, fmt.Errorf("open delivery queue directory: %w", err)
+    }
+    defer opened.Close()
+    actual, err := opened.Stat()
+    if err != nil {
+        return nil, fmt.Errorf("stat opened delivery queue directory: %w", err)
+    }
+    if !os.SameFile(before, actual) {
+        return nil, errors.New("delivery queue directory changed between inspection and open")
+    }
+    if err := validateDeliveryQueueDirectory(actual); err != nil {
+        return nil, err
+    }
+    after, err := os.Lstat(path)
+    if err != nil {
+        return nil, fmt.Errorf("reinspect delivery queue directory: %w", err)
+    }
+    if !os.SameFile(actual, after) {
+        return nil, errors.New("delivery queue directory identity changed during inspection")
+    }
+    if err := validateDeliveryQueueDirectory(after); err != nil {
+        return nil, err
+    }
+    return actual, nil
 }
 
-// checkDeliveryQueueIdentity refuses a directory path that has been replaced
-// since startup. Never create or repair a missing/replaced directory here:
-// doing so would silently redirect previously accepted SMTP originals.
+// captureDeliveryQueueIdentity pins the opened directory object at startup.
+// Pathname-based operations still require descriptor-relative hardening.
+func captureDeliveryQueueIdentity(path string) (os.FileInfo, error) {
+    return inspectDeliveryQueueIdentity(path)
+}
+
+// checkDeliveryQueueIdentity refuses a missing, substituted, or permission-
+// drifted spool. It also checks the opened object, not merely pathname metadata.
 func checkDeliveryQueueIdentity(path string, expected os.FileInfo) error {
     if expected == nil {
         return errors.New("delivery queue directory identity is not initialized")
     }
-    current, err := os.Lstat(path)
+    actual, err := inspectDeliveryQueueIdentity(path)
     if err != nil {
-        return fmt.Errorf("delivery queue directory is unavailable: %w", err)
+        return fmt.Errorf("delivery queue directory is unavailable or unsafe: %w", err)
     }
-    if !os.SameFile(expected, current) {
+    if !os.SameFile(expected, actual) {
         return errors.New("delivery queue directory identity changed after startup")
-    }
-    if err := validateDeliveryQueueDirectory(current); err != nil {
-        return fmt.Errorf("delivery queue directory became unsafe: %w", err)
     }
     return nil
 }
