@@ -28,6 +28,7 @@ type Report struct {
 	PostfixSmtpdMilterMaps string   `json:"postfix_smtpd_milter_maps,omitempty"`
 	PostfixConfigured      bool     `json:"postfix_configured"`
 	PostfixCoverageUncertain bool `json:"postfix_coverage_uncertain"`
+	PostfixServiceMilterOverrides []string `json:"postfix_service_milter_overrides,omitempty"`
 	ProposedMilters        string   `json:"proposed_milters,omitempty"`
 	MilterReady            bool     `json:"milter_ready"`
 	Notes                  []string `json:"notes"`
@@ -154,7 +155,8 @@ func (p Probe) Detect(ctx context.Context) Report {
 			if inspectErr != nil {
 				result.PostfixCoverageUncertain = true
 				result.Notes = append(result.Notes, "Could not inspect Postfix master.cf service overrides; SMTP service coverage is unverified.")
-			} else if HasMilterServiceOverrides(overrides) {
+			} else if entries := ListMilterServiceOverrides(overrides); len(entries) > 0 {
+				result.PostfixServiceMilterOverrides = entries
 				result.PostfixCoverageUncertain = true
 				result.Notes = append(result.Notes, "Postfix master.cf contains service-specific Milter overrides; verify each SMTP service and submission path independently.")
 			}
@@ -247,20 +249,37 @@ func AppendMilter(existing string) string {
 // unsupported-environment errors when adding future adapters.
 var ErrUnsupported = errors.New("mail integration not supported on this host")
 
-// HasMilterServiceOverrides detects Postfix postconf -P service/parameter=value
-// records. Even a seemingly correct override requires per-service inspection.
-func HasMilterServiceOverrides(output string) bool {
+// ListMilterServiceOverrides returns service/transport/parameter identities,
+// never configuration values (which may contain local paths or credentials).
+// The result is bounded to avoid exposing unbounded command output in the UI.
+func ListMilterServiceOverrides(output string) []string {
+	const maxEntries = 64
+	const maxLineBytes = 512
+	var found []string
+	seen := make(map[string]bool)
 	for _, line := range strings.Split(output, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") { continue }
 		key, _, ok := strings.Cut(line, "=")
 		if !ok { continue }
 		key = strings.TrimSpace(key)
-		if strings.Contains(key, "/") {
-			for _, param := range []string{"smtpd_milters", "non_smtpd_milters", "milter_default_action", "milter_protocol", "smtpd_milter_maps"} {
-				if strings.HasSuffix(key, "/"+param) { return true }
+		if len(key) > maxLineBytes { continue }
+		parts := strings.Split(key, "/")
+		if len(parts) != 3 || parts[0] == "" || parts[1] == "" { continue }
+		switch parts[2] {
+		case "smtpd_milters", "non_smtpd_milters", "milter_default_action", "milter_protocol", "smtpd_milter_maps":
+			if !seen[key] {
+				found = append(found, key)
+				seen[key] = true
+				if len(found) == maxEntries { return found }
 			}
 		}
 	}
-	return false
+	return found
+}
+
+// HasMilterServiceOverrides reports whether any service-specific Milter
+// setting exists, including overrides which happen to match global values.
+func HasMilterServiceOverrides(output string) bool {
+	return len(ListMilterServiceOverrides(output)) != 0
 }
