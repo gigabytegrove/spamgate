@@ -6,6 +6,7 @@ import (
     "errors"
     "fmt"
     "os"
+    "path/filepath"
     "syscall"
 )
 
@@ -23,5 +24,5 @@ func readQueueRecordAt(dir string, expected os.FileInfo, name string, inspected 
     f := os.NewFile(uintptr(fd), name)
     if f == nil { _ = syscall.Close(fd); return nil, errors.New("cannot wrap queue record descriptor") }
     defer f.Close()
-    return readOpenedSpoolFile(f, name, inspected)
+    return readOpenedSpoolFile(f, filepath.Join(dir, name), inspected)
 }
