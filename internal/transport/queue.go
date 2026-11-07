@@ -89,8 +89,8 @@ func NewDeliveryQueue(dataDir string, store *core.Store, deliver func(context.Co
 	}
 	info, err := os.Lstat(path)
 	if err != nil { return nil, err }
-	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0022 != 0 {
-		return nil, errors.New("delivery queue must be a real directory without group/world write access")
+	if err := validateDeliveryQueueDirectory(info); err != nil {
+		return nil, err
 	}
 	q := &DeliveryQueue{dir: path, store: store, send: deliver, now: func() time.Time { return time.Now().UTC() }}
 	summary, err := q.snapshotLocked()
