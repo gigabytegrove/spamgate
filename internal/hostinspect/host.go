@@ -298,7 +298,7 @@ func InspectMilterServiceOverrides(output string) ([]string, bool) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		key, _, ok := strings.Cut(line, "=")
+		key, value, ok := strings.Cut(line, "=")
 		if !ok {
 			// A malformed service assignment cannot establish coverage.
 			if strings.Contains(line, "milter") {
@@ -315,7 +315,13 @@ func InspectMilterServiceOverrides(output string) ([]string, bool) {
 			continue
 		}
 		switch parts[2] {
-		case "smtpd_milters", "non_smtpd_milters", "milter_default_action", "milter_protocol", "smtpd_milter_maps":
+		case "smtpd_milters", "non_smtpd_milters", "milter_default_action", "milter_protocol", "smtpd_milter_maps", "receive_override_options":
+			// Postfix receive_override_options=no_milters disables Milter
+			// processing for that service, even when global Milter settings
+			// are correct. Do not expose unrelated option values in reports.
+			if parts[2] == "receive_override_options" && !containsPostfixOption(value, "no_milters") {
+				continue
+			}
 			if len(key) > maxIdentityBytes {
 				truncated = true
 				continue
@@ -364,4 +370,17 @@ func safePostfixOverrideIdentity(value string) bool {
 		return false
 	}
 	return true
+}
+
+// containsPostfixOption matches an entire Postfix option, not a substring.
+// Values are never included in the published override inventory.
+func containsPostfixOption(value, option string) bool {
+	for _, field := range strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\t'
+	}) {
+		if field == option {
+			return true
+		}
+	}
+	return false
 }
