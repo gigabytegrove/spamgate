@@ -166,6 +166,11 @@ func (q *DeliveryQueue) put(rec spoolRecord) error {
 	if e != nil {
 		return e
 	}
+	// A successful SMTP intake must never publish a record that recovery
+	// refuses to read. Check the encoded size before any spool I/O.
+	if e = validateEncodedSpoolSize(len(b)); e != nil {
+		return e
+	}
 	f, e := os.CreateTemp(q.dir, ".pending-*")
 	if e != nil {
 		return e
