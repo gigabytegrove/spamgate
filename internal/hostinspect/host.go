@@ -289,7 +289,9 @@ func InspectMilterServiceOverrides(output string) ([]string, bool) {
 		}
 		// A huge malformed line is not safe to publish as an identity.
 		if len(line) > maxIdentityBytes+256 {
-			truncated = true
+			if strings.Contains(line, "milter") {
+				truncated = true
+			}
 			continue
 		}
 		line = strings.TrimSpace(line)
