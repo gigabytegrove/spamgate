@@ -50,3 +50,24 @@ func TestReadQueueRecordAtRejectsSymlinkChild(t *testing.T) {
         t.Fatal("symlink queue record accepted")
     }
 }
+
+func TestReadQueueRecordAtIndependentOfWorkingDirectory(t *testing.T) {
+    root := t.TempDir()
+    dir := filepath.Join(root, "delivery-queue")
+    if err := os.Mkdir(dir, 0700); err != nil { t.Fatal(err) }
+    name := strings.Repeat("c", 32) + ".json"
+    record := filepath.Join(dir, name)
+    if err := os.WriteFile(record, []byte("{}"), 0600); err != nil { t.Fatal(err) }
+    expected, err := captureDeliveryQueueIdentity(dir)
+    if err != nil { t.Fatal(err) }
+    inspected, err := os.Lstat(record)
+    if err != nil { t.Fatal(err) }
+    // No process chdir: the metadata validator must receive the absolute
+    // spool pathname even if a same-named child exists elsewhere.
+    other := filepath.Join(root, "unrelated")
+    if err := os.Mkdir(other, 0700); err != nil { t.Fatal(err) }
+    if err := os.WriteFile(filepath.Join(other, name), []byte("different"), 0600); err != nil { t.Fatal(err) }
+    got, err := readQueueRecordAt(dir, expected, name, inspected)
+    if err != nil { t.Fatalf("absolute metadata lookup required: %v", err) }
+    if string(got) != "{}" { t.Fatalf("wrong spool record: %q", got) }
+}
