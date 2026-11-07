@@ -15,6 +15,7 @@ func TestAppendMilter(t *testing.T) {
 		{LocalMilter, LocalMilter},
 		{"inet:127.0.0.1:9999", "inet:127.0.0.1:9999, " + LocalMilter},
 		{"inet:a:2, " + LocalMilter, "inet:a:2, " + LocalMilter},
+		{"inet:localhost:38472", "inet:localhost:38472"},
 	} {
 		if got := AppendMilter(tc.in); got != tc.out {
 			t.Errorf("%q => %q, expected %q", tc.in, got, tc.out)
@@ -163,5 +164,61 @@ func TestCorrectMilterDetected(t *testing.T) {
 		if got := ContainsLocalMilter(tc.input); got != tc.want {
 			t.Fatalf("%q => %v, want %v", tc.input, got, tc.want)
 		}
+	}
+}
+
+func TestPostfixCoverageUncertainWhenMilterMapsOverride(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "etc/postfix/main.cf")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil { t.Fatal(err) }
+	if err := os.WriteFile(path, nil, 0644); err != nil { t.Fatal(err) }
+	probe := Probe{
+		Root: root,
+		Lookup: func(name string) (string, error) {
+			if name == "postconf" { return "postconf", nil }
+			return "", errors.New("missing")
+		},
+		Run: func(_ context.Context, _ string, args ...string) (string, error) {
+			switch strings.Join(args, " ") {
+			case "-h smtpd_milters", "-h non_smtpd_milters": return LocalMilter, nil
+			case "-h milter_default_action": return "tempfail", nil
+			case "-h milter_protocol": return "6", nil
+			case "-h smtpd_milter_maps": return "cidr:/etc/postfix/milter_clients", nil
+			default: return "", errors.New("unknown key")
+			}
+		},
+		Reach: func(string) bool { return true },
+	}
+	report := probe.Detect(context.Background())
+	if !report.PostfixConfigured || !report.PostfixCoverageUncertain {
+		t.Fatalf("configured globals cannot prove coverage when per-client maps override: %+v", report)
+	}
+}
+
+func TestPostfixCoverageUncertainOnFailOpen(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "etc/postfix/main.cf")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil { t.Fatal(err) }
+	if err := os.WriteFile(path, nil, 0644); err != nil { t.Fatal(err) }
+	probe := Probe{
+		Root: root,
+		Lookup: func(name string) (string, error) {
+			if name == "postconf" { return "postconf", nil }
+			return "", errors.New("missing")
+		},
+		Run: func(_ context.Context, _ string, args ...string) (string, error) {
+			switch strings.Join(args, " ") {
+			case "-h smtpd_milters", "-h non_smtpd_milters": return LocalMilter, nil
+			case "-h milter_default_action": return "accept", nil
+			case "-h milter_protocol": return "6", nil
+			case "-h smtpd_milter_maps": return "", nil
+			default: return "", errors.New("unknown key")
+			}
+		},
+		Reach: func(string) bool { return true },
+	}
+	report := probe.Detect(context.Background())
+	if !report.PostfixConfigured || !report.PostfixCoverageUncertain {
+		t.Fatalf("fail-open Postfix must not be reported as certain enforcement: %+v", report)
 	}
 }
