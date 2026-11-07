@@ -29,7 +29,7 @@ func TestServiceOverrideParsingBoundsAndEvidence(t *testing.T) {
 		},
 		{
 			name: "oversized untrusted line",
-			input: strings.Repeat("x", 1024) + "\nsubmission/inet/smtpd_milters = value\n",
+			input: "submission/inet/smtpd_milters = " + strings.Repeat("x", 1024) + "\nsubmission/inet/smtpd_milters = value\n",
 			want: []string{"submission/inet/smtpd_milters"},
 			truncated: true,
 		},
