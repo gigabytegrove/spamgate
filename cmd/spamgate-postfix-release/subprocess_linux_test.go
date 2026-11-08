@@ -139,3 +139,38 @@ func TestPostsuperCancellationWithDescendantOutput(t *testing.T) {
  }
  if out.Len() != 0 { t.Fatalf("canceled helper emitted success: %q", out.String()) }
 }
+
+
+func TestPostsuperOutputLimitTerminatesInfiniteProducer(t *testing.T) {
+ // A continuously writing privileged child must be stopped on overflow,
+ // without waiting for the eight-second command deadline.
+ path := helperScript(t, "while :; do printf '0123456789abcdef0123456789abcdef\\n'; done")
+ var out bytes.Buffer
+ started := time.Now()
+ err := runPostsuperCommand(context.Background(), path, nil, &out)
+ if !errors.Is(err, errOutputLimit) {
+  t.Fatalf("expected output-limit sentinel, got %v", err)
+ }
+ if elapsed := time.Since(started); elapsed > 3*time.Second {
+  t.Fatalf("output overflow did not terminate child promptly: %s", elapsed)
+ }
+ if out.Len() != 0 {
+  t.Fatalf("overflow produced success output: %q", out.String())
+ }
+}
+
+func TestPostsuperOutputLimitKillsBackgroundProducer(t *testing.T) {
+ // A background process inheriting stderr must not retain the pipe after
+ // the output limit has been exceeded by the foreground child.
+ path := helperScript(t, "sleep 10 & head -c 16384 /dev/zero | tr '\\000' x >&2")
+ var out bytes.Buffer
+ started := time.Now()
+ err := runPostsuperCommand(context.Background(), path, nil, &out)
+ if !errors.Is(err, errOutputLimit) {
+  t.Fatalf("expected output-limit sentinel, got %v", err)
+ }
+ if elapsed := time.Since(started); elapsed > 3*time.Second {
+  t.Fatalf("background child retained pipe after overflow: %s", elapsed)
+ }
+ if out.Len() != 0 { t.Fatal("overflow produced success output") }
+}
