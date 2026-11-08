@@ -35,6 +35,7 @@ var errOutputLimit = errors.New("Postfix command output exceeds safe limit")
 type outputBudget struct {
  mu sync.Mutex
  remaining int
+ exceeded bool
 }
 
 type boundedOutput struct {
@@ -50,7 +51,10 @@ func (b *boundedOutput) Write(p []byte) (int, error) {
  }
  remaining := b.limit - len(b.data)
  if b.budget != nil { remaining = b.budget.remaining }
- if remaining < 0 || len(p) > remaining { return 0, errOutputLimit }
+ if remaining < 0 || len(p) > remaining {
+  if b.budget != nil { b.budget.exceeded = true }
+  return 0, errOutputLimit
+ }
  b.data = append(b.data, p...)
  if b.budget != nil { b.budget.remaining -= len(p) }
  return len(p), nil
@@ -111,6 +115,12 @@ func runPostsuperCommand(ctx context.Context, name string, args []string, stdout
  stderr := &boundedOutput{budget: budget}
  cmd.Stdout, cmd.Stderr = stdout, stderr
  err := cmd.Run()
+ // os/exec may wrap a pipe-copy error or return the child exit status
+ // instead of the writer's sentinel. Check the shared budget directly.
+ budget.mu.Lock()
+ exceeded := budget.exceeded
+ budget.mu.Unlock()
+ if exceeded { return fmt.Errorf("postsuper -H output limit exceeded: %w", errOutputLimit) }
  if ctx.Err() != nil { return fmt.Errorf("postsuper -H interrupted: %w", ctx.Err()) }
  if err != nil {
   if errors.Is(err, errOutputLimit) { return fmt.Errorf("postsuper -H output limit exceeded: %w", errOutputLimit) }
