@@ -23,8 +23,7 @@ func removeQueueRecordAt(dir string, expected os.FileInfo, name string, inspecte
     defer parent.Close()
     current, err := statQueueRecordAt(parent, name)
     if err != nil { return fmt.Errorf("inspect queue record before unlink: %w", err) }
-    if !current.Mode().IsRegular() || !os.SameFile(inspected, current) ||
-        current.Size() != inspected.Size() || !current.ModTime().Equal(inspected.ModTime()) {
+    if !sameQueueRecordSnapshot(inspected, current) {
         return errors.New("queue record identity or metadata changed before unlink")
     }
     if err := syscall.Unlinkat(int(parent.Fd()), name); err != nil {
