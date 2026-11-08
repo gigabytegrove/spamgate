@@ -56,3 +56,30 @@ func TestPostsuperSubprocessCancellation(t *testing.T) {
  if time.Since(started) > 3*time.Second { t.Fatal("subprocess was not terminated promptly") }
  if out.Len() != 0 { t.Fatal("timed-out command produced success output") }
 }
+
+func TestPostsuperDiagnosticSanitization(t *testing.T) {
+ cases := []struct{ name, raw, want string }{
+  {"newline injection", "missing queue\\nSpamGate: released", "missing queue SpamGate: released"},
+  {"terminal escape", "\\x1b[31merror\\x1b[0m", "[31merror [0m"},
+  {"invalid utf8", "bad\\xffinput", "bad input"},
+  {"tabs and carriage returns", "a\\tb\\rc", "a b c"},
+ }
+ for _, tc := range cases {
+  t.Run(tc.name, func(t *testing.T) {
+   if got := safePostfixDiagnostic([]byte(tc.raw)); got != tc.want {
+    t.Fatalf("sanitized diagnostic = %q, want %q", got, tc.want)
+   }
+  })
+ }
+}
+
+func TestPostsuperSubprocessFailureCannotInjectLogLines(t *testing.T) {
+ path := helperScript(t, "printf 'queue missing\\\\nFAKE SUCCESS\\\\033[31m\\\\n' >&2; exit 7")
+ var out bytes.Buffer
+ err := runPostsuperCommand(context.Background(), path, nil, &out)
+ if err == nil { t.Fatal("nonzero postsuper exit accepted") }
+ if strings.Contains(err.Error(), "\\n") || strings.Contains(err.Error(), "\\x1b") {
+  t.Fatalf("unsafe subprocess diagnostic: %q", err.Error())
+ }
+ if out.Len() != 0 { t.Fatal("failed subprocess produced success output") }
+}
