@@ -3,22 +3,27 @@
 package transport
 
 import (
- "errors"
- "fmt"
- "os"
- "syscall"
+	"errors"
+	"fmt"
+	"os"
 )
 
-// Validate private single-link originals before read or atomic replacement.
+// validateSpoolMetadata verifies the inspected original still occupies the
+// pathname and has not changed in place. Do not rely on inode identity alone:
+// a same-inode rewrite can retain the same name and file size.
 func validateSpoolMetadata(path string, inspected os.FileInfo) error {
- if !inspected.Mode().IsRegular() { return errors.New("spool object is not a regular file") }
- current, err := os.Lstat(path)
- if err != nil { return fmt.Errorf("inspect spool pathname: %w", err) }
- if !current.Mode().IsRegular() || !os.SameFile(inspected,current) { return errors.New("spool pathname changed or is not a regular file") }
- if current.Mode().Perm()&0077 != 0 || current.Mode().Perm()&0400 == 0 { return errors.New("spool original must be private and owner-readable") }
- stat, ok := current.Sys().(*syscall.Stat_t)
- if !ok { return errors.New("cannot inspect native spool ownership") }
- if stat.Nlink != 1 { return errors.New("spool original must have exactly one hard link") }
- if stat.Uid != uint32(os.Geteuid()) { return errors.New("spool original must belong to the worker") }
- return nil
+	if inspected == nil || !inspected.Mode().IsRegular() {
+		return errors.New("spool inspection must be a regular file")
+	}
+	current, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("inspect spool pathname: %w", err)
+	}
+	if err := validateOpenedQueueRecordMetadata(current); err != nil {
+		return fmt.Errorf("unsafe spool original: %w", err)
+	}
+	if !sameQueueRecordSnapshot(inspected, current) {
+		return errors.New("spool original identity or contents changed since inspection")
+	}
+	return nil
 }
