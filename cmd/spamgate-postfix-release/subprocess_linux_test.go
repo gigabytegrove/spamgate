@@ -59,13 +59,13 @@ func TestPostsuperSubprocessCancellation(t *testing.T) {
 
 func TestPostsuperDiagnosticSanitization(t *testing.T) {
  cases := []struct{ name, raw, want string }{
-  {"newline injection", "missing queue\\nSpamGate: released", "missing queue SpamGate: released"},
-  {"terminal escape", "\\x1b[31merror\\x1b[0m", "error"},
-  {"invalid utf8", "bad\\xffinput", "bad input"},
-  {"tabs and carriage returns", "a\\tb\\rc", "a b c"},
-  {"OSC title injection", "\\x1b]0;FAKE SUCCESS\\x07error", "error"},
-  {"bidi spoofing", "safe\\u202eevil\\u202c text", "safe evil text"},
-  {"unicode line separator", "first\\u2028second", "first second"},
+  {"newline injection", "missing queue\nSpamGate: released", "missing queue SpamGate: released"},
+  {"terminal escape", "\x1b[31merror\x1b[0m", "error"},
+  {"invalid utf8", "bad\xffinput", "bad input"},
+  {"tabs and carriage returns", "a\tb\rc", "a b c"},
+  {"OSC title injection", "\x1b]0;FAKE SUCCESS\x07error", "error"},
+  {"bidi spoofing", "safe\u202eevil\u202c text", "safe evil text"},
+  {"unicode line separator", "first\u2028second", "first second"},
  }
  for _, tc := range cases {
   t.Run(tc.name, func(t *testing.T) {
@@ -81,7 +81,7 @@ func TestPostsuperSubprocessFailureCannotInjectLogLines(t *testing.T) {
  var out bytes.Buffer
  err := runPostsuperCommand(context.Background(), path, nil, &out)
  if err == nil { t.Fatal("nonzero postsuper exit accepted") }
- if strings.Contains(err.Error(), "\\n") || strings.Contains(err.Error(), "\\x1b") {
+ if strings.Contains(err.Error(), "\n") || strings.Contains(err.Error(), "\x1b") {
   t.Fatalf("unsafe subprocess diagnostic: %q", err.Error())
  }
  if out.Len() != 0 { t.Fatal("failed subprocess produced success output") }
