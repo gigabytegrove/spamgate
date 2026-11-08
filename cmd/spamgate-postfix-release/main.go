@@ -48,7 +48,7 @@ func (b *boundedOutput) Write(p []byte) (int, error) {
  }
  remaining := b.limit - len(b.data)
  if b.budget != nil { remaining = b.budget.remaining }
- if len(p) > remaining { return 0, errOutputLimit }
+ if remaining < 0 || len(p) > remaining { return 0, errOutputLimit }
  b.data = append(b.data, p...)
  if b.budget != nil { b.budget.remaining -= len(p) }
  return len(p), nil
@@ -73,6 +73,7 @@ func runPostsuperCommand(ctx context.Context, name string, args []string, stdout
  err := cmd.Run()
  if ctx.Err() != nil { return fmt.Errorf("postsuper -H interrupted: %w", ctx.Err()) }
  if err != nil {
+  if errors.Is(err, errOutputLimit) { return fmt.Errorf("postsuper -H output limit exceeded: %w", errOutputLimit) }
   // Never expose arbitrary command output on failure. The bounded diagnostic
   // remains available, but it must not be treated as successful release.
   return fmt.Errorf("postsuper -H failed: %w: %s", err, strings.TrimSpace(string(stderr.data)))
