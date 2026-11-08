@@ -26,6 +26,7 @@ func readQueueRecordAt(dir string, expected os.FileInfo, name string, inspected 
     defer f.Close()
     opened, err := f.Stat()
     if err != nil { return nil, fmt.Errorf("inspect opened queue record: %w", err) }
+    if err := validateOpenedQueueRecordMetadata(opened); err != nil { return nil, fmt.Errorf("unsafe opened queue record: %w", err) }
     if !sameQueueRecordSnapshot(inspected, opened) {
         return nil, errors.New("opened queue record changed since inspection")
     }
@@ -49,6 +50,7 @@ func readQueueRecordAt(dir string, expected os.FileInfo, name string, inspected 
     }
     finished, err := f.Stat()
     if err != nil { return nil, fmt.Errorf("reinspect opened queue record: %w", err) }
+    if err := validateOpenedQueueRecordMetadata(finished); err != nil { return nil, fmt.Errorf("unsafe completed queue record: %w", err) }
     if !sameQueueRecordSnapshot(opened, finished) || !sameQueueRecordSnapshot(after, finished) {
         return nil, errors.New("opened queue record metadata changed during read")
     }
@@ -87,4 +89,27 @@ func sameQueueRecordChangeTime(a, b os.FileInfo) bool {
     right, ok := b.Sys().(*syscall.Stat_t)
     if !ok { return false }
     return left.Ctim.Sec == right.Ctim.Sec && left.Ctim.Nsec == right.Ctim.Nsec
+}
+
+// validateOpenedQueueRecordMetadata checks the actual opened inode, not a
+// pathname that can be replaced between Lstat and Openat. This mirrors the
+// ownership, hard-link and privacy policy for on-disk spool originals.
+func validateOpenedQueueRecordMetadata(info os.FileInfo) error {
+    if info == nil || !info.Mode().IsRegular() {
+        return errors.New("opened queue record must be a regular file")
+    }
+    if info.Mode().Perm()&0077 != 0 || info.Mode().Perm()&0400 == 0 {
+        return errors.New("opened queue record must be private and owner-readable")
+    }
+    native, ok := info.Sys().(*syscall.Stat_t)
+    if !ok {
+        return errors.New("opened queue record lacks native metadata")
+    }
+    if native.Nlink != 1 {
+        return errors.New("opened queue record must have exactly one hard link")
+    }
+    if native.Uid != uint32(os.Geteuid()) {
+        return errors.New("opened queue record must belong to the worker")
+    }
+    return nil
 }
