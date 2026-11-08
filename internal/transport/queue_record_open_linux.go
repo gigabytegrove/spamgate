@@ -98,8 +98,9 @@ func validateOpenedQueueRecordMetadata(info os.FileInfo) error {
     if info == nil || !info.Mode().IsRegular() {
         return errors.New("opened queue record must be a regular file")
     }
-    if info.Mode().Perm()&0077 != 0 || info.Mode().Perm()&0400 == 0 {
-        return errors.New("opened queue record must be private and owner-readable")
+    if info.Mode().Perm()&0077 != 0 || info.Mode().Perm()&0400 == 0 ||
+        info.Mode()&(os.ModeSetuid|os.ModeSetgid|os.ModeSticky) != 0 {
+        return errors.New("opened queue record must be private, owner-readable and free of special permission bits")
     }
     native, ok := info.Sys().(*syscall.Stat_t)
     if !ok {
