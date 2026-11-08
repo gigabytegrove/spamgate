@@ -77,3 +77,31 @@ func TestRemoveQueueRecordAtRejectsSymlinkAndTraversal(t *testing.T) {
     if err := removeQueueRecordAt(dir, expected, "../target", inspected); err == nil { t.Fatal("traversal accepted") }
     if _, err := os.Lstat(path); err != nil { t.Fatalf("symlink removed: %v", err) }
 }
+
+
+func TestRemoveQueueRecordAtRejectsInPlaceMutation(t *testing.T) {
+    root := t.TempDir()
+    dir := filepath.Join(root, "delivery-queue")
+    if err := os.Mkdir(dir, 0700); err != nil { t.Fatal(err) }
+    expected, err := captureDeliveryQueueIdentity(dir)
+    if err != nil { t.Fatal(err) }
+    name := strings.Repeat("e", 32) + ".json"
+    path := filepath.Join(dir, name)
+    if err := os.WriteFile(path, []byte("{}"), 0600); err != nil { t.Fatal(err) }
+    inspected, err := os.Lstat(path)
+    if err != nil { t.Fatal(err) }
+
+    // Rewrite the same inode without replacing its directory entry.
+    // Identity-only checks would incorrectly allow deletion.
+    f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0)
+    if err != nil { t.Fatal(err) }
+    if _, err := f.Write([]byte("{\"mutated\":true}")); err != nil { f.Close(); t.Fatal(err) }
+    if err := f.Close(); err != nil { t.Fatal(err) }
+    if err := removeQueueRecordAt(dir, expected, name, inspected); err == nil {
+        t.Fatal("in-place changed record was removed")
+    }
+    b, err := os.ReadFile(path)
+    if err != nil || string(b) != "{\"mutated\":true}" {
+        t.Fatalf("modified original was lost: %q %v", b, err)
+    }
+}
