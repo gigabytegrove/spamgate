@@ -4,6 +4,7 @@ package transport
 
 import (
     "os"
+    "net"
     "path/filepath"
     "strings"
     "testing"
@@ -272,5 +273,44 @@ func TestReadQueueRecordAtRejectsSpecialPermissionBits(t *testing.T) {
     if err != nil { t.Fatal(err) }
     if _, err := readQueueRecordAt(dir, expected, name, inspected); err != nil {
         t.Fatalf("private ordinary queue record rejected: %v", err)
+    }
+}
+
+func TestStatQueueRecordAtInspectsSpecialFilesWithoutOpeningForIO(t *testing.T) {
+    dir := t.TempDir()
+    parent, err := os.Open(dir)
+    if err != nil { t.Fatal(err) }
+    defer parent.Close()
+
+    fifoName := strings.Repeat("1", 32) + ".json"
+    if err := syscall.Mkfifo(filepath.Join(dir, fifoName), 0600); err != nil { t.Fatal(err) }
+    fifo, err := statQueueRecordAt(parent, fifoName)
+    if err != nil { t.Fatalf("inspect FIFO without opening reader: %v", err) }
+    if fifo.Mode()&os.ModeNamedPipe == 0 { t.Fatalf("FIFO misidentified: %v", fifo.Mode()) }
+    if err := validateOpenedQueueRecordMetadata(fifo); err == nil {
+        t.Fatal("FIFO accepted as durable record")
+    }
+
+    socketName := strings.Repeat("2", 32) + ".json"
+    listener, err := net.Listen("unix", filepath.Join(dir, socketName))
+    if err != nil { t.Fatal(err) }
+    defer listener.Close()
+    socket, err := statQueueRecordAt(parent, socketName)
+    if err != nil { t.Fatalf("inspect socket without connecting: %v", err) }
+    if socket.Mode()&os.ModeSocket == 0 { t.Fatalf("socket misidentified: %v", socket.Mode()) }
+    if err := validateOpenedQueueRecordMetadata(socket); err == nil {
+        t.Fatal("socket accepted as durable record")
+    }
+
+    symlinkName := strings.Repeat("3", 32) + ".json"
+    if err := os.Symlink(filepath.Join(dir, fifoName), filepath.Join(dir, symlinkName)); err != nil { t.Fatal(err) }
+    if _, err := statQueueRecordAt(parent, symlinkName); err == nil {
+        t.Fatal("symlink accepted through O_PATH")
+    }
+}
+
+func TestStatQueueRecordAtRejectsNilParent(t *testing.T) {
+    if _, err := statQueueRecordAt(nil, strings.Repeat("4", 32)+".json"); err == nil {
+        t.Fatal("nil directory descriptor accepted")
     }
 }
