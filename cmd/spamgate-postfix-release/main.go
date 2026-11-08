@@ -37,6 +37,7 @@ type outputBudget struct {
  mu sync.Mutex
  remaining int
  exceeded bool
+ onExceeded func()
 }
 
 type boundedOutput struct {
@@ -53,7 +54,12 @@ func (b *boundedOutput) Write(p []byte) (int, error) {
  remaining := b.limit - len(b.data)
  if b.budget != nil { remaining = b.budget.remaining }
  if remaining < 0 || len(p) > remaining {
-  if b.budget != nil { b.budget.exceeded = true }
+  if b.budget != nil {
+   if !b.budget.exceeded {
+    b.budget.exceeded = true
+    if b.budget.onExceeded != nil { b.budget.onExceeded() }
+   }
+  }
   return 0, errOutputLimit
  }
  b.data = append(b.data, p...)
@@ -109,7 +115,11 @@ func safePostfixDiagnostic(raw []byte) string {
 
 // runPostsuperCommand keeps all output bounded and never interprets shell input.
 func runPostsuperCommand(ctx context.Context, name string, args []string, stdoutSink io.Writer) error {
- cmd := exec.CommandContext(ctx, name, args...)
+ // An overflowing child must be terminated immediately rather than allowed
+ // to continue writing until the outer command deadline expires.
+ childCtx, cancelChild := context.WithCancel(ctx)
+ defer cancelChild()
+ cmd := exec.CommandContext(childCtx, name, args...)
  // Isolate the command and any descendants so cancellation cannot leave
  // inherited output pipes open or orphan privileged subprocesses.
  cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -121,7 +131,7 @@ func runPostsuperCommand(ctx context.Context, name string, args []string, stdout
  }
  cmd.WaitDelay = time.Second
  cmd.Env = []string{"PATH=/usr/sbin:/usr/bin:/bin", "LANG=C", "LC_ALL=C"}
- budget := &outputBudget{remaining: maxOutput}
+ budget := &outputBudget{remaining: maxOutput, onExceeded: cancelChild}
  stdout := &boundedOutput{budget: budget}
  stderr := &boundedOutput{budget: budget}
  cmd.Stdout, cmd.Stderr = stdout, stderr
