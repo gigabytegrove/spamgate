@@ -11,6 +11,7 @@ import (
  "os/exec"
  "strings"
  "unicode/utf8"
+ "unicode"
  "sync"
  "time"
 )
@@ -70,7 +71,29 @@ func safePostfixDiagnostic(raw []byte) string {
  for len(raw) > 0 {
   r, size := utf8.DecodeRune(raw)
   raw = raw[size:]
-  if r == utf8.RuneError || r == 0x1b || r == 0x7f || r < 0x20 || (r >= 0x80 && r <= 0x9f) {
+  // Strip complete ANSI control sequences rather than leaving their
+  // printable parameters in operator-visible diagnostics.
+  if r == 0x1b {
+   if len(raw) > 0 && raw[0] == '[' {
+    raw = raw[1:]
+    for len(raw) > 0 {
+     c := raw[0]
+     raw = raw[1:]
+     if c >= 0x40 && c <= 0x7e { break }
+     if c < 0x20 || c > 0x3f { break }
+    }
+   } else if len(raw) > 0 && raw[0] == ']' {
+    raw = raw[1:]
+    for len(raw) > 0 {
+     if raw[0] == 0x07 { raw = raw[1:]; break }
+     if len(raw) > 1 && raw[0] == 0x1b && raw[1] == '\\' { raw = raw[2:]; break }
+     raw = raw[1:]
+    }
+   } else if len(raw) > 0 { raw = raw[1:] }
+   out.WriteByte(' ')
+   continue
+  }
+  if r == utf8.RuneError || unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r) {
    out.WriteByte(' ')
    continue
   }
