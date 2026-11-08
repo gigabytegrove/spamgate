@@ -463,7 +463,7 @@ func (q *DeliveryQueue) DiscardWithAudit(id, actor string) error {
  if err := q.store.Save(msg); err != nil {
   return fmt.Errorf("refusing unaudited queue discard: %w", err)
  }
- if err := os.Remove(q.path(id)); err != nil { return err }
+ if err := q.removeRecord(id); err != nil { return err }
  if err := q.syncDirectory(); err != nil {
   return fmt.Errorf("queue original removed but directory durability is unconfirmed: %w", err)
  }
@@ -685,7 +685,7 @@ func (q *DeliveryQueue) finalizeLocked(rec spoolRecord) error {
 		slog.Error("delivered mail history persistence failed; retaining durable spool", "id", rec.ID, "error", err)
 		return fmt.Errorf("cannot persist delivered history for %s: %w", rec.ID, err)
 	}
-	if err := os.Remove(q.path(rec.ID)); err != nil { return fmt.Errorf("cannot remove delivered spool %s: %w", rec.ID, err) }
+	if err := q.removeRecord(rec.ID); err != nil { return fmt.Errorf("cannot remove delivered spool %s: %w", rec.ID, err) }
 	if err := q.syncDirectory(); err != nil { return fmt.Errorf("cannot sync delivered spool directory: %w", err) }
 	return nil
 }
