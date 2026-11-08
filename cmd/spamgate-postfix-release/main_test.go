@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+ "sync"
 	"testing"
 	"time"
 )
@@ -93,4 +94,41 @@ func TestSharedPostfixOutputBudgetRejectsOversizedFirstWrite(t *testing.T) {
 	if budget.remaining != 2 || len(writer.data) != 0 {
 		t.Fatal("rejected write consumed budget or mutated buffer")
 	}
+}
+
+func TestSharedPostfixOutputBudgetConcurrentWriters(t *testing.T) {
+ budget := &outputBudget{remaining: 4096}
+ stdout := &boundedOutput{budget: budget}
+ stderr := &boundedOutput{budget: budget}
+ const writers = 32
+ const writesPerWriter = 128
+ var wg sync.WaitGroup
+ for i := 0; i < writers; i++ {
+  wg.Add(1)
+  go func(i int) {
+   defer wg.Done()
+   target := stdout
+   if i%2 == 1 { target = stderr }
+   for j := 0; j < writesPerWriter; j++ {
+    if n, err := target.Write([]byte{'x'}); n != 1 || err != nil {
+     t.Errorf("writer %d iteration %d: n=%d err=%v", i, j, n, err)
+     return
+    }
+   }
+  }(i)
+ }
+ wg.Wait()
+ if budget.remaining != 0 || len(stdout.data) != 2048 || len(stderr.data) != 2048 {
+  t.Fatalf("concurrent budget mismatch: remaining=%d stdout=%d stderr=%d", budget.remaining, len(stdout.data), len(stderr.data))
+ }
+ if n, err := stdout.Write([]byte{'x'}); n != 0 || !errors.Is(err, errOutputLimit) {
+  t.Fatalf("exhausted budget bypassed: n=%d err=%v", n, err)
+ }
+}
+
+func TestBoundedPostfixOutputRejectsInvalidLimit(t *testing.T) {
+ b := &boundedOutput{limit: -1}
+ if n, err := b.Write([]byte("x")); n != 0 || !errors.Is(err, errOutputLimit) {
+  t.Fatalf("invalid limit accepted: n=%d err=%v", n, err)
+ }
 }
