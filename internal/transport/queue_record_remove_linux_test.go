@@ -8,6 +8,7 @@ import (
     "strings"
     "testing"
     "time"
+    "syscall"
 )
 
 func TestRemoveQueueRecordAt(t *testing.T) {
@@ -130,4 +131,41 @@ func TestRemoveQueueRecordAtRejectsRestoredMtime(t *testing.T) {
     }
     data, err := os.ReadFile(path)
     if err != nil || string(data) != "[]" { t.Fatalf("modified record lost: %q %v", data, err) }
+}
+
+func TestRemoveQueueRecordAtRejectsFIFOWithoutUnlinking(t *testing.T) {
+    dir := t.TempDir()
+    if err := os.Chmod(dir, 0700); err != nil { t.Fatal(err) }
+    expected, err := captureDeliveryQueueIdentity(dir)
+    if err != nil { t.Fatal(err) }
+    name := strings.Repeat("7", 32) + ".json"
+    path := filepath.Join(dir, name)
+    if err := syscall.Mkfifo(path, 0600); err != nil { t.Fatal(err) }
+    inspected, err := os.Lstat(path)
+    if err != nil { t.Fatal(err) }
+    if err := removeQueueRecordAt(dir, expected, name, inspected); err == nil {
+        t.Fatal("FIFO removal was permitted")
+    }
+    after, err := os.Lstat(path)
+    if err != nil { t.Fatalf("FIFO was removed: %v", err) }
+    if after.Mode()&os.ModeNamedPipe == 0 { t.Fatalf("FIFO type changed: %v", after.Mode()) }
+}
+
+func TestRemoveQueueRecordAtRejectsNewHardLink(t *testing.T) {
+    dir := t.TempDir()
+    if err := os.Chmod(dir, 0700); err != nil { t.Fatal(err) }
+    expected, err := captureDeliveryQueueIdentity(dir)
+    if err != nil { t.Fatal(err) }
+    name := strings.Repeat("8", 32) + ".json"
+    path := filepath.Join(dir, name)
+    if err := os.WriteFile(path, []byte("keep"), 0600); err != nil { t.Fatal(err) }
+    inspected, err := os.Lstat(path)
+    if err != nil { t.Fatal(err) }
+    link := filepath.Join(dir, "linked")
+    if err := os.Link(path, link); err != nil { t.Fatal(err) }
+    if err := removeQueueRecordAt(dir, expected, name, inspected); err == nil {
+        t.Fatal("multiply-linked record was removed")
+    }
+    data, err := os.ReadFile(path)
+    if err != nil || string(data) != "keep" { t.Fatalf("original lost: %q %v", data, err) }
 }
