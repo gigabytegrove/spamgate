@@ -13,6 +13,7 @@ import (
  "unicode/utf8"
  "unicode"
  "sync"
+ "syscall"
  "time"
 )
 
@@ -109,6 +110,16 @@ func safePostfixDiagnostic(raw []byte) string {
 // runPostsuperCommand keeps all output bounded and never interprets shell input.
 func runPostsuperCommand(ctx context.Context, name string, args []string, stdoutSink io.Writer) error {
  cmd := exec.CommandContext(ctx, name, args...)
+ // Isolate the command and any descendants so cancellation cannot leave
+ // inherited output pipes open or orphan privileged subprocesses.
+ cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+ cmd.Cancel = func() error {
+  if cmd.Process == nil { return os.ErrProcessDone }
+  err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+  if errors.Is(err, syscall.ESRCH) { return os.ErrProcessDone }
+  return err
+ }
+ cmd.WaitDelay = time.Second
  cmd.Env = []string{"PATH=/usr/sbin:/usr/bin:/bin", "LANG=C", "LC_ALL=C"}
  budget := &outputBudget{remaining: maxOutput}
  stdout := &boundedOutput{budget: budget}
