@@ -232,3 +232,45 @@ func TestReadQueueRecordAtRejectsUnsafeInspectedSnapshot(t *testing.T) {
     }
     if _, err := os.Stat(path); err != nil { t.Fatalf("original lost: %v", err) }
 }
+
+
+func TestReadQueueRecordAtRejectsSpecialPermissionBits(t *testing.T) {
+    dir := t.TempDir()
+    if err := os.Chmod(dir, 0700); err != nil { t.Fatal(err) }
+    name := strings.Repeat("d", 32) + ".json"
+    path := filepath.Join(dir, name)
+    if err := os.WriteFile(path, []byte("{}"), 0600); err != nil { t.Fatal(err) }
+    expected, err := captureDeliveryQueueIdentity(dir)
+    if err != nil { t.Fatal(err) }
+    for _, tc := range []struct {
+        name string
+        bit os.FileMode
+    }{
+        {"setuid", os.ModeSetuid},
+        {"setgid", os.ModeSetgid},
+        {"sticky", os.ModeSticky},
+    } {
+        t.Run(tc.name, func(t *testing.T) {
+            if err := os.Chmod(path, 0600|tc.bit); err != nil { t.Fatal(err) }
+            inspected, err := os.Lstat(path)
+            if err != nil { t.Fatal(err) }
+            // Filesystems can strip privileged bits on chmod. Do not claim
+            // rejection was exercised when the bit could not be persisted.
+            if inspected.Mode()&tc.bit == 0 { t.Skip("filesystem stripped special mode bit") }
+            if err := validateOpenedQueueRecordMetadata(inspected); err == nil {
+                t.Fatal("special permission bit accepted by opened-inode validator")
+            }
+            if _, err := readQueueRecordAt(dir, expected, name, inspected); err == nil {
+                t.Fatal("special permission bit accepted by queue reader")
+            }
+            data, err := os.ReadFile(path)
+            if err != nil || string(data) != "{}" { t.Fatalf("original modified: %q %v", data, err) }
+        })
+    }
+    if err := os.Chmod(path, 0600); err != nil { t.Fatal(err) }
+    inspected, err := os.Lstat(path)
+    if err != nil { t.Fatal(err) }
+    if _, err := readQueueRecordAt(dir, expected, name, inspected); err != nil {
+        t.Fatalf("private ordinary queue record rejected: %v", err)
+    }
+}
