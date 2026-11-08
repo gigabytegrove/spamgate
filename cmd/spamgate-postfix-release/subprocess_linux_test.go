@@ -109,3 +109,33 @@ func TestPostsuperOutputLimitTakesPrecedenceOverSuccessfulExit(t *testing.T) {
  }
  if out.Len() != 0 { t.Fatalf("oversized command produced success output: %q", out.String()) }
 }
+
+func TestPostsuperCancellationKillsDescendantHoldingOutputPipe(t *testing.T) {
+ // A child that backgrounds a process with inherited stdout used to keep
+ // os/exec waiting for the pipe even after the direct child was killed.
+ path := helperScript(t, "sleep 10 & wait")
+ ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+ defer cancel()
+ var out bytes.Buffer
+ started := time.Now()
+ err := runPostsuperCommand(ctx, path, nil, &out)
+ if !errors.Is(err, context.DeadlineExceeded) {
+  t.Fatalf("expected deadline error, got %v", err)
+ }
+ if time.Since(started) > 3*time.Second {
+  t.Fatalf("descendant held output pipe after cancellation: %s", time.Since(started))
+ }
+ if out.Len() != 0 { t.Fatalf("canceled helper emitted success: %q", out.String()) }
+}
+
+func TestPostsuperCancellationWithDescendantOutput(t *testing.T) {
+ path := helperScript(t, "sleep 10 & echo 'pending release' >&2; wait")
+ ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+ defer cancel()
+ var out bytes.Buffer
+ err := runPostsuperCommand(ctx, path, nil, &out)
+ if !errors.Is(err, context.DeadlineExceeded) {
+  t.Fatalf("expected deadline error, got %v", err)
+ }
+ if out.Len() != 0 { t.Fatalf("canceled helper emitted success: %q", out.String()) }
+}
