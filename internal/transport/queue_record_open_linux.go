@@ -24,6 +24,11 @@ func readQueueRecordAt(dir string, expected os.FileInfo, name string, inspected 
     f := os.NewFile(uintptr(fd), name)
     if f == nil { _ = syscall.Close(fd); return nil, errors.New("cannot wrap queue record descriptor") }
     defer f.Close()
+    opened, err := f.Stat()
+    if err != nil { return nil, fmt.Errorf("inspect opened queue record: %w", err) }
+    if !sameQueueRecordSnapshot(inspected, opened) {
+        return nil, errors.New("opened queue record changed since inspection")
+    }
     // Check the child through the same verified parent descriptor used for the
     // read. A replacement of the parent pathname must not redirect metadata
     // validation to an unrelated spool.
@@ -41,6 +46,11 @@ func readQueueRecordAt(dir string, expected os.FileInfo, name string, inspected 
     if err != nil { return nil, fmt.Errorf("reinspect queue record after read: %w", err) }
     if !sameQueueRecordSnapshot(inspected, after) {
         return nil, errors.New("queue record pathname changed during read")
+    }
+    finished, err := f.Stat()
+    if err != nil { return nil, fmt.Errorf("reinspect opened queue record: %w", err) }
+    if !sameQueueRecordSnapshot(opened, finished) || !sameQueueRecordSnapshot(after, finished) {
+        return nil, errors.New("opened queue record metadata changed during read")
     }
     return raw, nil
 }
