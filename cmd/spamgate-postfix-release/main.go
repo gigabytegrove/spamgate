@@ -36,16 +36,22 @@ func validQueueID(id string) bool {
 // boundedOutput returns an error rather than silently truncating output.
 // This ensures an unexpectedly verbose postsuper response is not reported
 // as a verified success.
+type outputBudget struct { remaining int }
+
 type boundedOutput struct {
-	data  []byte
-	limit int
+	data []byte
+	limit int // retained for callers that require an independent bound
+	budget *outputBudget
 }
 
 func (b *boundedOutput) Write(p []byte) (int, error) {
-	if len(p) > b.limit-len(b.data) {
+	remaining := b.limit - len(b.data)
+	if b.budget != nil { remaining = b.budget.remaining }
+	if len(p) > remaining {
 		return 0, errors.New("Postfix command output exceeds safe limit")
 	}
 	b.data = append(b.data, p...)
+	if b.budget != nil { b.budget.remaining -= len(p) }
 	return len(p), nil
 }
 
@@ -66,8 +72,9 @@ func runWith(ctx context.Context, args []string, uid int, invoke func(context.Co
 func executePostsuper(ctx context.Context, name string, args []string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = []string{"PATH=/usr/sbin:/usr/bin:/bin", "LANG=C", "LC_ALL=C"}
-	stdout := &boundedOutput{limit: maxOutput}
-	stderr := &boundedOutput{limit: maxOutput}
+	budget := &outputBudget{remaining: maxOutput}
+	stdout := &boundedOutput{budget: budget}
+	stderr := &boundedOutput{budget: budget}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	if err := cmd.Run(); err != nil {
 		// Postfix errors are returned to the unprivileged caller without
