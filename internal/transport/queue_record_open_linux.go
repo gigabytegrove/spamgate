@@ -63,5 +63,6 @@ func statQueueRecordAt(parent *os.File, name string) (os.FileInfo, error) {
 // It is a consistency guard, not a cryptographic integrity guarantee.
 func sameQueueRecordSnapshot(a, b os.FileInfo) bool {
     return a != nil && b != nil && a.Mode().IsRegular() && b.Mode().IsRegular() &&
-        os.SameFile(a, b) && a.Size() == b.Size() && a.ModTime().Equal(b.ModTime()) &&\n        sameQueueRecordChangeTime(a, b)
+        os.SameFile(a, b) && a.Size() == b.Size() && a.ModTime().Equal(b.ModTime()) &&
+        sameQueueRecordChangeTime(a, b)
 }
