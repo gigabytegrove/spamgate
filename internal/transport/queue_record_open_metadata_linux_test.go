@@ -35,6 +35,7 @@ func TestOpenedQueueRecordMetadataEnforcesPrivacyAndHardlinks(t *testing.T) {
 
 func TestReadQueueRecordAtRejectsNewHardlinkAfterInspection(t *testing.T) {
     dir := t.TempDir()
+    if err := os.Chmod(dir, 0700); err != nil { t.Fatal(err) }
     name := strings.Repeat("b", 32)+".json"
     path := filepath.Join(dir, name)
     if err := os.WriteFile(path, []byte("{}"), 0600); err != nil { t.Fatal(err) }
@@ -54,6 +55,7 @@ func TestReadQueueRecordAtRejectsNewHardlinkAfterInspection(t *testing.T) {
 
 func TestRemoveQueueRecordAtRejectsNewHardlinkAfterInspection(t *testing.T) {
     dir := t.TempDir()
+    if err := os.Chmod(dir, 0700); err != nil { t.Fatal(err) }
     name := strings.Repeat("c", 32)+".json"
     path := filepath.Join(dir, name)
     if err := os.WriteFile(path, []byte("{}"), 0600); err != nil { t.Fatal(err) }
