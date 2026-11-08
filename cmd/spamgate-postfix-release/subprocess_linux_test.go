@@ -77,7 +77,7 @@ func TestPostsuperDiagnosticSanitization(t *testing.T) {
 }
 
 func TestPostsuperSubprocessFailureCannotInjectLogLines(t *testing.T) {
- path := helperScript(t, "printf 'queue missing\\\\nFAKE SUCCESS\\\\033[31m\\\\n' >&2; exit 7")
+ path := helperScript(t, "printf 'queue missing\\nFAKE SUCCESS\\033[31m\\n' >&2; exit 7")
  var out bytes.Buffer
  err := runPostsuperCommand(context.Background(), path, nil, &out)
  if err == nil { t.Fatal("nonzero postsuper exit accepted") }
