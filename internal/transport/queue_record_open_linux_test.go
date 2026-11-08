@@ -291,11 +291,20 @@ func TestStatQueueRecordAtInspectsSpecialFilesWithoutOpeningForIO(t *testing.T) 
         t.Fatal("FIFO accepted as durable record")
     }
 
+    // Unix socket addresses have a strict kernel length limit. Go's long
+    // testing.T.TempDir path can exceed it before bind() is attempted.
+    socketDir, err := os.MkdirTemp("", "sg-sock-")
+    if err != nil { t.Fatal(err) }
+    defer os.RemoveAll(socketDir)
+    if err := os.Chmod(socketDir, 0700); err != nil { t.Fatal(err) }
+    socketParent, err := os.Open(socketDir)
+    if err != nil { t.Fatal(err) }
+    defer socketParent.Close()
     socketName := strings.Repeat("2", 32) + ".json"
-    listener, err := net.Listen("unix", filepath.Join(dir, socketName))
+    listener, err := net.Listen("unix", filepath.Join(socketDir, socketName))
     if err != nil { t.Fatal(err) }
     defer listener.Close()
-    socket, err := statQueueRecordAt(parent, socketName)
+    socket, err := statQueueRecordAt(socketParent, socketName)
     if err != nil { t.Fatalf("inspect socket without connecting: %v", err) }
     if socket.Mode()&os.ModeSocket == 0 { t.Fatalf("socket misidentified: %v", socket.Mode()) }
     if err := validateOpenedQueueRecordMetadata(socket); err == nil {
