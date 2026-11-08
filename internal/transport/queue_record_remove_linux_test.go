@@ -7,6 +7,7 @@ import (
     "path/filepath"
     "strings"
     "testing"
+    "time"
 )
 
 func TestRemoveQueueRecordAt(t *testing.T) {
@@ -104,4 +105,28 @@ func TestRemoveQueueRecordAtRejectsInPlaceMutation(t *testing.T) {
     if err != nil || string(b) != "{\"mutated\":true}" {
         t.Fatalf("modified original was lost: %q %v", b, err)
     }
+}
+
+func TestRemoveQueueRecordAtRejectsRestoredMtime(t *testing.T) {
+    dir := t.TempDir()
+    name := strings.Repeat("f", 32) + ".json"
+    path := filepath.Join(dir, name)
+    if err := os.WriteFile(path, []byte("{}"), 0600); err != nil { t.Fatal(err) }
+    expected, err := captureDeliveryQueueIdentity(dir)
+    if err != nil { t.Fatal(err) }
+    before, err := os.Lstat(path)
+    if err != nil { t.Fatal(err) }
+    time.Sleep(1100 * time.Millisecond)
+    if err := os.WriteFile(path, []byte("[]"), 0600); err != nil { t.Fatal(err) }
+    if err := os.Chtimes(path, before.ModTime(), before.ModTime()); err != nil { t.Fatal(err) }
+    after, err := os.Lstat(path)
+    if err != nil { t.Fatal(err) }
+    if !os.SameFile(before, after) || before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
+        t.Fatal("fixture did not restore inode, size and mtime")
+    }
+    if err := removeQueueRecordAt(dir, expected, name, before); err == nil {
+        t.Fatal("cleanup removed modified record after mtime restoration")
+    }
+    data, err := os.ReadFile(path)
+    if err != nil || string(data) != "[]" { t.Fatalf("modified record lost: %q %v", data, err) }
 }
