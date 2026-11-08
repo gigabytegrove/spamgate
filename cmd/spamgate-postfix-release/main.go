@@ -10,6 +10,7 @@ import (
  "os"
  "os/exec"
  "strings"
+ "unicode/utf8"
  "sync"
  "time"
 )
@@ -62,6 +63,22 @@ func runWith(ctx context.Context, args []string, uid int, invoke func(context.Co
  return invoke(ctx, postsuperPath, []string{"-H", args[0]})
 }
 
+// safePostfixDiagnostic strips terminal controls and line breaks from
+// untrusted child output before it reaches service logs or administrators.
+func safePostfixDiagnostic(raw []byte) string {
+ var out strings.Builder
+ for len(raw) > 0 {
+  r, size := utf8.DecodeRune(raw)
+  raw = raw[size:]
+  if r == utf8.RuneError || r == 0x1b || r == 0x7f || r < 0x20 || (r >= 0x80 && r <= 0x9f) {
+   out.WriteByte(' ')
+   continue
+  }
+  out.WriteRune(r)
+ }
+ return strings.Join(strings.Fields(out.String()), " ")
+}
+
 // runPostsuperCommand keeps all output bounded and never interprets shell input.
 func runPostsuperCommand(ctx context.Context, name string, args []string, stdoutSink io.Writer) error {
  cmd := exec.CommandContext(ctx, name, args...)
@@ -76,9 +93,9 @@ func runPostsuperCommand(ctx context.Context, name string, args []string, stdout
   if errors.Is(err, errOutputLimit) { return fmt.Errorf("postsuper -H output limit exceeded: %w", errOutputLimit) }
   // Never expose arbitrary command output on failure. The bounded diagnostic
   // remains available, but it must not be treated as successful release.
-  return fmt.Errorf("postsuper -H failed: %w: %s", err, strings.TrimSpace(string(stderr.data)))
+  return fmt.Errorf("postsuper -H failed: %w: %s", err, safePostfixDiagnostic(stderr.data))
  }
- _, err = io.WriteString(stdoutSink, strings.TrimSpace(string(stdout.data)+" "+string(stderr.data))+"\n")
+ _, err = io.WriteString(stdoutSink, safePostfixDiagnostic(append(append([]byte(nil), stdout.data...), append([]byte(" "), stderr.data...)...))+"\n")
  return err
 }
 
