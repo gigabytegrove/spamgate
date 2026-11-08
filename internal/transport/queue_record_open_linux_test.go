@@ -148,3 +148,31 @@ func TestStatQueueRecordAtRetainsVerifiedParentAfterRename(t *testing.T) {
     if err != nil { t.Fatal(err) }
     if !os.SameFile(before, after) { t.Fatal("descriptor escaped to replacement parent") }
 }
+
+
+func TestReadQueueRecordAtRejectsInPlaceMutation(t *testing.T) {
+    root := t.TempDir()
+    dir := filepath.Join(root, "delivery-queue")
+    if err := os.Mkdir(dir, 0700); err != nil { t.Fatal(err) }
+    name := strings.Repeat("a", 32) + ".json"
+    path := filepath.Join(dir, name)
+    if err := os.WriteFile(path, []byte("{}"), 0600); err != nil { t.Fatal(err) }
+    expected, err := captureDeliveryQueueIdentity(dir)
+    if err != nil { t.Fatal(err) }
+    inspected, err := os.Lstat(path)
+    if err != nil { t.Fatal(err) }
+    if err := os.WriteFile(path, []byte("{\"modified\":true}"), 0600); err != nil { t.Fatal(err) }
+    current, err := os.Lstat(path)
+    if err != nil { t.Fatal(err) }
+    if !os.SameFile(inspected, current) { t.Fatal("fixture replaced inode") }
+    if sameQueueRecordSnapshot(inspected, current) { t.Fatal("same-inode mutation considered unchanged") }
+    if _, err := readQueueRecordAt(dir, expected, name, inspected); err == nil {
+        t.Fatal("read accepted a record changed since inspection")
+    }
+    got, err := os.ReadFile(path)
+    if err != nil || string(got) != "{\"modified\":true}" { t.Fatalf("original not retained: %q %v", got, err) }
+}
+
+func TestSameQueueRecordSnapshotRejectsNil(t *testing.T) {
+    if sameQueueRecordSnapshot(nil, nil) { t.Fatal("nil snapshots accepted") }
+}
