@@ -8,6 +8,7 @@ import (
     "strings"
     "testing"
     "syscall"
+    "time"
 )
 
 func TestReadQueueRecordAtVerifiedDirectory(t *testing.T) {
@@ -175,4 +176,25 @@ func TestReadQueueRecordAtRejectsInPlaceMutation(t *testing.T) {
 
 func TestSameQueueRecordSnapshotRejectsNil(t *testing.T) {
     if sameQueueRecordSnapshot(nil, nil) { t.Fatal("nil snapshots accepted") }
+}
+
+// A same-size rewrite followed by an mtime restoration must not make the
+// original inspection snapshot reusable for delivery or cleanup.
+func TestSameQueueRecordSnapshotRejectsRestoredMtime(t *testing.T) {
+    dir := t.TempDir()
+    path := filepath.Join(dir, strings.Repeat("a", 32)+".json")
+    if err := os.WriteFile(path, []byte("{}"), 0600); err != nil { t.Fatal(err) }
+    before, err := os.Lstat(path)
+    if err != nil { t.Fatal(err) }
+    if !sameQueueRecordSnapshot(before, before) { t.Fatal("unchanged record rejected") }
+    // Ensure the ctime clock advances on filesystems with coarse precision.
+    time.Sleep(1100 * time.Millisecond)
+    if err := os.WriteFile(path, []byte("[]"), 0600); err != nil { t.Fatal(err) }
+    if err := os.Chtimes(path, before.ModTime(), before.ModTime()); err != nil { t.Fatal(err) }
+    after, err := os.Lstat(path)
+    if err != nil { t.Fatal(err) }
+    if !os.SameFile(before, after) || before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
+        t.Fatal("fixture did not preserve inode, size, and mtime")
+    }
+    if sameQueueRecordSnapshot(before, after) { t.Fatal("restored mtime bypassed ctime guard") }
 }
