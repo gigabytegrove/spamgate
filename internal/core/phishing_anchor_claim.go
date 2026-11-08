@@ -25,12 +25,12 @@ func phishingAnchorClaims(rendered string, coverage *mimeCoverage) []phishingAnc
 		if !active {
 			return
 		}
-		if len(claims) <= maxClaims {
-			if tooLong {
+		if len(claims) >= maxClaims {
+			coverage.mark("More than 50 HTML anchors; remaining links not inspected")
+		} else if tooLong {
 				coverage.mark("Phishing anchor text exceeds 4096 bytes; claim not scored")
-			} else {
-				claims = append(claims, phishingAnchorClaim{href: href, text: text.String()})
-			}
+		} else {
+			claims = append(claims, phishingAnchorClaim{href: href, text: text.String()})
 		}
 		active, tooLong, href = false, false, ""
 		text.Reset()
@@ -78,11 +78,7 @@ func phishingAnchorClaims(rendered string, coverage *mimeCoverage) []phishingAnc
 	if active {
 		coverage.mark("Unterminated phishing HTML anchor; unclosed claim not scored")
 	}
-	if len(claims) > maxClaims {
-		coverage.mark("More than 50 HTML anchors; remaining links not inspected")
-		return claims[:maxClaims]
-	}
-	return claims
+		return claims
 }
 
 
