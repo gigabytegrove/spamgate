@@ -66,3 +66,15 @@ func sameQueueRecordSnapshot(a, b os.FileInfo) bool {
         os.SameFile(a, b) && a.Size() == b.Size() && a.ModTime().Equal(b.ModTime()) &&
         sameQueueRecordChangeTime(a, b)
 }
+
+ 
+// sameQueueRecordChangeTime compares Linux inode change timestamps, which
+// advance when file contents or metadata change even if mtime is restored.
+func sameQueueRecordChangeTime(a, b os.FileInfo) bool {
+    if a == nil || b == nil { return false }
+    left, ok := a.Sys().(*syscall.Stat_t)
+    if !ok { return false }
+    right, ok := b.Sys().(*syscall.Stat_t)
+    if !ok { return false }
+    return left.Ctim.Sec == right.Ctim.Sec && left.Ctim.Nsec == right.Ctim.Nsec
+}
