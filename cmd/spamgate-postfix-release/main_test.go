@@ -65,3 +65,32 @@ func TestBoundedPostfixOutput(t *testing.T) {
 		t.Fatalf("output changed on overflow: %q", b.data)
 	}
 }
+
+func TestSharedPostfixOutputBudget(t *testing.T) {
+	budget := &outputBudget{remaining: 8}
+	stdout := &boundedOutput{budget: budget}
+	stderr := &boundedOutput{budget: budget}
+	if n, err := stdout.Write([]byte("12345")); n != 5 || err != nil {
+		t.Fatalf("stdout: n=%d err=%v", n, err)
+	}
+	if n, err := stderr.Write([]byte("678")); n != 3 || err != nil {
+		t.Fatalf("stderr: n=%d err=%v", n, err)
+	}
+	if n, err := stdout.Write([]byte("9")); n != 0 || err == nil {
+		t.Fatalf("combined output limit bypassed: n=%d err=%v", n, err)
+	}
+	if budget.remaining != 0 || string(stdout.data) != "12345" || string(stderr.data) != "678" {
+		t.Fatalf("overflow corrupted buffered output: remaining=%d stdout=%q stderr=%q", budget.remaining, stdout.data, stderr.data)
+	}
+}
+
+func TestSharedPostfixOutputBudgetRejectsOversizedFirstWrite(t *testing.T) {
+	budget := &outputBudget{remaining: 2}
+	writer := &boundedOutput{budget: budget}
+	if n, err := writer.Write([]byte("abc")); n != 0 || err == nil {
+		t.Fatalf("oversized write accepted: n=%d err=%v", n, err)
+	}
+	if budget.remaining != 2 || len(writer.data) != 0 {
+		t.Fatal("rejected write consumed budget or mutated buffer")
+	}
+}
