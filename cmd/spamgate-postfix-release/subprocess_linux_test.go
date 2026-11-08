@@ -86,3 +86,26 @@ func TestPostsuperSubprocessFailureCannotInjectLogLines(t *testing.T) {
  }
  if out.Len() != 0 { t.Fatal("failed subprocess produced success output") }
 }
+
+
+func TestPostsuperOutputLimitTakesPrecedenceOverExitStatus(t *testing.T) {
+ // A child can emit too much output and also exit unsuccessfully.
+ // The resource-limit violation must not be hidden behind its exit code.
+ path := helperScript(t, "head -c 16384 /dev/zero | tr '\\000' x >&2; exit 17")
+ var out bytes.Buffer
+ err := runPostsuperCommand(context.Background(), path, nil, &out)
+ if !errors.Is(err, errOutputLimit) {
+  t.Fatalf("want output-limit sentinel, got %v", err)
+ }
+ if out.Len() != 0 { t.Fatalf("failed command produced success output: %q", out.String()) }
+}
+
+func TestPostsuperOutputLimitTakesPrecedenceOverSuccessfulExit(t *testing.T) {
+ path := helperScript(t, "head -c 16384 /dev/zero | tr '\\000' x")
+ var out bytes.Buffer
+ err := runPostsuperCommand(context.Background(), path, nil, &out)
+ if !errors.Is(err, errOutputLimit) {
+  t.Fatalf("want output-limit sentinel, got %v", err)
+ }
+ if out.Len() != 0 { t.Fatalf("oversized command produced success output: %q", out.String()) }
+}
