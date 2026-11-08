@@ -57,18 +57,29 @@ func readQueueRecordAt(dir string, expected os.FileInfo, name string, inspected 
     return raw, nil
 }
 
-// statQueueRecordAt inspects the child relative to the same verified parent
-// descriptor. O_NONBLOCK prevents a malicious FIFO from stalling inspection;
-// O_NOFOLLOW prevents symlink redirection. The caller still validates the
-// actual reading descriptor independently.
+// linuxOPath opens an inode for metadata inspection without opening the
+// underlying FIFO, socket, or device for I/O. The constant is Linux O_PATH;
+// Go's syscall package does not export it on supported Go versions.
+const linuxOPath = 0x200000
+
+// statQueueRecordAt inspects an inode relative to the verified directory
+// without ever opening a special file for reading. O_NOFOLLOW with O_PATH
+// yields a descriptor to a symlink itself; explicitly reject that inode.
 func statQueueRecordAt(parent *os.File, name string) (os.FileInfo, error) {
-    if !validQueueRecordName(name) { return nil, errors.New("invalid queue record name") }
-    fd, err := syscall.Openat(int(parent.Fd()), name, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+    if parent == nil || !validQueueRecordName(name) {
+        return nil, errors.New("invalid queue record inspection target")
+    }
+    fd, err := syscall.Openat(int(parent.Fd()), name, linuxOPath|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0)
     if err != nil { return nil, err }
     f := os.NewFile(uintptr(fd), name)
     if f == nil { _ = syscall.Close(fd); return nil, errors.New("cannot wrap queue record inspection descriptor") }
     defer f.Close()
-    return f.Stat()
+    info, err := f.Stat()
+    if err != nil { return nil, err }
+    if info.Mode()&os.ModeSymlink != 0 {
+        return nil, errors.New("queue record symlink is not permitted")
+    }
+    return info, nil
 }
 
 // sameQueueRecordSnapshot rejects same-inode mutations as well as replacement.
