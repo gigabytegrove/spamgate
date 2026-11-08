@@ -67,8 +67,10 @@ func phishingAnchorClaims(rendered string, coverage *mimeCoverage) []phishingAnc
 				active = true
 				href = anchorHref(attrs)
 			}
-		} else if active && valid {
-			// Preserve whitespace separation across nested markup.
+		} else if active && valid && phishingAnchorTextBoundary(name) {
+			// Block elements and line breaks separate rendered text. Inline
+			// elements (span, b, em, etc.) do not insert whitespace in
+			// browsers: a URL split across them remains one visible claim.
 			addByte(' ')
 		}
 		i = end + 1
@@ -81,4 +83,19 @@ func phishingAnchorClaims(rendered string, coverage *mimeCoverage) []phishingAnc
 		return claims[:maxClaims]
 	}
 	return claims
+}
+
+
+// HTML inline elements concatenate their text. Only rendered structural
+// boundaries introduce whitespace into a browser-visible URL claim.
+// Unknown/custom elements are treated as inline to avoid inventing spaces.
+func phishingAnchorTextBoundary(name string) bool {
+	switch name {
+	case "br", "hr", "p", "div", "section", "article", "aside", "header", "footer",
+		"nav", "main", "address", "blockquote", "pre", "ul", "ol", "li", "dl",
+		"dt", "dd", "table", "thead", "tbody", "tfoot", "tr", "td", "th",
+		"h1", "h2", "h3", "h4", "h5", "h6":
+		return true
+	}
+	return false
 }
