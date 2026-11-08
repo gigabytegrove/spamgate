@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -36,7 +37,10 @@ func validQueueID(id string) bool {
 // boundedOutput returns an error rather than silently truncating output.
 // This ensures an unexpectedly verbose postsuper response is not reported
 // as a verified success.
-type outputBudget struct { remaining int }
+type outputBudget struct {
+	mu sync.Mutex
+	remaining int
+}
 
 type boundedOutput struct {
 	data []byte
@@ -45,6 +49,10 @@ type boundedOutput struct {
 }
 
 func (b *boundedOutput) Write(p []byte) (int, error) {
+	if b.budget != nil {
+		b.budget.mu.Lock()
+		defer b.budget.mu.Unlock()
+	}
 	remaining := b.limit - len(b.data)
 	if b.budget != nil { remaining = b.budget.remaining }
 	if len(p) > remaining {
