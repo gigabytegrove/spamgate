@@ -62,3 +62,32 @@ func TestPhishingFakeAnchorMIMEIntegration(t *testing.T) {
 		t.Fatalf("non-clickable MIME attribute was scored: %v %+v", got, coverage)
 	}
 }
+
+func TestPhishingAnchorClaimHardCap(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		count int
+		wantIncomplete bool
+	}{
+		{"exactly 50", 50, false},
+		{"51st", 51, true},
+		{"1000 anchors", 1000, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			coverage := &mimeCoverage{}
+			claims := phishingAnchorClaims(strings.Repeat(phishingFakeAnchor, tc.count), coverage)
+			want := tc.count
+			if want > 50 {
+				want = 50
+			}
+			if len(claims) != want || coverage.Incomplete != tc.wantIncomplete {
+				t.Fatalf("claims=%d coverage=%+v want=%d incomplete=%v", len(claims), coverage, want, tc.wantIncomplete)
+			}
+			for _, claim := range claims {
+				if claim.href != "https://evil.example.net/login" || claim.text != "https://bank.example.com/login" {
+					t.Fatalf("corrupted bounded claim: %+v", claim)
+				}
+			}
+		})
+	}
+}
