@@ -151,6 +151,7 @@ def correlate(report, paths, recipient, chronology=None):
     # Transport, HOLD and removal records preceding cleanup cannot safely be
     # assigned to the subsequently observed message. A queue ID may be reused.
     pre_cleanup_activity = set()
+    foreign_cleanup = set()
     for path in paths:
         for line in log_lines(path):
             if chronology is not None:
@@ -169,12 +170,14 @@ def correlate(report, paths, recipient, chronology=None):
                         duplicate.update((rid, other))
                     queue_to_run[queue_id] = rid
                     entries[rid]["queue_id"] = queue_id
-                    if queue_id in pre_cleanup_activity:
+                    if queue_id in pre_cleanup_activity or queue_id in foreign_cleanup:
                         duplicate.add(rid)
                     if queue_id in qmgr_counts and qmgr_counts[queue_id] != {1}:
                         duplicate.add(rid)
                 continue
             other_cleanup = CLEANUP_ANY.search(line)
+            if other_cleanup and other_cleanup.group(1) not in queue_to_run:
+                foreign_cleanup.add(other_cleanup.group(1))
             if other_cleanup and other_cleanup.group(1) in queue_to_run:
                 # Queue IDs can be reused after a completed delivery. A later
                 # unrelated cleanup must never lend its status to an old run.
