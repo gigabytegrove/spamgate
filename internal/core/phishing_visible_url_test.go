@@ -55,3 +55,46 @@ func TestPhishingZeroWidthMIMEIntegration(t *testing.T) {
 		t.Fatalf("MIME findings=%v coverage=%+v", got, coverage)
 	}
 }
+
+func TestPhishingVisibleURLFormattingFamilies(t *testing.T) {
+    controls := []struct {
+        name string
+        rune rune
+    }{
+        {"soft hyphen", '\u00ad'},
+        {"combining grapheme joiner", '\u034f'},
+        {"arabic letter mark", '\u061c'},
+        {"mongolian separator", '\u180e'},
+        {"left to right mark", '\u200e'},
+        {"right to left mark", '\u200f'},
+        {"bidi override", '\u202e'},
+        {"bidi isolate", '\u2066'},
+        {"bidi pop isolate", '\u2069'},
+        {"invisible separator", '\u2063'},
+        {"variation selector", '\ufe0f'},
+        {"supplementary variation selector", 0xe0100},
+    }
+    for _, tc := range controls {
+        t.Run(tc.name, func(t *testing.T) {
+            input := "https://bank." + string(tc.rune) + "example.com"
+            if got := phishingVisibleURLText(input); got != "https://bank.example.com" {
+                t.Fatalf("normalized %q, want contiguous hostname", got)
+            }
+            body := `<a href="https://evil.example.net/login">https://bank.` + string(tc.rune) + `example.com/login</a>`
+            coverage := &mimeCoverage{}
+            findings := phishingVisibleLinksWithCoverage(body, coverage)
+            if len(findings) != 1 || coverage.Incomplete {
+                t.Fatalf("findings=%v coverage=%+v", findings, coverage)
+            }
+        })
+    }
+}
+
+func TestPhishingVisibleURLDoesNotJoinVisibleSeparators(t *testing.T) {
+    for _, separator := range []string{" ", "\t", "\n", "\r", "\u00a0", "\u2002", "\u2028"} {
+        input := "https://bank." + separator + "example.com"
+        if got := phishingVisibleURLText(input); got != input {
+            t.Errorf("separator %q unexpectedly removed: %q", separator, got)
+        }
+    }
+}
