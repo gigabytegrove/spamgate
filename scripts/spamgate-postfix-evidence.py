@@ -148,6 +148,9 @@ def correlate(report, paths, recipient, chronology=None):
     # qmgr can log its envelope count before cleanup appears in a rotated
     # or merged evidence stream. Retain it and refuse contradictory counts.
     qmgr_counts = {}
+    # Transport, HOLD and removal records preceding cleanup cannot safely be
+    # assigned to the subsequently observed message. A queue ID may be reused.
+    pre_cleanup_activity = set()
     for path in paths:
         for line in log_lines(path):
             if chronology is not None:
@@ -166,6 +169,8 @@ def correlate(report, paths, recipient, chronology=None):
                         duplicate.update((rid, other))
                     queue_to_run[queue_id] = rid
                     entries[rid]["queue_id"] = queue_id
+                    if queue_id in pre_cleanup_activity:
+                        duplicate.add(rid)
                     if queue_id in qmgr_counts and qmgr_counts[queue_id] != {1}:
                         duplicate.add(rid)
                 continue
@@ -191,6 +196,8 @@ def correlate(report, paths, recipient, chronology=None):
             if event:
                 transport, queue_id, address, status = event.groups()
                 rid = queue_to_run.get(queue_id)
+                if rid is None:
+                    pre_cleanup_activity.add(queue_id)
                 # Even a different recipient after removal indicates a
                 # reused/overlapping queue identity: never certify this run.
                 if rid is not None and entries[rid]["queue_removed"]:
@@ -211,6 +218,8 @@ def correlate(report, paths, recipient, chronology=None):
                         entries[rid]["transport_events"].append(item)
                 continue
             removed = REMOVED.search(line)
+            if removed and removed.group(1) not in queue_to_run:
+                pre_cleanup_activity.add(removed.group(1))
             if removed and removed.group(1) in queue_to_run:
                 rid = queue_to_run[removed.group(1)]
                 if entries[rid]["queue_removed"]:
@@ -218,6 +227,8 @@ def correlate(report, paths, recipient, chronology=None):
                 entries[rid]["queue_removed"] = True
                 continue
             hold = HOLD.search(line)
+            if hold and hold.group(1) not in queue_to_run:
+                pre_cleanup_activity.add(hold.group(1))
             if hold and hold.group(1) in queue_to_run:
                 rid = queue_to_run[hold.group(1)]
                 if entries[rid]["queue_removed"]:

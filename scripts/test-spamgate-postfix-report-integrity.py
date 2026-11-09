@@ -198,6 +198,41 @@ class ReportIntegrityTests(unittest.TestCase):
         result = self.invoke()
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_transport_before_cleanup_refuses_queue_identity(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(0, f"Nov  9 04:59:59 host postfix/local[101]: ABCDE12345: to=<{RECIPIENT}>, relay=local, status=sent (prior lifecycle)")
+        self.log.write_text("\n".join(lines) + "\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "ambiguous_queue_identity")
+
+    def test_queue_removal_before_cleanup_refuses_identity(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(0, "Nov  9 04:59:59 host postfix/qmgr[102]: ABCDE12345: removed")
+        self.log.write_text("\n".join(lines) + "\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "ambiguous_queue_identity")
+
+    def test_hold_before_cleanup_refuses_identity(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(0, "Nov  9 04:59:59 host postfix/cleanup[100]: ABCDE12345: hold: policy")
+        self.log.write_text("\n".join(lines) + "\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "ambiguous_queue_identity")
+
+    def test_unrelated_queue_before_cleanup_does_not_block(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(0, "Nov  9 04:59:59 host postfix/qmgr[102]: OTHER12345: removed")
+        self.log.write_text("\n".join(lines) + "\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_empty_case_id_refused(self):
         for row in self.rows[1:]:
             row["case_id"] = ""
