@@ -145,6 +145,32 @@ class ReportIntegrityTests(unittest.TestCase):
         evidence = json.loads(self.output.read_text())
         self.assertEqual(evidence["entries"][0]["state"], "duplicate_transport_sent")
 
+    def test_qmgr_two_recipients_refuses_incomplete_transport_logs(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(1, "Nov  9 05:00:00 host postfix/qmgr[102]: ABCDE12345: from=<sender@example.org>, size=500, nrcpt=2 (queue active)")
+        self.log.write_text("\n".join(lines) + "\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        evidence = json.loads(self.output.read_text())
+        self.assertEqual(evidence["entries"][0]["state"], "ambiguous_queue_identity")
+
+    def test_qmgr_one_recipient_preserves_transport_correlation(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(1, "Nov  9 05:00:00 host postfix/qmgr[102]: ABCDE12345: from=<sender@example.org>, size=500, nrcpt=1 (queue active)")
+        self.log.write_text("\n".join(lines) + "\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_qmgr_zero_recipients_is_not_certified(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(1, "Nov  9 05:00:00 host postfix/qmgr[102]: ABCDE12345: from=<sender@example.org>, size=500, nrcpt=0 (queue active)")
+        self.log.write_text("\n".join(lines) + "\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+
     def test_symlink_report_refused(self):
         original = self.root / "original.jsonl"
         self.report.rename(original)
