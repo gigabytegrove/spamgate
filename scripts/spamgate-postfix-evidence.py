@@ -24,6 +24,7 @@ CLEANUP = re.compile(r"\bpostfix/cleanup\[\d+\]: (" + QUEUE + r"): message-id=<(
 CLEANUP_ANY = re.compile(r"\bpostfix/cleanup\[\d+\]: (" + QUEUE + r"): message-id=<([^<>]+)>", re.I)
 EVENT = re.compile(r"\bpostfix/(smtp|lmtp|local|virtual|pipe|error|discard)\[\d+\]: (" + QUEUE + r"): to=<([^<>\s]+)>.*?\bstatus=(sent|deferred|bounced)\b", re.I)
 REMOVED = re.compile(r"\bpostfix/qmgr\[\d+\]: (" + QUEUE + r"): removed\b", re.I)
+QMGR_RECIPIENTS = re.compile(r"\bpostfix/qmgr\[\d+\]: (" + QUEUE + r"): from=<[^<>]*>,[^\r\n]*?\bnrcpt=(\d+)\b", re.I)
 HOLD = re.compile(r"\bpostfix/(?:cleanup|smtpd)\[\d+\]: (" + QUEUE + r"):.*\bhold:\s", re.I)
 RUN_ID = re.compile(r"[a-f0-9]{32}\Z")
 
@@ -158,6 +159,17 @@ def correlate(report, paths, recipient, chronology=None):
                 # Queue IDs can be reused after a completed delivery. A later
                 # unrelated cleanup must never lend its status to an old run.
                 duplicate.add(queue_to_run[other_cleanup.group(1)])
+                continue
+            qmgr = QMGR_RECIPIENTS.search(line)
+            if qmgr:
+                queue_id, nrcpt = qmgr.groups()
+                rid = queue_to_run.get(queue_id)
+                if rid is not None:
+                    # A single-recipient probe cannot certify a queue whose
+                    # envelope had multiple recipients, even when logs omit
+                    # transport lines for the additional recipients.
+                    if entries[rid]["queue_removed"] or int(nrcpt) != 1:
+                        duplicate.add(rid)
                 continue
             event = EVENT.search(line)
             if event:
