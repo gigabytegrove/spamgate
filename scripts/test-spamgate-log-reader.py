@@ -1,5 +1,6 @@
 """Real file and gzip regressions, without access to production mail logs."""
 import gzip
+import os
 import pathlib
 import tempfile
 import unittest
@@ -79,6 +80,36 @@ class LogReaderTests(unittest.TestCase):
         path = self.write("bomb.gz", gzip.compress((b"x" * 1023 + b"\n") * 65536 + b"z"))
         with self.assertRaisesRegex(ValueError, "oversized"):
             list(bounded_log_lines(path))
+
+    def test_in_place_append_during_scan_refused(self):
+        path = self.write("mail.log", b"first\\nsecond\\n")
+        reader = bounded_log_lines(path)
+        self.assertEqual(next(reader), "first\\n")
+        with path.open("ab") as output:
+            output.write(b"third\\n")
+        with self.assertRaisesRegex(ValueError, "changed during evidence read"):
+            list(reader)
+
+    def test_in_place_rewrite_same_size_refused(self):
+        path = self.write("mail.log", b"first\\nsecond\\n")
+        reader = bounded_log_lines(path)
+        self.assertEqual(next(reader), "first\\n")
+        with path.open("r+b") as output:
+            output.seek(6)
+            output.write(b"THIRD\\n")
+            output.flush()
+            os.fsync(output.fileno())
+        with self.assertRaisesRegex(ValueError, "changed during evidence read"):
+            list(reader)
+
+    def test_gzip_append_during_scan_refused(self):
+        path = self.write("mail.log.gz", gzip.compress(b"first\\nsecond\\n"))
+        reader = bounded_log_lines(path)
+        self.assertEqual(next(reader), "first\\n")
+        with path.open("ab") as output:
+            output.write(gzip.compress(b"third\\n"))
+        with self.assertRaisesRegex(ValueError, "changed during evidence read"):
+            list(reader)
 
     def test_empty_log(self):
         path = self.write("mail.log", b"")
