@@ -9,7 +9,7 @@ import "strings"
 // The scheme check deliberately excludes javascript:, data:, mailto: and
 // arbitrary schemes from backslash rewriting.
 func phishingBrowserHref(href string) string {
-	href = strings.Trim(href, "\x00\x09\x0a\x0c\x0d ")
+	href = strings.TrimFunc(href, func(r rune) bool { return r <= 0x20 })
 	href = strings.Map(func(r rune) rune {
 		if r == '\t' || r == '\n' || r == '\r' {
 			return -1
@@ -32,6 +32,13 @@ func phishingBrowserHref(href string) string {
 			href = href[:len(scheme)] + "//" + href[i:]
 			break
 		}
+	}
+	// A protocol-relative destination is also an authority reference. Browsers
+	// skip additional leading slashes before reading its host; net/url does not.
+	if strings.HasPrefix(href, "///") {
+		i := 0
+		for i < len(href) && href[i] == '/' { i++ }
+		href = "//" + href[i:]
 	}
 	return href
 }
