@@ -106,6 +106,45 @@ class ReportIntegrityTests(unittest.TestCase):
         evidence = json.loads(self.output.read_text())
         self.assertEqual(evidence["entries"][0]["state"], "ambiguous_queue_identity")
 
+    def test_sent_then_deferred_does_not_qualify(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(-1, f"Nov  9 05:00:02 host postfix/local[101]: ABCDE12345: to=<{RECIPIENT}>, relay=local, status=deferred (retry)")
+        self.log.write_text("\n".join(lines) + "\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        evidence = json.loads(self.output.read_text())
+        self.assertEqual(evidence["entries"][0]["state"], "mixed_transport_status_unverified")
+        self.assertFalse(evidence["complete_transport_correlation"])
+
+    def test_deferred_then_sent_does_not_qualify_without_lifecycle_proof(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(1, f"Nov  9 05:00:00 host postfix/local[101]: ABCDE12345: to=<{RECIPIENT}>, relay=local, status=deferred (retry)")
+        self.log.write_text("\n".join(lines) + "\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        evidence = json.loads(self.output.read_text())
+        self.assertEqual(evidence["entries"][0]["state"], "mixed_transport_status_unverified")
+
+    def test_deferred_only_is_not_qualified(self):
+        self.write_transport()
+        self.log.write_text(self.log.read_text().replace("status=sent", "status=deferred"))
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        evidence = json.loads(self.output.read_text())
+        self.assertEqual(evidence["entries"][0]["state"], "deferred")
+
+    def test_duplicate_sent_events_remain_unqualified(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(-1, lines[1])
+        self.log.write_text("\n".join(lines) + "\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        evidence = json.loads(self.output.read_text())
+        self.assertEqual(evidence["entries"][0]["state"], "duplicate_transport_sent")
+
     def test_symlink_report_refused(self):
         original = self.root / "original.jsonl"
         self.report.rename(original)
