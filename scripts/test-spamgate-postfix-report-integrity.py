@@ -416,5 +416,39 @@ class ReportIntegrityTests(unittest.TestCase):
         self.assert_refused()
 
 
+    def test_transport_without_status_on_same_queue_refused(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(-1, "Nov  9 05:00:02 host postfix/local[101]: ABCDE12345: to=<other@example.org>, relay=local, dsn=4.4.1")
+        self.log.write_text("\\n".join(lines) + "\\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "ambiguous_queue_identity")
+
+    def test_two_status_fields_on_transport_refused(self):
+        self.write_transport()
+        self.log.write_text(self.log.read_text().replace(
+            "status=sent", "status=sent, status=bounced"))
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "ambiguous_queue_identity")
+
+    def test_malformed_status_field_refused(self):
+        self.write_transport()
+        self.log.write_text(self.log.read_text().replace(
+            "status=sent", "status=2.0.0"))
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "ambiguous_queue_identity")
+
+    def test_unrelated_transport_without_status_does_not_poison_probe(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(-1, "Nov  9 05:00:02 host postfix/local[101]: OTHER12345: to=<other@example.org>, relay=local")
+        self.log.write_text("\\n".join(lines) + "\\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
