@@ -198,7 +198,7 @@ def correlate(report, paths, recipient, chronology=None):
     for rid, entry in entries.items():
         statuses = {event["status"] for event in entry["transport_events"]}
         if rid in duplicate:
-            entry["state"] = "ambiguous_queue_identity_or_recipient"
+            entry["state"] = "ambiguous_queue_identity"
         elif entry["queue_id"] is None:
             entry["state"] = "no_cleanup_correlation"
         elif entry["held"]:
