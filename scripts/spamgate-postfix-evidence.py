@@ -22,7 +22,7 @@ MAX_LINE_BYTES = 65536
 QUEUE = r"[A-Za-z0-9]{5,32}"
 CLEANUP = re.compile(r"\bpostfix/cleanup\[\d+\]: (" + QUEUE + r"): message-id=<([a-f0-9]{32})@spamgate-qualification\.invalid>", re.I)
 CLEANUP_ANY = re.compile(r"\bpostfix/cleanup\[\d+\]: (" + QUEUE + r"): message-id=<([^<>]+)>", re.I)
-EVENT = re.compile(r"\bpostfix/(smtp|lmtp|local|virtual|pipe|error|discard)\[\d+\]: (" + QUEUE + r"): to=<([^<>\s]+)>.*?\bstatus=(sent|deferred|bounced)\b", re.I)
+EVENT = re.compile(r"\bpostfix/(smtp|lmtp|local|virtual|pipe|error|discard)\[\d+\]: (" + QUEUE + r"): to=<([^<>\s]+)>.*?\bstatus=([a-z][a-z_-]{0,31})\b", re.I)
 REMOVED = re.compile(r"\bpostfix/qmgr\[\d+\]: (" + QUEUE + r"): removed\b", re.I)
 QMGR_RECIPIENTS = re.compile(r"\bpostfix/qmgr\[\d+\]: (" + QUEUE + r"): from=<[^<>]*>,[^\r\n]*?\bnrcpt=(\d+)\b", re.I)
 HOLD = re.compile(r"\bpostfix/(?:cleanup|smtpd)\[\d+\]: (" + QUEUE + r"):.*\bhold:\s", re.I)
@@ -223,6 +223,9 @@ def correlate(report, paths, recipient, chronology=None):
                     # whose actual transport includes other recipients. In
                     # particular, "sent" for the target must not hide a
                     # different recipient's deferred/bounced disposition.
+                    duplicate.add(rid)
+                if rid is not None and status.lower() not in ("sent", "deferred", "bounced"):
+                    # Unknown outcomes cannot be silently ignored when certifying delivery.
                     duplicate.add(rid)
                 if rid is not None and address == recipient:
                     item = {"transport": transport.lower(), "status": status.lower()}
