@@ -167,6 +167,12 @@ def correlate(report, paths, recipient, chronology=None):
                 # reused/overlapping queue identity: never certify this run.
                 if rid is not None and entries[rid]["queue_removed"]:
                     duplicate.add(rid)
+                if rid is not None and address != recipient:
+                    # A single-recipient qualification cannot certify a queue
+                    # whose actual transport includes other recipients. In
+                    # particular, "sent" for the target must not hide a
+                    # different recipient's deferred/bounced disposition.
+                    duplicate.add(rid)
                 if rid is not None and address == recipient:
                     item = {"transport": transport.lower(), "status": status.lower()}
                     if item["transport"] in ("discard", "error"):
@@ -192,7 +198,7 @@ def correlate(report, paths, recipient, chronology=None):
     for rid, entry in entries.items():
         statuses = {event["status"] for event in entry["transport_events"]}
         if rid in duplicate:
-            entry["state"] = "ambiguous_queue_identity"
+            entry["state"] = "ambiguous_queue_identity_or_recipient"
         elif entry["queue_id"] is None:
             entry["state"] = "no_cleanup_correlation"
         elif entry["held"]:
