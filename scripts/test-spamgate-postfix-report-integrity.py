@@ -171,6 +171,33 @@ class ReportIntegrityTests(unittest.TestCase):
         result = self.invoke()
         self.assertEqual(result.returncode, 3, result.stderr)
 
+    def test_qmgr_multirecipient_before_cleanup_refused(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(0, "Nov  9 04:59:59 host postfix/qmgr[102]: ABCDE12345: from=<sender@example.org>, size=500, nrcpt=2 (queue active)")
+        self.log.write_text("\\n".join(lines) + "\\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        evidence = json.loads(self.output.read_text())
+        self.assertEqual(evidence["entries"][0]["state"], "ambiguous_queue_identity")
+
+    def test_qmgr_conflicting_counts_before_cleanup_refused(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(0, "Nov  9 04:59:58 host postfix/qmgr[102]: ABCDE12345: from=<sender@example.org>, nrcpt=2")
+        lines.insert(1, "Nov  9 04:59:59 host postfix/qmgr[102]: ABCDE12345: from=<sender@example.org>, nrcpt=1")
+        self.log.write_text("\\n".join(lines) + "\\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+
+    def test_qmgr_single_recipient_before_cleanup_preserves_correlation(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(0, "Nov  9 04:59:59 host postfix/qmgr[102]: ABCDE12345: from=<sender@example.org>, nrcpt=1")
+        self.log.write_text("\\n".join(lines) + "\\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_symlink_report_refused(self):
         original = self.root / "original.jsonl"
         self.report.rename(original)
