@@ -73,6 +73,7 @@ jobs:
           python3 scripts/test-spamgate-host-probe-smtp.py -v
           python3 scripts/test-spamgate-filtration-qualification.py -v
           python3 scripts/test-spamgate-postfix-evidence.py -v
+          python3 scripts/test-spamgate-postfix-report-integrity.py -v
           python3 scripts/test-spamgate-log-reader.py -v
           python3 scripts/test-spamgate-postfix-rotation.py -v
           python3 scripts/test-spamgate-postfix-integrity.py -v
