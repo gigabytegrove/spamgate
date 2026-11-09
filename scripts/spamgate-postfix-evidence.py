@@ -100,7 +100,7 @@ def accepted_runs(path):
     count = rows[0]["cases"]
     if type(count) is not int or not 1 <= count <= MAX_CASES:
         raise ValueError("invalid planned case count")
-    attempts, outcomes, ids = {}, {}, set()
+    attempts, outcomes, ids, fixture_digests = {}, {}, set(), set()
     for row in rows[1:]:
         event, cid, rid = row.get("event"), row.get("case_id"), row.get("run_id")
         # Reject malformed identity fields before accepting an SMTP submission
@@ -118,8 +118,13 @@ def accepted_runs(path):
                 raise ValueError("duplicate attempt identity")
             if not isinstance(row.get("id"), str) or not re.fullmatch(r"[a-f0-9]{64}", row["id"]):
                 raise ValueError("invalid fixture digest")
+            # Reusing one fixture across cases inflates the apparent independent
+            # sample size and can falsely satisfy corpus qualification gates.
+            if row["id"] in fixture_digests:
+                raise ValueError("duplicate qualification fixture digest")
             attempts[cid] = row
             ids.add(rid)
+            fixture_digests.add(row["id"])
         elif event in ("smtp_accepted", "failed"):
             if cid not in attempts or cid in outcomes:
                 raise ValueError("terminal result missing attempt or duplicated")
