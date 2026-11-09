@@ -164,6 +164,14 @@ def correlate(report, paths, recipient, chronology=None):
             cleanup = CLEANUP.search(line)
             if cleanup:
                 queue_id, rid = cleanup.group(1), cleanup.group(2).lower()
+                if rid not in entries:
+                    # A qualification-shaped Message-ID from another run is
+                    # foreign cleanup, not evidence for this qualification.
+                    if queue_id in queue_to_run:
+                        duplicate.add(queue_to_run[queue_id])
+                    else:
+                        foreign_cleanup.add(queue_id)
+                    continue
                 if rid in entries:
                     previous = entries[rid]["queue_id"]
                     if previous is not None:
