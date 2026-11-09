@@ -13,9 +13,9 @@ func TestPhishingBrowserHrefPreprocessing(t *testing.T) {
         {"https://evil.example.\rnet", "https://evil.example.net"},
         {" \t\nhttps://evil.example.net/login\r\n ", "https://evil.example.net/login"},
         {"https://evil.example.net/a b", "https://evil.example.net/a b"},
-        {`https:\\\\evil.example.net\\login`, "https://evil.example.net/login"},
-        {`HTTPS:\\\\evil.example.net\\login`, "HTTPS://evil.example.net/login"},
-        {`\\\\evil.example.net\\login`, "//evil.example.net/login"},
+        {`https:\\evil.example.net\login`, "https://evil.example.net/login"},
+        {`HTTPS:\\evil.example.net\login`, "HTTPS://evil.example.net/login"},
+        {`\\evil.example.net\login`, "//evil.example.net/login"},
         {`javascript:alert(\\x)`, `javascript:alert(\\x)`},
     }
     for _, tc := range cases {
@@ -34,10 +34,10 @@ func TestPhishingBrowserNormalizedDestinations(t *testing.T) {
         {"same organization after normalization", "https://login.\texample.com", "https://support.example.com", 0},
         {"visible whitespace not joined", "https://evil.example.net", "https://bank. example.com", 0},
         {"non-http URL excluded", "javascript:alert(1)", "https://bank.example.com", 0},
-        {"backslash HTTPS destination", `https:\\\\evil.example.net\\login`, "https://bank.example.com/login", 1},
-        {"backslash protocol-relative destination", `\\\\evil.example.net\\login`, "https://bank.example.com/login", 1},
-        {"matching backslash destination", `https:\\\\bank.example.com\\login`, "https://bank.example.com/login", 0},
-        {"same organization backslash destination", `https:\\\\login.example.com\\login`, "https://support.example.com", 0},
+        {"backslash HTTPS destination", `https:\\evil.example.net\login`, "https://bank.example.com/login", 1},
+        {"backslash protocol-relative destination", `\\evil.example.net\login`, "https://bank.example.com/login", 1},
+        {"matching backslash destination", `https:\\bank.example.com\login`, "https://bank.example.com/login", 0},
+        {"same organization backslash destination", `https:\login.example.com\login`, "https://support.example.com", 0},
     }
     for _, tc := range cases {
         t.Run(tc.name, func(t *testing.T) {
