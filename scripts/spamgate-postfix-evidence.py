@@ -228,7 +228,7 @@ def correlate(report, paths, recipient, chronology=None):
                 # Postfix DSN class and textual status must agree. A forged,
                 # malformed or contradictory enhanced status is not proof of
                 # successful delivery. Absence of DSN is allowed for older logs.
-                dsn_fields = re.findall(r"(?<![A-Za-z0-9_])dsn=([^,\\s()]+)", line, re.I)
+                dsn_fields = re.findall(r"(?<![A-Za-z0-9_])dsn=([^,\s()]+)", line, re.I)
                 expected_class = {"sent": "2", "deferred": "4", "bounced": "5"}.get(status.lower())
                 if rid is not None and dsn_fields:
                     parsed = DSN.fullmatch("dsn=" + dsn_fields[0])

@@ -1,4 +1,5 @@
 """Isolated Postfix transport evidence regressions; no live MTA access."""
+import hashlib
 import json
 import pathlib
 import subprocess
@@ -26,7 +27,7 @@ class EvidenceTests(unittest.TestCase):
     def write_report(self, cases):
         rows = [{"event": "plan", "cases": len(cases)}]
         for rid, cid in cases:
-            base = {"case_id": cid, "run_id": rid, "id": DIGEST, "label": "ham", "cohort": "direct"}
+            base = {"case_id": cid, "run_id": rid, "id": hashlib.sha256(cid.encode("ascii")).hexdigest(), "label": "ham", "cohort": "direct"}
             rows += [{**base, "event": "attempted"}, {**base, "event": "smtp_accepted"}]
         self.report.write_text("\n".join(json.dumps(x) for x in rows) + "\n")
 
@@ -74,15 +75,17 @@ class EvidenceTests(unittest.TestCase):
         self.log.write_text(f"postfix/cleanup[123]: A1B2C3: message-id=<{RID1}@spamgate-qualification.invalid>\n"
                             "postfix/lmtp[124]: A1B2C3: to=<other@example.org>, status=sent\n")
         self.assertEqual(self.call().returncode, 3)
-        self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "no_matching_recipient_transport")
+        self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "ambiguous_queue_identity")
 
     def test_deferred_then_sent_tracks_both_without_delivery_claim(self):
         self.log.write_text(f"postfix/cleanup[123]: A1B2C3: message-id=<{RID1}@spamgate-qualification.invalid>\n"
                             f"postfix/smtp[124]: A1B2C3: to=<{RECIPIENT}>, status=deferred\n"
                             f"postfix/lmtp[124]: A1B2C3: to=<{RECIPIENT}>, status=sent\n"
                             "postfix/qmgr[125]: A1B2C3: removed\n")
-        self.assertEqual(self.call().returncode, 0)
-        self.assertEqual(len(json.loads(self.output.read_text())["entries"][0]["transport_events"]), 2)
+        self.assertEqual(self.call().returncode, 3)
+        evidence = json.loads(self.output.read_text())
+        self.assertEqual(evidence["entries"][0]["state"], "mixed_transport_status_unverified")
+        self.assertEqual(len(evidence["entries"][0]["transport_events"]), 2)
 
     def test_bounce_fails_even_if_sent(self):
         self.log.write_text(f"postfix/cleanup[123]: A1B2C3: message-id=<{RID1}@spamgate-qualification.invalid>\n"
