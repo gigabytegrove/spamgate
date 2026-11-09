@@ -82,32 +82,49 @@ class LogReaderTests(unittest.TestCase):
             list(bounded_log_lines(path))
 
     def test_in_place_append_during_scan_refused(self):
-        path = self.write("mail.log", b"first\\nsecond\\n")
+        path = self.write("mail.log", b"first\nsecond\n")
         reader = bounded_log_lines(path)
-        self.assertEqual(next(reader), "first\\n")
+        self.assertEqual(next(reader), "first\n")
         with path.open("ab") as output:
-            output.write(b"third\\n")
+            output.write(b"third\n")
         with self.assertRaisesRegex(ValueError, "changed during evidence read"):
             list(reader)
 
     def test_in_place_rewrite_same_size_refused(self):
-        path = self.write("mail.log", b"first\\nsecond\\n")
+        path = self.write("mail.log", b"first\nsecond\n")
         reader = bounded_log_lines(path)
-        self.assertEqual(next(reader), "first\\n")
+        self.assertEqual(next(reader), "first\n")
         with path.open("r+b") as output:
             output.seek(6)
-            output.write(b"THIRD\\n")
+            output.write(b"THIRD\n")
             output.flush()
             os.fsync(output.fileno())
         with self.assertRaisesRegex(ValueError, "changed during evidence read"):
             list(reader)
 
     def test_gzip_append_during_scan_refused(self):
-        path = self.write("mail.log.gz", gzip.compress(b"first\\nsecond\\n"))
+        path = self.write("mail.log.gz", gzip.compress(b"first\nsecond\n"))
         reader = bounded_log_lines(path)
-        self.assertEqual(next(reader), "first\\n")
+        self.assertEqual(next(reader), "first\n")
         with path.open("ab") as output:
-            output.write(gzip.compress(b"third\\n"))
+            output.write(gzip.compress(b"third\n"))
+        with self.assertRaisesRegex(ValueError, "changed during evidence read"):
+            list(reader)
+
+    def test_path_replacement_during_scan_refused(self):
+        path = self.write("mail.log", b"first\nsecond\n")
+        reader = bounded_log_lines(path)
+        self.assertEqual(next(reader), "first\n")
+        replacement = self.write("replacement.log", b"first\nsecond\n")
+        os.replace(replacement, path)
+        with self.assertRaisesRegex(ValueError, "changed during evidence read"):
+            list(reader)
+
+    def test_path_removed_during_scan_refused(self):
+        path = self.write("mail.log", b"first\nsecond\n")
+        reader = bounded_log_lines(path)
+        self.assertEqual(next(reader), "first\n")
+        path.unlink()
         with self.assertRaisesRegex(ValueError, "changed during evidence read"):
             list(reader)
 
