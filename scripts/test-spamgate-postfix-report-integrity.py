@@ -420,7 +420,7 @@ class ReportIntegrityTests(unittest.TestCase):
         self.write_transport()
         lines = self.log.read_text().splitlines()
         lines.insert(-1, "Nov  9 05:00:02 host postfix/local[101]: ABCDE12345: to=<other@example.org>, relay=local, dsn=4.4.1")
-        self.log.write_text("\\n".join(lines) + "\\n")
+        self.log.write_text("\n".join(lines) + "\n")
         result = self.invoke()
         self.assertEqual(result.returncode, 3, result.stderr)
         self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "ambiguous_queue_identity")
@@ -445,7 +445,7 @@ class ReportIntegrityTests(unittest.TestCase):
         self.write_transport()
         lines = self.log.read_text().splitlines()
         lines.insert(-1, "Nov  9 05:00:02 host postfix/local[101]: OTHER12345: to=<other@example.org>, relay=local")
-        self.log.write_text("\\n".join(lines) + "\\n")
+        self.log.write_text("\n".join(lines) + "\n")
         result = self.invoke()
         self.assertEqual(result.returncode, 0, result.stderr)
 
