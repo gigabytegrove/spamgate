@@ -48,6 +48,16 @@ def bounded_log_lines(path):
                 if len(raw) > MAX_LINE_BYTES or total > MAX_LOG_BYTES:
                     raise ValueError("oversized Postfix log line or expanded file")
                 yield raw.decode("utf-8", "replace")
+            # Revalidate the directory entry as well as the open descriptor.
+            # Rotation can replace/unlink a pathname without changing the
+            # inode still held open by this reader.
+            try:
+                current_path = target.lstat()
+            except FileNotFoundError as exc:
+                raise ValueError("Postfix log changed during evidence read") from exc
+            if (not stat.S_ISREG(current_path.st_mode) or
+                    not os.path.samestat(opened, current_path)):
+                raise ValueError("Postfix log changed during evidence read")
             # Evidence must come from one stable file snapshot. In-place writes,
             # truncation and replacement during a scan invalidate the result.
             after = os.fstat(source.fileno())
