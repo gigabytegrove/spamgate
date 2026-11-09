@@ -228,6 +228,18 @@ class ReportIntegrityTests(unittest.TestCase):
         self.write_rows()
         self.assert_refused()
 
+    def test_unknown_cohort_refused(self):
+        for row in self.rows[1:]:
+            row["cohort"] = "unverified"
+        self.write_rows()
+        self.assert_refused()
+
+    def test_case_id_with_unsupported_punctuation_refused(self):
+        for row in self.rows[1:]:
+            row["case_id"] = "clean:other"
+        self.write_rows()
+        self.assert_refused()
+
     def test_valid_nondefault_cohort_preserved(self):
         for row in self.rows[1:]:
             row["cohort"] = "forwarded"
