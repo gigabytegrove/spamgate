@@ -28,6 +28,27 @@ HOLD = re.compile(r"\bpostfix/(?:cleanup|smtpd)\[\d+\]: (" + QUEUE + r"):.*\bhol
 RUN_ID = re.compile(r"[a-f0-9]{32}\Z")
 
 
+def unique_json_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate qualification JSON key")
+        result[key] = value
+    return result
+
+
+def reject_json_constant(value):
+    raise ValueError("non-finite qualification JSON number")
+
+
+def stable_report_identity(before, after):
+    return (stat.S_ISREG(after.st_mode) and
+            os.path.samestat(before, after) and
+            before.st_size == after.st_size and
+            before.st_mtime_ns == after.st_mtime_ns and
+            before.st_ctime_ns == after.st_ctime_ns)
+
+
 def read_jsonl(path, limit):
     # A qualification report is untrusted operator-supplied input. Never
     # follow a symlink, and never read an arbitrarily large line into memory
@@ -40,7 +61,7 @@ def read_jsonl(path, limit):
     result = []
     with os.fdopen(fd, "rb") as handle:
         opened = os.fstat(handle.fileno())
-        if not stat.S_ISREG(opened.st_mode) or not os.path.samestat(before, opened):
+        if not stable_report_identity(before, opened):
             raise ValueError("report identity changed during open")
         number = 0
         while True:
@@ -54,10 +75,19 @@ def read_jsonl(path, limit):
                 continue
             if len(result) >= limit:
                 raise ValueError("JSONL record limit exceeded")
-            value = json.loads(raw)
+            value = json.loads(raw, object_pairs_hook=unique_json_object,
+                               parse_constant=reject_json_constant)
             if not isinstance(value, dict):
                 raise ValueError(f"JSONL line {number} must be an object")
             result.append(value)
+        after = os.fstat(handle.fileno())
+        try:
+            current_path = target.lstat()
+        except FileNotFoundError as exc:
+            raise ValueError("qualification report changed during read") from exc
+        if (not stable_report_identity(opened, after) or
+                not stable_report_identity(opened, current_path)):
+            raise ValueError("qualification report changed during read")
     return result
 
 def accepted_runs(path):
