@@ -70,6 +70,42 @@ class ReportIntegrityTests(unittest.TestCase):
         evidence = json.loads(self.output.read_text())
         self.assertFalse(evidence["complete_transport_correlation"])
 
+    def write_transport(self, extra_recipient=None):
+        lines = [
+            f"Nov  9 05:00:00 host postfix/cleanup[100]: ABCDE12345: message-id=<{RUN}@spamgate-qualification.invalid>",
+            f"Nov  9 05:00:01 host postfix/local[101]: ABCDE12345: to=<{RECIPIENT}>, relay=local, status=sent (delivered)",
+        ]
+        if extra_recipient is not None:
+            lines.append(
+                f"Nov  9 05:00:02 host postfix/local[101]: ABCDE12345: to=<{extra_recipient}>, relay=local, status=deferred (temporary failure)"
+            )
+        lines.append("Nov  9 05:00:03 host postfix/qmgr[102]: ABCDE12345: removed")
+        self.log.write_text("\\n".join(lines) + "\\n")
+
+    def test_single_recipient_transport_is_correlated_not_mailbox_certified(self):
+        self.write_transport()
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        evidence = json.loads(self.output.read_text())
+        self.assertTrue(evidence["complete_transport_correlation"])
+        self.assertEqual(evidence["entries"][0]["state"], "transport_sent_not_mailbox_verified")
+
+    def test_mixed_recipient_queue_cannot_certify_single_recipient(self):
+        self.write_transport("other@example.org")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        evidence = json.loads(self.output.read_text())
+        self.assertFalse(evidence["complete_transport_correlation"])
+        self.assertEqual(evidence["entries"][0]["state"], "ambiguous_queue_identity")
+
+    def test_mixed_recipient_sent_cannot_certify_single_recipient(self):
+        self.write_transport("other@example.org")
+        self.log.write_text(self.log.read_text().replace("status=deferred", "status=sent"))
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        evidence = json.loads(self.output.read_text())
+        self.assertEqual(evidence["entries"][0]["state"], "ambiguous_queue_identity")
+
     def test_symlink_report_refused(self):
         original = self.root / "original.jsonl"
         self.report.rename(original)
