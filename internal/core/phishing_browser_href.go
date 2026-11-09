@@ -20,5 +20,18 @@ func phishingBrowserHref(href string) string {
 	if strings.HasPrefix(lower, "http:") || strings.HasPrefix(lower, "https:") || strings.HasPrefix(href, "//") || strings.HasPrefix(href, "\\\\") {
 		href = strings.ReplaceAll(href, "\\", "/")
 	}
+	// WHATWG special-scheme parsing treats surplus authority slashes as
+	// separators. net/url instead leaves Host empty for https:////host.
+	// Restrict this to explicit // authorities: a single slash or a bare
+	// scheme can be relative to a document base and is not safely inferred.
+	lower = strings.ToLower(href)
+	for _, scheme := range []string{"http:", "https:"} {
+		if strings.HasPrefix(lower, scheme+"///") {
+			i := len(scheme)
+			for i < len(href) && href[i] == '/' { i++ }
+			href = href[:len(scheme)] + "//" + href[i:]
+			break
+		}
+	}
 	return href
 }
