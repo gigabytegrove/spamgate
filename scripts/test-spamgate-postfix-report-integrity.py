@@ -149,6 +149,32 @@ class ReportIntegrityTests(unittest.TestCase):
         evidence = json.loads(self.output.read_text())
         self.assertEqual(evidence["entries"][0]["state"], "mixed_transport_status_unverified")
 
+    def test_unknown_status_before_sent_refused(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(1, f"Nov  9 05:00:00 host postfix/local[101]: ABCDE12345: to=<{RECIPIENT}>, relay=local, status=expired (unrecognized)")
+        self.log.write_text("\n".join(lines) + "\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "ambiguous_queue_identity")
+
+    def test_unknown_status_other_recipient_refused(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(-1, "Nov  9 05:00:02 host postfix/local[101]: ABCDE12345: to=<other@example.org>, relay=local, status=unknown")
+        self.log.write_text("\n".join(lines) + "\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "ambiguous_queue_identity")
+
+    def test_unknown_status_unrelated_queue_ignored(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(1, "Nov  9 05:00:00 host postfix/local[101]: OTHER12345: to=<other@example.org>, status=unknown")
+        self.log.write_text("\n".join(lines) + "\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_deferred_only_is_not_qualified(self):
         self.write_transport()
         self.log.write_text(self.log.read_text().replace("status=sent", "status=deferred"))
