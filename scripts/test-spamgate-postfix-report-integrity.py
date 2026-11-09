@@ -281,6 +281,32 @@ class ReportIntegrityTests(unittest.TestCase):
         result = self.invoke()
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_foreign_qualification_cleanup_before_probe_refuses_reuse(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(0, f"Nov  9 04:59:59 host postfix/cleanup[100]: ABCDE12345: message-id=<{ 'c' * 32 }@spamgate-qualification.invalid>")
+        self.log.write_text("\\n".join(lines) + "\\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "ambiguous_queue_identity")
+
+    def test_foreign_qualification_cleanup_after_probe_refuses_reuse(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(-1, f"Nov  9 05:00:02 host postfix/cleanup[100]: ABCDE12345: message-id=<{ 'c' * 32 }@spamgate-qualification.invalid>")
+        self.log.write_text("\\n".join(lines) + "\\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "ambiguous_queue_identity")
+
+    def test_foreign_qualification_cleanup_on_other_queue_is_safe(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(0, f"Nov  9 04:59:59 host postfix/cleanup[100]: OTHER12345: message-id=<{ 'c' * 32 }@spamgate-qualification.invalid>")
+        self.log.write_text("\\n".join(lines) + "\\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_empty_case_id_refused(self):
         for row in self.rows[1:]:
             row["case_id"] = ""
