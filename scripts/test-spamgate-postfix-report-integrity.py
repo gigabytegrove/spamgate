@@ -206,7 +206,7 @@ class ReportIntegrityTests(unittest.TestCase):
 
     def test_control_character_case_id_refused(self):
         for row in self.rows[1:]:
-            row["case_id"] = "clean\\nforged"
+            row["case_id"] = "clean\nforged"
         self.write_rows()
         self.assert_refused()
 
