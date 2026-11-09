@@ -44,6 +44,28 @@ class ReportIntegrityTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertFalse(self.output.exists())
 
+    def test_duplicate_fixture_digest_across_distinct_cases_refused(self):
+        second = {"case_id": "other", "run_id": "c" * 32, "id": DIGEST,
+                  "label": "spam", "cohort": "forwarded"}
+        self.rows[0]["cases"] = 2
+        self.rows.extend((dict(second, event="attempted"),
+                          dict(second, event="smtp_accepted")))
+        self.write_rows()
+        self.assert_refused()
+
+    def test_distinct_fixture_digests_remain_accepted_as_report_evidence(self):
+        second = {"case_id": "other", "run_id": "c" * 32, "id": "d" * 64,
+                  "label": "spam", "cohort": "forwarded"}
+        self.rows[0]["cases"] = 2
+        self.rows.extend((dict(second, event="attempted"),
+                          dict(second, event="smtp_accepted")))
+        self.write_rows()
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        evidence = json.loads(self.output.read_text())
+        self.assertEqual(len(evidence["entries"]), 2)
+        self.assertFalse(evidence["complete_transport_correlation"])
+
     def test_duplicate_plan_key_refused(self):
         self.report.write_text('{"event":"plan","cases":1,"cases":1}\n' +
                                "".join(json.dumps(row) + "\n" for row in self.rows[1:]))
