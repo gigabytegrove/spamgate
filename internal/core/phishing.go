@@ -73,7 +73,7 @@ func phishingVisibleLinksWithCoverage(body string, coverage *mimeCoverage) []str
     // <a> strings embedded in attributes of non-clickable elements.
     anchors := phishingAnchorClaims(body, coverage)
     for anchorIndex, claim := range anchors {
-        href := strings.TrimSpace(html.UnescapeString(claim.href))
+        href := phishingBrowserHref(html.UnescapeString(claim.href))
         if len(href) == 0 || len(href) > 4096 { continue }
         if strings.HasPrefix(href, "//") { href = "https:" + href }
         dest, err := url.Parse(href)
