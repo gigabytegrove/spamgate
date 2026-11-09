@@ -212,6 +212,11 @@ def correlate(report, paths, recipient, chronology=None):
             entry["state"] = "bounced"
         elif entry["discarded"]:
             entry["state"] = "discard_or_error_transport"
+        elif "sent" in statuses and "deferred" in statuses:
+            # A later successful retry can follow a transient deferral, but
+            # the logs alone cannot prove the events belong to one intact
+            # queue lifecycle. Require an unambiguous terminal disposition.
+            entry["state"] = "mixed_transport_status_unverified"
         elif "sent" in statuses and entry["queue_removed"]:
             entry["state"] = "transport_sent_not_mailbox_verified"
         elif "sent" in statuses:
