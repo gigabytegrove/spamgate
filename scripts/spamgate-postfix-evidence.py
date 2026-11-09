@@ -23,6 +23,8 @@ QUEUE = r"[A-Za-z0-9]{5,32}"
 CLEANUP = re.compile(r"\bpostfix/cleanup\[\d+\]: (" + QUEUE + r"): message-id=<([a-f0-9]{32})@spamgate-qualification\.invalid>", re.I)
 CLEANUP_ANY = re.compile(r"\bpostfix/cleanup\[\d+\]: (" + QUEUE + r"): message-id=<([^<>]+)>", re.I)
 EVENT = re.compile(r"\bpostfix/(smtp|lmtp|local|virtual|pipe|error|discard)\[\d+\]: (" + QUEUE + r"): to=<([^<>\s]+)>.*?\bstatus=([a-z][a-z_-]{0,31})\b", re.I)
+TRANSPORT_RECIPIENT = re.compile(r"\bpostfix/(?:smtp|lmtp|local|virtual|pipe|error|discard)\[\d+\]: (" + QUEUE + r"): to=<([^<>\s]+)>", re.I)
+STATUS_FIELD = re.compile(r"(?<![A-Za-z0-9_])status=([^,\s()]+)", re.I)
 DSN = re.compile(r"(?<![A-Za-z0-9_])dsn=([0-9])\.([0-9]{1,3})\.([0-9]{1,3})(?![0-9])", re.I)
 REMOVED = re.compile(r"\bpostfix/qmgr\[\d+\]: (" + QUEUE + r"): removed\b", re.I)
 QMGR_RECIPIENTS = re.compile(r"\bpostfix/qmgr\[\d+\]: (" + QUEUE + r"): from=<[^<>]*>,[^\r\n]*?\bnrcpt=(\d+)\b", re.I)
@@ -209,7 +211,21 @@ def correlate(report, paths, recipient, chronology=None):
                     if entries[rid]["queue_removed"] or qmgr_counts[queue_id] != {1}:
                         duplicate.add(rid)
                 continue
+            # A transport record with an absent or malformed status is not
+            # evidence of delivery. Nor can a second status token be ignored:
+            # accepting the first one could hide a contradictory disposition.
+            transport_recipient = TRANSPORT_RECIPIENT.search(line)
             event = EVENT.search(line)
+            if transport_recipient:
+                raw_queue = transport_recipient.group(1)
+                raw_rid = queue_to_run.get(raw_queue)
+                statuses_on_line = STATUS_FIELD.findall(line)
+                if raw_rid is None and event is None:
+                    pre_cleanup_activity.add(raw_queue)
+                if raw_rid is not None and (
+                        event is None or len(statuses_on_line) != 1 or
+                        statuses_on_line[0].lower() != event.group(4).lower()):
+                    duplicate.add(raw_rid)
             if event:
                 transport, queue_id, address, status = event.groups()
                 rid = queue_to_run.get(queue_id)
