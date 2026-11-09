@@ -198,6 +198,44 @@ class ReportIntegrityTests(unittest.TestCase):
         result = self.invoke()
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_empty_case_id_refused(self):
+        for row in self.rows[1:]:
+            row["case_id"] = ""
+        self.write_rows()
+        self.assert_refused()
+
+    def test_control_character_case_id_refused(self):
+        for row in self.rows[1:]:
+            row["case_id"] = "clean\\nforged"
+        self.write_rows()
+        self.assert_refused()
+
+    def test_oversized_case_id_refused(self):
+        for row in self.rows[1:]:
+            row["case_id"] = "x" * 129
+        self.write_rows()
+        self.assert_refused()
+
+    def test_unrecognized_label_refused(self):
+        for row in self.rows[1:]:
+            row["label"] = "unreviewed"
+        self.write_rows()
+        self.assert_refused()
+
+    def test_empty_cohort_refused(self):
+        for row in self.rows[1:]:
+            row["cohort"] = ""
+        self.write_rows()
+        self.assert_refused()
+
+    def test_valid_nondefault_cohort_preserved(self):
+        for row in self.rows[1:]:
+            row["cohort"] = "forwarded"
+        self.write_rows()
+        self.write_transport()
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_symlink_report_refused(self):
         original = self.root / "original.jsonl"
         self.report.rename(original)
