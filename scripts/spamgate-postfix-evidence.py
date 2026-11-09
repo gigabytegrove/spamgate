@@ -23,6 +23,7 @@ QUEUE = r"[A-Za-z0-9]{5,32}"
 CLEANUP = re.compile(r"\bpostfix/cleanup\[\d+\]: (" + QUEUE + r"): message-id=<([a-f0-9]{32})@spamgate-qualification\.invalid>", re.I)
 CLEANUP_ANY = re.compile(r"\bpostfix/cleanup\[\d+\]: (" + QUEUE + r"): message-id=<([^<>]+)>", re.I)
 EVENT = re.compile(r"\bpostfix/(smtp|lmtp|local|virtual|pipe|error|discard)\[\d+\]: (" + QUEUE + r"): to=<([^<>\s]+)>.*?\bstatus=([a-z][a-z_-]{0,31})\b", re.I)
+DSN = re.compile(r"(?<![A-Za-z0-9_])dsn=([0-9])\\.([0-9]{1,3})\\.([0-9]{1,3})(?![0-9])", re.I)
 REMOVED = re.compile(r"\bpostfix/qmgr\[\d+\]: (" + QUEUE + r"): removed\b", re.I)
 QMGR_RECIPIENTS = re.compile(r"\bpostfix/qmgr\[\d+\]: (" + QUEUE + r"): from=<[^<>]*>,[^\r\n]*?\bnrcpt=(\d+)\b", re.I)
 HOLD = re.compile(r"\bpostfix/(?:cleanup|smtpd)\[\d+\]: (" + QUEUE + r"):.*\bhold:\s", re.I)
@@ -224,6 +225,16 @@ def correlate(report, paths, recipient, chronology=None):
                     # particular, "sent" for the target must not hide a
                     # different recipient's deferred/bounced disposition.
                     duplicate.add(rid)
+                # Postfix DSN class and textual status must agree. A forged,
+                # malformed or contradictory enhanced status is not proof of
+                # successful delivery. Absence of DSN is allowed for older logs.
+                dsn_fields = re.findall(r"(?<![A-Za-z0-9_])dsn=([^,\\s()]+)", line, re.I)
+                expected_class = {"sent": "2", "deferred": "4", "bounced": "5"}.get(status.lower())
+                if rid is not None and dsn_fields:
+                    parsed = DSN.fullmatch("dsn=" + dsn_fields[0])
+                    if (len(dsn_fields) != 1 or parsed is None or
+                            expected_class is None or parsed.group(1) != expected_class):
+                        duplicate.add(rid)
                 if rid is not None and status.lower() not in ("sent", "deferred", "bounced"):
                     # Unknown outcomes cannot be silently ignored when certifying delivery.
                     duplicate.add(rid)

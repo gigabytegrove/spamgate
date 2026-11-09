@@ -175,6 +175,32 @@ class ReportIntegrityTests(unittest.TestCase):
         result = self.invoke()
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_sent_with_failure_dsn_is_not_qualified(self):
+        self.write_transport()
+        self.log.write_text(self.log.read_text().replace("status=sent", "dsn=5.1.1, status=sent"))
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "ambiguous_queue_identity")
+
+    def test_sent_with_success_dsn_preserves_transport_only_evidence(self):
+        self.write_transport()
+        self.log.write_text(self.log.read_text().replace("status=sent", "dsn=2.0.0, status=sent"))
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "transport_sent_not_mailbox_verified")
+
+    def test_malformed_dsn_is_not_qualified(self):
+        self.write_transport()
+        self.log.write_text(self.log.read_text().replace("status=sent", "dsn=2.x.0, status=sent"))
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+
+    def test_duplicate_dsn_fields_are_not_qualified(self):
+        self.write_transport()
+        self.log.write_text(self.log.read_text().replace("status=sent", "dsn=2.0.0, dsn=5.0.0, status=sent"))
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+
     def test_deferred_only_is_not_qualified(self):
         self.write_transport()
         self.log.write_text(self.log.read_text().replace("status=sent", "status=deferred"))
