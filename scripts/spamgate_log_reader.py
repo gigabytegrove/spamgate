@@ -48,6 +48,14 @@ def bounded_log_lines(path):
                 if len(raw) > MAX_LINE_BYTES or total > MAX_LOG_BYTES:
                     raise ValueError("oversized Postfix log line or expanded file")
                 yield raw.decode("utf-8", "replace")
+            # Evidence must come from one stable file snapshot. In-place writes,
+            # truncation and replacement during a scan invalidate the result.
+            after = os.fstat(source.fileno())
+            if (not os.path.samestat(opened, after) or
+                    after.st_size != opened.st_size or
+                    after.st_mtime_ns != opened.st_mtime_ns or
+                    after.st_ctime_ns != opened.st_ctime_ns):
+                raise ValueError("Postfix log changed during evidence read")
         except (OSError, EOFError, zlib.error) as exc:
             raise ValueError("corrupt or unreadable Postfix log") from exc
         finally:
