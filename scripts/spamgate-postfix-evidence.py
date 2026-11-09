@@ -103,13 +103,13 @@ def accepted_runs(path):
         event, cid, rid = row.get("event"), row.get("case_id"), row.get("run_id")
         # Reject malformed identity fields before accepting an SMTP submission
         # as evidence. These values also appear in the published report.
-        if (not isinstance(cid, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}", cid)
+        if (not isinstance(cid, str) or not CASE_ID.fullmatch(cid)
                 or not isinstance(rid, str) or not RUN_ID.fullmatch(rid)):
             raise ValueError("invalid report case or run ID")
         if (not isinstance(row.get("label"), str) or
                 row["label"] not in ("ham", "spam") or
                 not isinstance(row.get("cohort"), str) or
-                not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}", row["cohort"])):
+                not row["cohort"] in COHORTS):
             raise ValueError("invalid report label or cohort")
         if event == "attempted":
             if cid in attempts or rid in ids:
