@@ -27,7 +27,7 @@ REMOVED = re.compile(r"\bpostfix/qmgr\[\d+\]: (" + QUEUE + r"): removed\b", re.I
 QMGR_RECIPIENTS = re.compile(r"\bpostfix/qmgr\[\d+\]: (" + QUEUE + r"): from=<[^<>]*>,[^\r\n]*?\bnrcpt=(\d+)\b", re.I)
 HOLD = re.compile(r"\bpostfix/(?:cleanup|smtpd)\[\d+\]: (" + QUEUE + r"):.*\bhold:\s", re.I)
 RUN_ID = re.compile(r"[a-f0-9]{32}\Z")
-CASE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\\Z")
+CASE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 COHORTS = {"direct", "forwarded", "attachment", "internationalized", "bulk", "other"}
 
 
