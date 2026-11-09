@@ -135,6 +135,9 @@ def correlate(report, paths, recipient, chronology=None):
                      "queue_id": None, "transport_events": [], "queue_removed": False,
                      "held": False, "sent_count": 0, "discarded": False, "state": "unobserved"} for rid, row in runs.items()}
     duplicate = set()
+    # qmgr can log its envelope count before cleanup appears in a rotated
+    # or merged evidence stream. Retain it and refuse contradictory counts.
+    qmgr_counts = {}
     for path in paths:
         for line in log_lines(path):
             if chronology is not None:
@@ -153,6 +156,8 @@ def correlate(report, paths, recipient, chronology=None):
                         duplicate.update((rid, other))
                     queue_to_run[queue_id] = rid
                     entries[rid]["queue_id"] = queue_id
+                    if queue_id in qmgr_counts and qmgr_counts[queue_id] != {1}:
+                        duplicate.add(rid)
                 continue
             other_cleanup = CLEANUP_ANY.search(line)
             if other_cleanup and other_cleanup.group(1) in queue_to_run:
@@ -163,12 +168,13 @@ def correlate(report, paths, recipient, chronology=None):
             qmgr = QMGR_RECIPIENTS.search(line)
             if qmgr:
                 queue_id, nrcpt = qmgr.groups()
+                qmgr_counts.setdefault(queue_id, set()).add(int(nrcpt))
                 rid = queue_to_run.get(queue_id)
                 if rid is not None:
                     # A single-recipient probe cannot certify a queue whose
                     # envelope had multiple recipients, even when logs omit
                     # transport lines for the additional recipients.
-                    if entries[rid]["queue_removed"] or int(nrcpt) != 1:
+                    if entries[rid]["queue_removed"] or qmgr_counts[queue_id] != {1}:
                         duplicate.add(rid)
                 continue
             event = EVENT.search(line)
