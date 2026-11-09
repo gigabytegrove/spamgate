@@ -80,7 +80,7 @@ class ReportIntegrityTests(unittest.TestCase):
                 f"Nov  9 05:00:02 host postfix/local[101]: ABCDE12345: to=<{extra_recipient}>, relay=local, status=deferred (temporary failure)"
             )
         lines.append("Nov  9 05:00:03 host postfix/qmgr[102]: ABCDE12345: removed")
-        self.log.write_text("\\n".join(lines) + "\\n")
+        self.log.write_text("\n".join(lines) + "\n")
 
     def test_single_recipient_transport_is_correlated_not_mailbox_certified(self):
         self.write_transport()
