@@ -203,7 +203,7 @@ def correlate(report, paths, recipient, chronology=None):
             # nrcpt field cannot establish a single-recipient queue. Do not
             # silently ignore it and accept a later status=sent line.
             qmgr_envelope = re.search(
-                r"\\bpostfix/qmgr\\[\\d+\\]: (" + QUEUE + r"): from=<[^<>]*>", line, re.I)
+                r"\bpostfix/qmgr\[\d+\]: (" + QUEUE + r"): from=<[^<>]*>", line, re.I)
             if qmgr_envelope:
                 envelope_queue = qmgr_envelope.group(1)
                 raw_counts = re.findall(r"(?<![A-Za-z0-9_])nrcpt=([^,\\s()]+)", line, re.I)
