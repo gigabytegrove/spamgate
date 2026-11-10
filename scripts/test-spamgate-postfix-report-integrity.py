@@ -492,5 +492,23 @@ class ReportIntegrityTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+    def test_qmgr_tab_separated_valid_count_preserves_correlation(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(1, "Nov  9 05:00:00 host postfix/qmgr[102]: ABCDE12345: from=<sender@example.org>, size=500, nrcpt=1\t(queue active)")
+        self.log.write_text("\n".join(lines) + "\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_qmgr_tab_separated_invalid_count_refused(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(1, "Nov  9 05:00:00 host postfix/qmgr[102]: ABCDE12345: from=<sender@example.org>, size=500, nrcpt=bogus\t(queue active)")
+        self.log.write_text("\n".join(lines) + "\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "ambiguous_queue_identity")
+
+
 if __name__ == "__main__":
     unittest.main()
