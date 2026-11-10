@@ -60,9 +60,9 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(evidence["entries"][0]["state"], "discard_or_error_transport")
 
     def test_evidence_is_recipient_bound(self):
-        self.log.write_text(f"postfix/cleanup[123]: A1B2C3: message-id=<{RID1}@spamgate-qualification.invalid>\n"
-                            f"postfix/lmtp[124]: A1B2C3: to=<{RECIPIENT}>, status=sent\n"
-                            "postfix/qmgr[125]: A1B2C3: removed\n")
+        self.log.write_text(f"Oct 31 09:00:00 mail postfix/cleanup[123]: A1B2C3: message-id=<{RID1}@spamgate-qualification.invalid>\n"
+                            f"Oct 31 09:00:01 mail postfix/lmtp[124]: A1B2C3: to=<{RECIPIENT}>, status=sent\n"
+                            "Oct 31 09:00:02 mail postfix/qmgr[125]: A1B2C3: removed\n")
         self.assertEqual(self.call().returncode, 0)
         self.assertEqual(json.loads(self.output.read_text())["recipient"], RECIPIENT)
 
@@ -230,9 +230,9 @@ class EvidenceTests(unittest.TestCase):
 
     def test_rotated_log_order(self):
         old = self.root / "mail.log.1"
-        old.write_text(f"postfix/cleanup[123]: A1B2C3: message-id=<{RID1}@spamgate-qualification.invalid>\n")
-        self.log.write_text(f"postfix/lmtp[124]: A1B2C3: to=<{RECIPIENT}>, status=sent\n"
-                            "postfix/qmgr[125]: A1B2C3: removed\n")
+        old.write_text(f"Oct 31 09:00:00 mail postfix/cleanup[123]: A1B2C3: message-id=<{RID1}@spamgate-qualification.invalid>\n")
+        self.log.write_text(f"Oct 31 09:00:01 mail postfix/lmtp[124]: A1B2C3: to=<{RECIPIENT}>, status=sent\n"
+                            "Oct 31 09:00:02 mail postfix/qmgr[125]: A1B2C3: removed\n")
         result = self.call("--postfix-log", str(old))
         self.assertEqual(result.returncode, 3)
         self.output.unlink()
@@ -241,6 +241,20 @@ class EvidenceTests(unittest.TestCase):
                                  "--recipient", RECIPIENT, "--confirm-recipient", RECIPIENT,
                                  "--output", str(self.output)], text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
+        evidence = json.loads(self.output.read_text())
+        self.assertTrue(evidence["log_chronology"]["chronology_validated"])
+        self.assertEqual(evidence["log_chronology"]["timestamped_lines"], 3)
+
+    def test_untimestamped_successful_transport_does_not_qualify(self):
+        self.log.write_text(f"postfix/cleanup[123]: A1B2C3: message-id=<{RID1}@spamgate-qualification.invalid>\n"
+                            f"postfix/lmtp[124]: A1B2C3: to=<{RECIPIENT}>, status=sent\n"
+                            "postfix/qmgr[125]: A1B2C3: removed\n")
+        result = self.call()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        evidence = json.loads(self.output.read_text())
+        self.assertFalse(evidence["complete_transport_correlation"])
+        self.assertEqual(evidence["entries"][0]["state"], "transport_sent_not_mailbox_verified")
+        self.assertFalse(evidence["log_chronology"]["chronology_validated"])
 
 
 if __name__ == "__main__":
