@@ -174,6 +174,46 @@ class OfflineDataTests(unittest.TestCase):
         manifest.write_text(json.dumps(data))
         self.assertNotEqual(invoke("verify", "--source", self.backup).returncode, 0)
 
+    def test_directory_inventory_detects_mutations(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("offline_data", TOOL)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        before = module.directory_inventory(self.data)
+        (self.data / "new.eml").write_bytes(b"new")
+        self.assertNotEqual(before, module.directory_inventory(self.data))
+        (self.data / "new.eml").unlink()
+        (self.data / "empty").mkdir()
+        self.assertNotEqual(before, module.directory_inventory(self.data))
+
+    def test_restored_stage_rejects_corruption(self):
+        import importlib.util
+        import shutil
+        spec = importlib.util.spec_from_file_location("offline_data", TOOL)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.make_backup()
+        entries = module.verify(self.backup)
+        stage = self.root / "stage"
+        shutil.copytree(self.backup / "files", stage, copy_function=shutil.copy2)
+        module.verify_restored_stage(stage, entries)
+        (stage / "state.json").write_bytes(b"corrupt")
+        with self.assertRaises(module.SnapshotError):
+            module.verify_restored_stage(stage, entries)
+
+    def test_restored_stage_rejects_extra_file(self):
+        import importlib.util
+        import shutil
+        spec = importlib.util.spec_from_file_location("offline_data", TOOL)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.make_backup()
+        stage = self.root / "stage"
+        shutil.copytree(self.backup / "files", stage, copy_function=shutil.copy2)
+        (stage / "extra").write_bytes(b"unexpected")
+        with self.assertRaises(module.SnapshotError):
+            module.verify_restored_stage(stage, module.verify(self.backup))
+
     def test_missing_snapshot_refused(self):
         result = invoke("verify", "--source", self.root / "missing")
         self.assertNotEqual(result.returncode, 0)
