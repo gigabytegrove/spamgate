@@ -235,7 +235,7 @@ class OfflineDataTests(unittest.TestCase):
         (self.data / "empty" / "nested").mkdir(parents=True)
         self.make_backup()
         manifest = json.loads((self.backup / "manifest.json").read_text())
-        self.assertEqual(manifest["schema"], 2)
+        self.assertEqual(manifest["schema"], 3)
         self.assertIn("empty/nested", manifest["directories"])
         target = self.root / "restored"
         result = invoke("restore", "--source", self.backup, "--target", target,
@@ -268,9 +268,51 @@ class OfflineDataTests(unittest.TestCase):
         data = json.loads(manifest.read_text())
         data["schema"] = 1
         del data["directories"]
+        del data["directory_modes"]
         manifest.write_text(json.dumps(data))
         self.assertEqual(invoke("verify", "--source", self.backup).returncode, 0)
         target = self.root / "legacy-restore"
+        result = invoke("restore", "--source", self.backup, "--target", target,
+                        "--acknowledge-offline")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
+    def test_directory_permissions_roundtrip(self):
+        import os
+        (self.data / "empty").mkdir()
+        os.chmod(self.data / "empty", 0o750)
+        os.chmod(self.data / "messages", 0o700)
+        self.make_backup()
+        target = self.root / "restored"
+        result = invoke("restore", "--source", self.backup, "--target", target,
+                        "--acknowledge-offline")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((target / "empty").stat().st_mode & 0o777, 0o750)
+        self.assertEqual((target / "messages").stat().st_mode & 0o777, 0o700)
+
+    def test_directory_permission_tampering_refused(self):
+        import os
+        self.make_backup()
+        os.chmod(self.backup / "files" / "messages", 0o700)
+        self.assertNotEqual(invoke("verify", "--source", self.backup).returncode, 0)
+
+    def test_directory_manifest_mode_invalid_refused(self):
+        self.make_backup()
+        manifest = self.backup / "manifest.json"
+        data = json.loads(manifest.read_text())
+        data["directory_modes"]["messages"] = 1024
+        manifest.write_text(json.dumps(data))
+        self.assertNotEqual(invoke("verify", "--source", self.backup).returncode, 0)
+
+    def test_schema_two_backward_compatibility(self):
+        self.make_backup()
+        manifest = self.backup / "manifest.json"
+        data = json.loads(manifest.read_text())
+        data["schema"] = 2
+        del data["directory_modes"]
+        manifest.write_text(json.dumps(data))
+        self.assertEqual(invoke("verify", "--source", self.backup).returncode, 0)
+        target = self.root / "legacy-v2"
         result = invoke("restore", "--source", self.backup, "--target", target,
                         "--acknowledge-offline")
         self.assertEqual(result.returncode, 0, result.stderr)
