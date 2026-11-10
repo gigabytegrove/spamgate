@@ -377,6 +377,40 @@ class OfflineDataTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.backup.exists())
 
+
+    def test_boolean_manifest_schema_refused(self):
+        self.make_backup()
+        manifest = self.backup / "manifest.json"
+        data = json.loads(manifest.read_text())
+        data["schema"] = True
+        manifest.write_text(json.dumps(data))
+        result = invoke("verify", "--source", self.backup)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unsupported manifest", result.stderr)
+
+    def test_source_mutation_after_copy_refuses_publication(self):
+        from unittest import mock
+        import os
+        spec = importlib.util.spec_from_file_location("offline_data", TOOL)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        original_chmod = module.os.chmod
+        changed = False
+
+        def mutate_after_copy(path, mode, *args, **kwargs):
+            nonlocal changed
+            result = original_chmod(path, mode, *args, **kwargs)
+            if not changed and str(path).endswith("/files/state.json"):
+                changed = True
+                (self.data / "state.json").write_text('{"count":2}\\n')
+            return result
+
+        with mock.patch.object(module.os, "chmod", side_effect=mutate_after_copy):
+            with self.assertRaisesRegex(module.SnapshotError, "source file changed"):
+                module.snapshot(self.data, self.backup)
+        self.assertTrue(changed)
+        self.assertFalse(self.backup.exists())
+
     def test_missing_snapshot_refused(self):
         result = invoke("verify", "--source", self.root / "missing")
         self.assertNotEqual(result.returncode, 0)
