@@ -142,6 +142,16 @@ def manifest_entries(snapshot):
 def verify(snapshot):
     if snapshot.is_symlink() or not snapshot.is_dir():
         raise SnapshotError("snapshot must be a real directory")
+    # The snapshot root is an exact-format artifact, not an arbitrary directory.
+    # Refuse undeclared payloads and symlinked metadata before trusting it.
+    allowed = {"manifest.json", "files"}
+    if {p.name for p in snapshot.iterdir()} != allowed:
+        raise SnapshotError("unexpected snapshot root entry")
+    if (snapshot / "manifest.json").is_symlink():
+        raise SnapshotError("symlinked manifest refused")
+    payload = snapshot / "files"
+    if payload.is_symlink() or not payload.is_dir():
+        raise SnapshotError("unsafe snapshot payload directory")
     files = manifest_entries(snapshot)
     expected = {entry["path"] for entry in files}
     actual = {name for name, _, _ in walk(snapshot / "files")}
@@ -156,6 +166,8 @@ def verify(snapshot):
 
 
 def snapshot(source, target):
+    if source.is_symlink() or not source.is_dir():
+        raise SnapshotError("source must be a real directory")
     if target.exists() or target.is_symlink():
         raise SnapshotError("snapshot target already exists")
     if not target.parent.is_dir():
@@ -163,6 +175,8 @@ def snapshot(source, target):
     # Refuse placing a snapshot inside the live source.
     if source.resolve() == target.parent.resolve() or source.resolve() in target.parent.resolve().parents:
         raise SnapshotError("snapshot destination inside source")
+    if target.resolve() == source.resolve() or target.resolve() in source.resolve().parents:
+        raise SnapshotError("snapshot target contains source")
     stage = Path(tempfile.mkdtemp(prefix=".spamgate-snapshot-", dir=target.parent))
     try:
         (stage / "files").mkdir(mode=0o700)
@@ -205,6 +219,8 @@ def restore(source, target):
         raise SnapshotError("restore parent must exist")
     if source.resolve() == target.parent.resolve() or source.resolve() in target.parent.resolve().parents:
         raise SnapshotError("restore target inside snapshot")
+    if target.resolve() == source.resolve() or target.resolve() in source.resolve().parents:
+        raise SnapshotError("restore target contains snapshot")
     files = verify(source)
     stage = Path(tempfile.mkdtemp(prefix=".spamgate-restore-", dir=target.parent))
     try:
