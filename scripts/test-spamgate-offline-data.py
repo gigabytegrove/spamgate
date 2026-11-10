@@ -443,6 +443,34 @@ class OfflineDataTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.backup.exists())
 
+    def test_restore_target_dotdot_refused_before_normalization(self):
+        self.make_backup()
+        raw = str(self.root) + "/../" + self.root.name + "/restored"
+        result = invoke("restore", "--source", self.backup, "--target",
+                        raw, "--acknowledge-offline")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("dot component", result.stderr)
+        self.assertFalse((self.root / "restored").exists())
+
+    def test_restore_target_dot_refused_before_normalization(self):
+        self.make_backup()
+        raw = str(self.root) + "/./restored"
+        result = invoke("restore", "--source", self.backup, "--target",
+                        raw, "--acknowledge-offline")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("dot component", result.stderr)
+        self.assertFalse((self.root / "restored").exists())
+
+    def test_restore_target_symlink_ancestor_reports_path_refusal(self):
+        self.make_backup()
+        alias = self.root / "alias-parent"
+        alias.symlink_to(self.root, target_is_directory=True)
+        result = invoke("restore", "--source", self.backup, "--target",
+                        alias / "restored", "--acknowledge-offline")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("symlinked operator path component", result.stderr)
+        self.assertFalse((self.root / "restored").exists())
+
     def test_missing_snapshot_refused(self):
         result = invoke("verify", "--source", self.root / "missing")
         self.assertNotEqual(result.returncode, 0)
