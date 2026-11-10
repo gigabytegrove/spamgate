@@ -206,7 +206,7 @@ def correlate(report, paths, recipient, chronology=None):
                 r"\bpostfix/qmgr\[\d+\]: (" + QUEUE + r"): from=<[^<>]*>", line, re.I)
             if qmgr_envelope:
                 envelope_queue = qmgr_envelope.group(1)
-                raw_counts = re.findall(r"(?<![A-Za-z0-9_])nrcpt=([^,\\s()]+)", line, re.I)
+                raw_counts = re.findall(r"(?<![A-Za-z0-9_])nrcpt=([^,\s()]+)", line, re.I)
                 if len(raw_counts) != 1 or not re.fullmatch(r"[0-9]+", raw_counts[0]):
                     qmgr_counts.setdefault(envelope_queue, set()).add(-1)
                     if envelope_queue in queue_to_run:
