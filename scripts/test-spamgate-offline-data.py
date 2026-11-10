@@ -231,6 +231,50 @@ class OfflineDataTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.root / "restored").exists())
 
+    def test_empty_nested_directories_survive_roundtrip(self):
+        (self.data / "empty" / "nested").mkdir(parents=True)
+        self.make_backup()
+        manifest = json.loads((self.backup / "manifest.json").read_text())
+        self.assertEqual(manifest["schema"], 2)
+        self.assertIn("empty/nested", manifest["directories"])
+        target = self.root / "restored"
+        result = invoke("restore", "--source", self.backup, "--target", target,
+                        "--acknowledge-offline")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((target / "empty" / "nested").is_dir())
+
+    def test_extra_empty_payload_directory_refused(self):
+        self.make_backup()
+        (self.backup / "files" / "undeclared").mkdir()
+        self.assertNotEqual(invoke("verify", "--source", self.backup).returncode, 0)
+
+    def test_missing_empty_payload_directory_refused(self):
+        (self.data / "empty").mkdir()
+        self.make_backup()
+        (self.backup / "files" / "empty").rmdir()
+        self.assertNotEqual(invoke("verify", "--source", self.backup).returncode, 0)
+
+    def test_duplicate_directory_manifest_refused(self):
+        self.make_backup()
+        manifest = self.backup / "manifest.json"
+        data = json.loads(manifest.read_text())
+        data["directories"].append(data["directories"][0])
+        manifest.write_text(json.dumps(data))
+        self.assertNotEqual(invoke("verify", "--source", self.backup).returncode, 0)
+
+    def test_schema_one_backward_compatibility(self):
+        self.make_backup()
+        manifest = self.backup / "manifest.json"
+        data = json.loads(manifest.read_text())
+        data["schema"] = 1
+        del data["directories"]
+        manifest.write_text(json.dumps(data))
+        self.assertEqual(invoke("verify", "--source", self.backup).returncode, 0)
+        target = self.root / "legacy-restore"
+        result = invoke("restore", "--source", self.backup, "--target", target,
+                        "--acknowledge-offline")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_missing_snapshot_refused(self):
         result = invoke("verify", "--source", self.root / "missing")
         self.assertNotEqual(result.returncode, 0)
