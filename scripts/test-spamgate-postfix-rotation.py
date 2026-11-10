@@ -43,19 +43,32 @@ class RotationEvidenceTests(unittest.TestCase):
 
     def test_split_cleanup_transport_and_removal_across_rotation(self):
         old = self.write("mail.log.2.gz",
-                         f"postfix/cleanup[123]: {QUEUE}: message-id=<{RID}@spamgate-qualification.invalid>\n",
+                         f"Nov 10 00:00:01 mail postfix/cleanup[123]: {QUEUE}: message-id=<{RID}@spamgate-qualification.invalid>\n",
                          compress=True)
         mid = self.write("mail.log.1.gz",
-                         f"postfix/lmtp[124]: {QUEUE}: to=<{RECIPIENT}>, status=sent\n",
+                         f"Nov 10 00:00:02 mail postfix/lmtp[124]: {QUEUE}: to=<{RECIPIENT}>, status=sent\n",
                          compress=True)
         current = self.write("mail.log",
-                             f"postfix/qmgr[125]: {QUEUE}: removed\n")
+                             f"Nov 10 00:00:03 mail postfix/qmgr[125]: {QUEUE}: removed\n")
         run = self.invoke(old, mid, current)
         self.assertEqual(run.returncode, 0, run.stderr)
         data = json.loads(self.output.read_text())
         self.assertTrue(data["complete_transport_correlation"])
         self.assertEqual(data["entries"][0]["state"],
                          "transport_sent_not_mailbox_verified")
+
+    def test_untimestamped_rotated_transport_does_not_qualify(self):
+        old = self.write("mail.log.2.gz",
+                         f"Nov 10 00:00:01 mail postfix/cleanup[123]: {QUEUE}: message-id=<{RID}@spamgate-qualification.invalid>\n",
+                         compress=True)
+        mid = self.write("mail.log.1.gz",
+                         f"postfix/lmtp[124]: {QUEUE}: to=<{RECIPIENT}>, status=sent\n",
+                         compress=True)
+        current = self.write("mail.log",
+                             f"Nov 10 00:00:03 mail postfix/qmgr[125]: {QUEUE}: removed\n")
+        run = self.invoke(old, mid, current)
+        self.assertEqual(run.returncode, 3, run.stderr)
+        self.assertFalse(json.loads(self.output.read_text())["complete_transport_correlation"])
 
     def test_corrupt_gzip_refuses_evidence_publication(self):
         log = self.root / "mail.log.1.gz"
@@ -73,11 +86,11 @@ class RotationEvidenceTests(unittest.TestCase):
 
     def test_reused_queue_id_across_rotation_is_ambiguous(self):
         old = self.write("mail.log.1.gz",
-                         f"postfix/cleanup[123]: {QUEUE}: message-id=<{RID}@spamgate-qualification.invalid>\n"
-                         f"postfix/lmtp[124]: {QUEUE}: to=<{RECIPIENT}>, status=sent\n"
-                         f"postfix/qmgr[125]: {QUEUE}: removed\n", compress=True)
+                         f"Nov 10 00:00:01 mail postfix/cleanup[123]: {QUEUE}: message-id=<{RID}@spamgate-qualification.invalid>\n"
+                         f"Nov 10 00:00:02 mail postfix/lmtp[124]: {QUEUE}: to=<{RECIPIENT}>, status=sent\n"
+                         f"Nov 10 00:00:03 mail postfix/qmgr[125]: {QUEUE}: removed\n", compress=True)
         current = self.write("mail.log",
-                             f"postfix/cleanup[123]: {QUEUE}: message-id=<unrelated@example.org>\n")
+                             f"Nov 10 00:00:04 mail postfix/cleanup[123]: {QUEUE}: message-id=<unrelated@example.org>\n")
         run = self.invoke(old, current)
         self.assertEqual(run.returncode, 3, run.stderr)
         self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"],
