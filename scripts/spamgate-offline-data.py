@@ -418,7 +418,7 @@ def main(argv=None):
             snapshot(source, validate_operator_path(args.target))
             files = verify(Path(args.target).absolute())
         else:
-            restore(source, Path(args.target).absolute())
+            restore(source, validate_operator_path(args.target))
             files = verify(source)
         print(json.dumps({"result": "ok", "action": args.action, "files": len(files)}))
         return 0
