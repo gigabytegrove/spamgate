@@ -454,7 +454,7 @@ class ReportIntegrityTests(unittest.TestCase):
         self.write_transport()
         lines = self.log.read_text().splitlines()
         lines.insert(1, "Nov  9 05:00:00 host postfix/qmgr[102]: ABCDE12345: from=<sender@example.org>, size=500 (queue active)")
-        self.log.write_text("\\n".join(lines) + "\\n")
+        self.log.write_text("\n".join(lines) + "\n")
         result = self.invoke()
         self.assertEqual(result.returncode, 3, result.stderr)
         self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "ambiguous_queue_identity")
@@ -463,7 +463,7 @@ class ReportIntegrityTests(unittest.TestCase):
         self.write_transport()
         lines = self.log.read_text().splitlines()
         lines.insert(1, "Nov  9 05:00:00 host postfix/qmgr[102]: ABCDE12345: from=<sender@example.org>, nrcpt=unknown")
-        self.log.write_text("\\n".join(lines) + "\\n")
+        self.log.write_text("\n".join(lines) + "\n")
         result = self.invoke()
         self.assertEqual(result.returncode, 3, result.stderr)
 
@@ -471,7 +471,7 @@ class ReportIntegrityTests(unittest.TestCase):
         self.write_transport()
         lines = self.log.read_text().splitlines()
         lines.insert(1, "Nov  9 05:00:00 host postfix/qmgr[102]: ABCDE12345: from=<sender@example.org>, nrcpt=1, nrcpt=2")
-        self.log.write_text("\\n".join(lines) + "\\n")
+        self.log.write_text("\n".join(lines) + "\n")
         result = self.invoke()
         self.assertEqual(result.returncode, 3, result.stderr)
 
@@ -479,7 +479,7 @@ class ReportIntegrityTests(unittest.TestCase):
         self.write_transport()
         lines = self.log.read_text().splitlines()
         lines.insert(0, "Nov  9 04:59:59 host postfix/qmgr[102]: ABCDE12345: from=<sender@example.org>, size=500")
-        self.log.write_text("\\n".join(lines) + "\\n")
+        self.log.write_text("\n".join(lines) + "\n")
         result = self.invoke()
         self.assertEqual(result.returncode, 3, result.stderr)
 
@@ -487,7 +487,7 @@ class ReportIntegrityTests(unittest.TestCase):
         self.write_transport()
         lines = self.log.read_text().splitlines()
         lines.insert(1, "Nov  9 05:00:00 host postfix/qmgr[102]: OTHER12345: from=<sender@example.org>, size=500")
-        self.log.write_text("\\n".join(lines) + "\\n")
+        self.log.write_text("\n".join(lines) + "\n")
         result = self.invoke()
         self.assertEqual(result.returncode, 0, result.stderr)
 
