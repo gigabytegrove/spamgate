@@ -253,7 +253,7 @@ def correlate(report, paths, recipient, chronology=None):
                 # Include empty assignments: status=, status=sent is two
                 # fields, not one. Likewise to=<> must not be ignored.
                 status_fields = re.findall(
-                    r"(?<![A-Za-z0-9_])status=([^,\\s()]*)", line, re.I)
+                    r"(?<![A-Za-z0-9_])status=([^,\s()]*)", line, re.I)
                 recipient_fields = re.findall(
                     r"(?<![A-Za-z0-9_])to=<([^<>]*)>", line, re.I)
                 malformed = (
@@ -270,7 +270,7 @@ def correlate(report, paths, recipient, chronology=None):
             if transport_recipient:
                 raw_queue = transport_recipient.group(1)
                 raw_rid = queue_to_run.get(raw_queue)
-                statuses_on_line = re.findall(r"(?<![A-Za-z0-9_])status=([^,\\s()]*)", line, re.I)
+                statuses_on_line = re.findall(r"(?<![A-Za-z0-9_])status=([^,\s()]*)", line, re.I)
                 if raw_rid is None and event is None:
                     pre_cleanup_activity.add(raw_queue)
                 if raw_rid is not None and (
