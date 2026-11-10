@@ -109,11 +109,15 @@ class QueueLifecycleTests(unittest.TestCase):
         return json.loads(self.output.read_text())["entries"][0]["state"]
 
     def test_unique_lifecycle_qualifies_transport_only(self):
-        run = self.invoke([self.cleanup(), self.sent(), self.removed()])
+        run = self.invoke([
+            "Oct 31 15:00:00 host " + self.cleanup(),
+            "Oct 31 15:00:01 host " + self.sent(),
+            "Oct 31 15:00:02 host " + self.removed(),
+        ])
         self.assertEqual(run.returncode, 0, run.stderr)
         data = json.loads(self.output.read_text())
         self.assertEqual(self.state(), "transport_sent_not_mailbox_verified")
-        self.assertFalse(data["log_chronology"]["chronology_validated"])
+        self.assertTrue(data["log_chronology"]["chronology_validated"])
 
     def test_repeated_cleanup_refused_as_ambiguous(self):
         run = self.invoke([self.cleanup(), self.sent(), self.removed(), self.cleanup()])
