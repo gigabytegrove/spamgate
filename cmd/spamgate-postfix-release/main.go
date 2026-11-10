@@ -115,6 +115,9 @@ func safePostfixDiagnostic(raw []byte) string {
 
 // runPostsuperCommand keeps all output bounded and never interprets shell input.
 func runPostsuperCommand(ctx context.Context, name string, args []string, stdoutSink io.Writer) error {
+ // Validate reporting before performing the irreversible privileged queue action.
+ // A missing sink must never allow postsuper to execute and then report failure.
+ if stdoutSink == nil { return errors.New("postsuper -H result sink is unavailable") }
  // An overflowing child must be terminated immediately rather than allowed
  // to continue writing until the outer command deadline expires.
  childCtx, cancelChild := context.WithCancel(ctx)
@@ -151,9 +154,10 @@ func runPostsuperCommand(ctx context.Context, name string, args []string, stdout
  }
  // A nil sink is a programming error, not proof that a privileged hold was released.
  // Refuse success without a destination for the operator-visible result.
- if stdoutSink == nil { return errors.New("postsuper -H result sink is unavailable") }
- _, err = io.WriteString(stdoutSink, safePostfixDiagnostic(append(append([]byte(nil), stdout.data...), append([]byte(" "), stderr.data...)...))+"\n")
+ report := safePostfixDiagnostic(append(append([]byte(nil), stdout.data...), append([]byte(" "), stderr.data...)...))+"\n"
+ n, err := io.WriteString(stdoutSink, report)
  if err != nil { return fmt.Errorf("postsuper -H result reporting failed: %w", err) }
+ if n != len(report) { return fmt.Errorf("postsuper -H result reporting failed: %w", io.ErrShortWrite) }
  return nil
 }
 
