@@ -113,7 +113,10 @@ def main(argv=None):
     args = parser.parse_args(argv)
     path = Path(args.data)
     try:
-        findings = check(path)
+        if any(part in (".", "..") for part in args.data.split("/")):
+            findings = ["data path must not contain dot or parent traversal components"]
+        else:
+            findings = check(path)
     except OSError as exc:
         findings = ["filesystem inspection failed: " + str(exc)]
     print(json.dumps({"data": str(path), "safe_for_offline_snapshot": not findings,
