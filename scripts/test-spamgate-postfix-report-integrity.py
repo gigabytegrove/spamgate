@@ -104,6 +104,34 @@ class ReportIntegrityTests(unittest.TestCase):
         lines.append("Nov  9 05:00:03 host postfix/qmgr[102]: ABCDE12345: removed")
         self.log.write_text("\n".join(lines) + "\n")
 
+    def test_duplicate_message_id_on_correlated_cleanup_refused(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(1, f"Nov  9 05:00:00 host postfix/cleanup[100]: ABCDE12345: message-id=<{RUN}@spamgate-qualification.invalid> message-id=<foreign@example.org>")
+        self.log.write_text("\n".join(lines) + "\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        evidence = json.loads(self.output.read_text())
+        self.assertEqual(evidence["entries"][0]["state"], "ambiguous_queue_identity")
+
+    def test_duplicate_message_id_before_correlated_cleanup_refused(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(0, "Nov  9 04:59:59 host postfix/cleanup[100]: ABCDE12345: message-id=<foreign@example.org> message-id=<other@example.org>")
+        self.log.write_text("\n".join(lines) + "\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        evidence = json.loads(self.output.read_text())
+        self.assertEqual(evidence["entries"][0]["state"], "ambiguous_queue_identity")
+
+    def test_duplicate_message_id_on_unrelated_queue_isolated(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(1, "Nov  9 05:00:00 host postfix/cleanup[100]: OTHER12345: message-id=<foreign@example.org> message-id=<other@example.org>")
+        self.log.write_text("\n".join(lines) + "\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_single_recipient_transport_is_correlated_not_mailbox_certified(self):
         self.write_transport()
         result = self.invoke()
