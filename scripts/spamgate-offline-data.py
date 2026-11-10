@@ -152,6 +152,18 @@ def manifest_entries(snapshot):
         total += size
         if total > MAX_BYTES:
             raise SnapshotError("snapshot exceeds size limit")
+    # Reject impossible file/directory layouts before any payload traversal or
+    # restore writes. A manifest must never reinterpret a file as a parent.
+    directory_set = set(names) if manifest["schema"] >= 2 else set()
+    for name in seen:
+        parts = name.split("/")
+        parents = {"/".join(parts[:i]) for i in range(1, len(parts))}
+        if name in directory_set or parents & seen:
+            raise SnapshotError("file and directory path collision")
+        if manifest["schema"] >= 2 and not parents.issubset(directory_set):
+            raise SnapshotError("file parent missing from directory inventory")
+    if directory_set & seen:
+        raise SnapshotError("file and directory path collision")
     return files
 
 
