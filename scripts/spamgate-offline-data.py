@@ -168,6 +168,42 @@ def verify(snapshot):
     return files
 
 
+def directory_inventory(root):
+    """Capture directory identity and entries to detect concurrent mutations."""
+    inventory = {}
+    for directory, dirs, files in os.walk(root, followlinks=False):
+        path = Path(directory)
+        info = path.lstat()
+        if not stat.S_ISDIR(info.st_mode) or path.is_symlink():
+            raise SnapshotError(f"unsafe directory: {path}")
+        for name in dirs:
+            child = path / name
+            if child.is_symlink() or not child.is_dir():
+                raise SnapshotError(f"unsafe directory: {child}")
+        inventory[path.relative_to(root).as_posix()] = (
+            info.st_dev, info.st_ino, info.st_mtime_ns, info.st_ctime_ns,
+            tuple(sorted(dirs)), tuple(sorted(files)))
+        if len(inventory) > MAX_FILES:
+            raise SnapshotError("directory count exceeds limit")
+    return inventory
+
+
+def verify_restored_stage(stage, entries):
+    """Verify actual restored bytes before atomic publication."""
+    expected = {entry["path"] for entry in entries}
+    actual = {name for name, _, _ in walk(stage)}
+    if actual != expected:
+        raise SnapshotError("restored file inventory mismatch")
+    for entry in entries:
+        path = stage / entry["path"]
+        metadata = regular_metadata(path)
+        if stat.S_IMODE(metadata.st_mode) & 0o777 != entry["mode"]:
+            raise SnapshotError(f"restored permission mismatch: {entry['path']}")
+        size, digest = digest_copy(path)
+        if (size, digest) != (entry["bytes"], entry["sha256"]):
+            raise SnapshotError(f"restored checksum mismatch: {entry['path']}")
+
+
 def snapshot(source, target):
     if source.is_symlink() or not source.is_dir():
         raise SnapshotError("source must be a real directory")
@@ -183,6 +219,7 @@ def snapshot(source, target):
     stage = Path(tempfile.mkdtemp(prefix=".spamgate-snapshot-", dir=target.parent))
     try:
         (stage / "files").mkdir(mode=0o700)
+        original_directories = directory_inventory(source)
         entries = []
         total = 0
         for name, path, info in walk(source):
@@ -203,6 +240,8 @@ def snapshot(source, target):
             total += size
             if total > MAX_BYTES:
                 raise SnapshotError("snapshot exceeds size limit")
+        if directory_inventory(source) != original_directories:
+            raise SnapshotError("source directory tree changed during snapshot")
         with (stage / "manifest.json").open("x", encoding="utf-8") as output:
             json.dump({"schema": SCHEMA, "files": entries}, output, sort_keys=True, indent=2)
             output.write("\n")
@@ -240,6 +279,7 @@ def restore(source, target):
             if (size, digest) != (entry["bytes"], entry["sha256"]):
                 raise SnapshotError("source changed during restore")
             os.chmod(destination, entry["mode"])
+        verify_restored_stage(stage, files)
         for directory, _, _ in os.walk(stage, topdown=False):
             fsync_dir(directory)
         stage.rename(target)
