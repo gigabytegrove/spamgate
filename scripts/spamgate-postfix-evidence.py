@@ -366,11 +366,11 @@ def main(argv=None):
         for entry in entries:
             states[entry["state"]] = states.get(entry["state"], 0) + 1
         # Require validated chronology before certifying transport correlation.
-                # Retain per-message observations when chronology is incomplete.
-                chronology_result = chronology.summary()
-                complete = (chronology_result["chronology_validated"] and
-                            all(entry["state"] == "transport_sent_not_mailbox_verified"
-                                for entry in entries))
+        # Retain per-message observations when chronology is incomplete.
+        chronology_result = chronology.summary()
+        complete = (chronology_result["chronology_validated"] and
+                    all(entry["state"] == "transport_sent_not_mailbox_verified"
+                        for entry in entries))
         result = {"schema": 1, "type": "postfix_transport_evidence_only", "recipient": args.recipient, "complete_transport_correlation": complete,
                   "counts": states, "entries": entries,
                   "log_chronology": chronology_result,
