@@ -7,12 +7,16 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
+import importlib.util
 
 TOOL = Path(__file__).with_name("spamgate-recovery-preflight.py")
+
 
 def run(path):
     return subprocess.run([sys.executable, str(TOOL), "--data", str(path)],
                           capture_output=True, text=True, timeout=15)
+
 
 class RecoveryPreflightTests(unittest.TestCase):
     def setUp(self):
@@ -62,6 +66,31 @@ class RecoveryPreflightTests(unittest.TestCase):
     def test_relative_path_is_refused(self):
         result = run(Path("relative"))
         self.assertEqual(result.returncode, 2)
+
+    def test_symlinked_parent_is_refused(self):
+        alias = self.root / "alias"
+        alias.symlink_to(self.root, target_is_directory=True)
+        result = run(alias / "data")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("symlinked path component:", result.stdout)
+
+    def test_filesystem_root_is_refused(self):
+        result = run(Path("/"))
+        self.assertEqual(result.returncode, 2)
+
+    def test_traversal_error_is_reported(self):
+        spec = importlib.util.spec_from_file_location("preflight", TOOL)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        def broken_walk(*args, **kwargs):
+            kwargs["onerror"](PermissionError(13, "denied", str(self.data / "blocked")))
+            return iter(())
+
+        with mock.patch.object(module.os, "walk", side_effect=broken_walk):
+            findings = module.check(self.data)
+        self.assertTrue(any("directory traversal failed:" in item for item in findings))
+
 
 if __name__ == "__main__":
     unittest.main()
