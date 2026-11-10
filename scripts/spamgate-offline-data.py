@@ -15,7 +15,7 @@ import stat
 import sys
 import tempfile
 
-SCHEMA = 1
+SCHEMA = 2
 MAX_FILES = 100000
 MAX_BYTES = 100 * 1024 ** 3
 CHUNK = 1024 * 1024
@@ -114,8 +114,18 @@ def manifest_entries(snapshot):
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"),
                           object_pairs_hook=unique_pairs,
                           parse_constant=lambda value: (_ for _ in ()).throw(SnapshotError("invalid JSON constant")))
-    if type(manifest) is not dict or set(manifest) != {"schema", "files"} or manifest["schema"] != SCHEMA:
+    if type(manifest) is not dict or manifest.get("schema") not in (1, SCHEMA) or set(manifest) != ({"schema", "files"} if manifest.get("schema") == 1 else {"schema", "files", "directories"}):
         raise SnapshotError("unsupported manifest")
+    if manifest["schema"] == SCHEMA:
+        directories = manifest["directories"]
+        if type(directories) is not list or len(directories) > MAX_FILES:
+            raise SnapshotError("invalid directory list")
+        names = [validate_relative(name) for name in directories]
+        if len(set(names)) != len(names) or names != sorted(names):
+            raise SnapshotError("duplicate or unordered directory")
+        for name in names:
+            if any(parent not in names for parent in ("/".join(name.split("/")[:i]) for i in range(1, len(name.split("/"))))):
+                raise SnapshotError("missing parent directory")
     files = manifest["files"]
     if type(files) is not list or len(files) > MAX_FILES:
         raise SnapshotError("invalid file list")
@@ -139,6 +149,15 @@ def manifest_entries(snapshot):
     return files
 
 
+def manifest_directories(snapshot):
+    data = json.loads((snapshot / "manifest.json").read_text(encoding="utf-8"))
+    return data.get("directories") if data["schema"] == SCHEMA else None
+
+
+def directory_names(root):
+    return sorted(name for name in directory_inventory(root) if name != ".")
+
+
 def verify(snapshot):
     if snapshot.is_symlink() or not snapshot.is_dir():
         raise SnapshotError("snapshot must be a real directory")
@@ -153,6 +172,9 @@ def verify(snapshot):
     if payload.is_symlink() or not payload.is_dir():
         raise SnapshotError("unsafe snapshot payload directory")
     files = manifest_entries(snapshot)
+    directories = manifest_directories(snapshot)
+    if directories is not None and directory_names(payload) != directories:
+        raise SnapshotError("snapshot directory inventory mismatch")
     expected = {entry["path"] for entry in files}
     actual = {name for name, _, _ in walk(snapshot / "files")}
     if expected != actual:
@@ -188,8 +210,10 @@ def directory_inventory(root):
     return inventory
 
 
-def verify_restored_stage(stage, entries):
+def verify_restored_stage(stage, entries, directories=None):
     """Verify actual restored bytes before atomic publication."""
+    if directories is not None and directory_names(stage) != directories:
+        raise SnapshotError("restored directory inventory mismatch")
     expected = {entry["path"] for entry in entries}
     actual = {name for name, _, _ in walk(stage)}
     if actual != expected:
@@ -222,6 +246,9 @@ def snapshot(source, target):
     try:
         (stage / "files").mkdir(mode=0o700)
         original_directories = directory_inventory(source)
+        directories = directory_names(source)
+        for name in directories:
+            (stage / "files" / name).mkdir(parents=True, exist_ok=True, mode=0o700)
         entries = []
         total = 0
         for name, path, info in walk(source):
@@ -245,7 +272,7 @@ def snapshot(source, target):
         if directory_inventory(source) != original_directories:
             raise SnapshotError("source directory tree changed during snapshot")
         with (stage / "manifest.json").open("x", encoding="utf-8") as output:
-            json.dump({"schema": SCHEMA, "files": entries}, output, sort_keys=True, indent=2)
+            json.dump({"schema": SCHEMA, "files": entries, "directories": directories}, output, sort_keys=True, indent=2)
             output.write("\n")
             output.flush()
             os.fsync(output.fileno())
@@ -271,8 +298,11 @@ def restore(source, target):
     if target.resolve() == source.resolve() or target.resolve() in source.resolve().parents:
         raise SnapshotError("restore target contains snapshot")
     files = verify(source)
+    directories = manifest_directories(source)
     stage = Path(tempfile.mkdtemp(prefix=".spamgate-restore-", dir=target.parent))
     try:
+        for name in directories or []:
+            (stage / name).mkdir(parents=True, exist_ok=True, mode=0o700)
         for entry in files:
             destination = stage / entry["path"]
             destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -283,7 +313,7 @@ def restore(source, target):
             if (size, digest) != (entry["bytes"], entry["sha256"]):
                 raise SnapshotError("source changed during restore")
             os.chmod(destination, entry["mode"])
-        verify_restored_stage(stage, files)
+        verify_restored_stage(stage, files, directories)
         for directory, _, _ in os.walk(stage, topdown=False):
             fsync_dir(directory)
         stage.rename(target)
