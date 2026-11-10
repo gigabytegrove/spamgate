@@ -40,11 +40,16 @@ def fsync_dir(path):
         os.close(fd)
 
 
+def traversal_error(error):
+    """Never accept a partial os.walk inventory as a complete backup."""
+    raise SnapshotError(f"filesystem traversal failed: {error}")
+
+
 def walk(root):
     if not root.is_dir() or root.is_symlink():
         raise SnapshotError("source must be a real directory")
     results = []
-    for directory, dirs, files in os.walk(root, followlinks=False):
+    for directory, dirs, files in os.walk(root, followlinks=False, onerror=traversal_error):
         for name in dirs:
             path = Path(directory) / name
             if path.is_symlink() or not path.is_dir():
@@ -227,7 +232,7 @@ def verify(snapshot):
 def directory_inventory(root):
     """Capture directory identity and entries to detect concurrent mutations."""
     inventory = {}
-    for directory, dirs, files in os.walk(root, followlinks=False):
+    for directory, dirs, files in os.walk(root, followlinks=False, onerror=traversal_error):
         path = Path(directory)
         info = path.lstat()
         if not stat.S_ISDIR(info.st_mode) or path.is_symlink():
