@@ -42,6 +42,8 @@ def check(path):
     findings = []
     if not path.is_absolute():
         return ["data path must be absolute"]
+    if any(part in (".", "..") for part in str(path).split("/")):
+        return ["data path must not contain dot or parent traversal components"]
     if path == Path("/"):
         return ["filesystem root cannot be used as data root"]
 
@@ -65,15 +67,18 @@ def check(path):
     mounts, mount_error = nested_mounts(path)
     if mount_error:
         findings.append(mount_error)
-    for mount in mounts:
-        if mount != str(path):
-            findings.append("nested mount point: " + mount)
+    nested = {mount for mount in mounts if mount != str(path)}
+    for mount in sorted(nested):
+        findings.append("nested mount point: " + mount)
 
     def walk_error(exc):
         findings.append("directory traversal failed: " + str(exc))
 
     for directory, dirs, files in os.walk(path, topdown=True, followlinks=False,
                                            onerror=walk_error):
+        # Never descend into a known nested mount, even when the underlying
+        # device number is identical (bind mounts). The tree is already unsafe.
+        dirs[:] = [name for name in dirs if str(Path(directory) / name) not in nested]
         for name in dirs + files:
             child = Path(directory) / name
             try:
