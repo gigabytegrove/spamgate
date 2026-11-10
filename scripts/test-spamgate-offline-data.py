@@ -141,6 +141,39 @@ class OfflineDataTests(unittest.TestCase):
                         "--acknowledge-offline")
         self.assertNotEqual(result.returncode, 0)
 
+    def test_payload_permission_tampering_refused(self):
+        import os
+        self.make_backup()
+        payload = self.backup / "files" / "state.json"
+        original = payload.stat().st_mode & 0o777
+        os.chmod(payload, original ^ 0o100)
+        self.assertNotEqual(invoke("verify", "--source", self.backup).returncode, 0)
+        destination = self.root / "restored"
+        self.assertNotEqual(invoke("restore", "--source", self.backup,
+                                   "--target", destination,
+                                   "--acknowledge-offline").returncode, 0)
+        self.assertFalse(destination.exists())
+
+    def test_payload_permission_roundtrip(self):
+        import os
+        os.chmod(self.data / "state.json", 0o600)
+        os.chmod(self.data / "messages" / "one.eml", 0o640)
+        self.make_backup()
+        destination = self.root / "restored"
+        result = invoke("restore", "--source", self.backup, "--target",
+                        destination, "--acknowledge-offline")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((destination / "state.json").stat().st_mode & 0o777, 0o600)
+        self.assertEqual((destination / "messages" / "one.eml").stat().st_mode & 0o777, 0o640)
+
+    def test_manifest_permission_mismatch_refused(self):
+        self.make_backup()
+        manifest = self.backup / "manifest.json"
+        data = json.loads(manifest.read_text())
+        data["files"][0]["mode"] ^= 0o100
+        manifest.write_text(json.dumps(data))
+        self.assertNotEqual(invoke("verify", "--source", self.backup).returncode, 0)
+
     def test_missing_snapshot_refused(self):
         result = invoke("verify", "--source", self.root / "missing")
         self.assertNotEqual(result.returncode, 0)
