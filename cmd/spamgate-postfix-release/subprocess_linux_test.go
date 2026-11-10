@@ -174,3 +174,30 @@ func TestPostsuperOutputLimitKillsBackgroundProducer(t *testing.T) {
  }
  if out.Len() != 0 { t.Fatal("overflow produced success output") }
 }
+
+type failingReleaseSink struct{}
+func (failingReleaseSink) Write([]byte) (int, error) { return 0, os.ErrClosed }
+
+func TestPostsuperSuccessRequiresResultSink(t *testing.T) {
+ path := helperScript(t, "echo 'postsuper: Released: 1 message' >&2")
+ err := runPostsuperCommand(context.Background(), path, nil, nil)
+ if err == nil || !strings.Contains(err.Error(), "sink is unavailable") {
+  t.Fatalf("nil result sink accepted: %v", err)
+ }
+}
+
+func TestPostsuperResultSinkFailurePropagates(t *testing.T) {
+ path := helperScript(t, "echo 'postsuper: Released: 1 message' >&2")
+ err := runPostsuperCommand(context.Background(), path, nil, failingReleaseSink{})
+ if !errors.Is(err, os.ErrClosed) || !strings.Contains(err.Error(), "reporting failed") {
+  t.Fatalf("result sink failure hidden: %v", err)
+ }
+}
+
+func TestPostsuperResultSinkIsNotUsedOnChildFailure(t *testing.T) {
+ path := helperScript(t, "echo 'not found' >&2; exit 7")
+ err := runPostsuperCommand(context.Background(), path, nil, failingReleaseSink{})
+ if err == nil || !strings.Contains(err.Error(), "not found") || errors.Is(err, os.ErrClosed) {
+  t.Fatalf("child failure was hidden by sink: %v", err)
+ }
+}

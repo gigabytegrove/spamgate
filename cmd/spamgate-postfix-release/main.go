@@ -149,8 +149,12 @@ func runPostsuperCommand(ctx context.Context, name string, args []string, stdout
   // remains available, but it must not be treated as successful release.
   return fmt.Errorf("postsuper -H failed: %w: %s", err, safePostfixDiagnostic(stderr.data))
  }
+ // A nil sink is a programming error, not proof that a privileged hold was released.
+ // Refuse success without a destination for the operator-visible result.
+ if stdoutSink == nil { return errors.New("postsuper -H result sink is unavailable") }
  _, err = io.WriteString(stdoutSink, safePostfixDiagnostic(append(append([]byte(nil), stdout.data...), append([]byte(" "), stderr.data...)...))+"\n")
- return err
+ if err != nil { return fmt.Errorf("postsuper -H result reporting failed: %w", err) }
+ return nil
 }
 
 func executePostsuper(ctx context.Context, name string, args []string) error {
