@@ -6,6 +6,7 @@ import (
  "bytes"
  "context"
  "errors"
+ "io"
  "os"
  "path/filepath"
  "strings"
@@ -200,4 +201,33 @@ func TestPostsuperResultSinkIsNotUsedOnChildFailure(t *testing.T) {
  if err == nil || !strings.Contains(err.Error(), "not found") || errors.Is(err, os.ErrClosed) {
   t.Fatalf("child failure was hidden by sink: %v", err)
  }
+}
+
+type shortReleaseSink struct { writes int }
+func (s *shortReleaseSink) Write(p []byte) (int, error) {
+ s.writes++
+ if len(p) == 0 { return 0, nil }
+ return len(p)-1, nil
+}
+
+func TestPostsuperNilSinkNeverExecutesPrivilegedAction(t *testing.T) {
+ marker := filepath.Join(t.TempDir(), "executed")
+ path := helperScript(t, "touch '"+marker+"'; echo released")
+ err := runPostsuperCommand(context.Background(), path, []string{"-H", "A123"}, nil)
+ if err == nil || !strings.Contains(err.Error(), "sink is unavailable") {
+  t.Fatalf("missing sink not rejected: %v", err)
+ }
+ if _, statErr := os.Stat(marker); !errors.Is(statErr, os.ErrNotExist) {
+  t.Fatalf("privileged action ran before validating sink: %v", statErr)
+ }
+}
+
+func TestPostsuperShortResultWriteIsFailure(t *testing.T) {
+ path := helperScript(t, "echo 'postsuper: Released: 1 message' >&2")
+ sink := &shortReleaseSink{}
+ err := runPostsuperCommand(context.Background(), path, []string{"-H", "A123"}, sink)
+ if !errors.Is(err, os.ErrClosed) && !errors.Is(err, io.ErrShortWrite) {
+  t.Fatalf("silent short write accepted: %v", err)
+ }
+ if sink.writes != 1 { t.Fatalf("unexpected sink writes: %d", sink.writes) }
 }
