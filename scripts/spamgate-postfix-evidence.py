@@ -23,6 +23,7 @@ QUEUE = r"[A-Za-z0-9]{5,32}"
 CLEANUP = re.compile(r"\bpostfix/cleanup\[\d+\]: (" + QUEUE + r"): message-id=<([a-f0-9]{32})@spamgate-qualification\.invalid>", re.I)
 CLEANUP_ANY = re.compile(r"\bpostfix/cleanup\[\d+\]: (" + QUEUE + r"): message-id=<([^<>]+)>", re.I)
 EVENT = re.compile(r"\bpostfix/(smtp|lmtp|local|virtual|pipe|error|discard)\[\d+\]: (" + QUEUE + r"): to=<([^<>\s]+)>.*?\bstatus=([a-z][a-z_-]{0,31})\b", re.I)
+TRANSPORT_QUEUE = re.compile(r"\bpostfix/(?:smtp|lmtp|local|virtual|pipe|error|discard)\[\d+\]: (" + QUEUE + r"):", re.I)
 TRANSPORT_RECIPIENT = re.compile(r"\bpostfix/(?:smtp|lmtp|local|virtual|pipe|error|discard)\[\d+\]: (" + QUEUE + r"): to=<([^<>\s]+)>", re.I)
 STATUS_FIELD = re.compile(r"(?<![A-Za-z0-9_])status=([^,\s()]+)", re.I)
 DSN = re.compile(r"(?<![A-Za-z0-9_])dsn=([0-9])\.([0-9]{1,3})\.([0-9]{1,3})(?![0-9])", re.I)
@@ -220,7 +221,7 @@ def correlate(report, paths, recipient, chronology=None):
                 r"\bpostfix/qmgr\[\d+\]: (" + QUEUE + r"): from=<[^<>]*>", line, re.I)
             if qmgr_envelope:
                 envelope_queue = qmgr_envelope.group(1)
-                raw_counts = re.findall(r"(?<![A-Za-z0-9_])nrcpt=([^,\s()]+)", line, re.I)
+                raw_counts = re.findall(r"(?<![A-Za-z0-9_])nrcpt=([^,\s()]*)", line, re.I)
                 if len(raw_counts) != 1 or not re.fullmatch(r"[0-9]+", raw_counts[0]):
                     qmgr_counts.setdefault(envelope_queue, set()).add(-1)
                     if envelope_queue in queue_to_run:
@@ -240,12 +241,36 @@ def correlate(report, paths, recipient, chronology=None):
             # A transport record with an absent or malformed status is not
             # evidence of delivery. Nor can a second status token be ignored:
             # accepting the first one could hide a contradictory disposition.
+            transport_queue = TRANSPORT_QUEUE.search(line)
             transport_recipient = TRANSPORT_RECIPIENT.search(line)
             event = EVENT.search(line)
+            # A transport agent record with a queue identity but no parseable
+            # recipient/status is not harmless noise. It may conceal another
+            # recipient or a failed delivery for this exact queue.
+            if transport_queue:
+                raw_queue = transport_queue.group(1)
+                raw_rid = queue_to_run.get(raw_queue)
+                # Include empty assignments: status=, status=sent is two
+                # fields, not one. Likewise to=<> must not be ignored.
+                status_fields = re.findall(
+                    r"(?<![A-Za-z0-9_])status=([^,\\s()]*)", line, re.I)
+                recipient_fields = re.findall(
+                    r"(?<![A-Za-z0-9_])to=<([^<>]*)>", line, re.I)
+                malformed = (
+                    transport_recipient is None or event is None or
+                    len(status_fields) != 1 or
+                    len(recipient_fields) != 1 or
+                    (event is not None and
+                     status_fields[0].lower() != event.group(4).lower()))
+                if malformed:
+                    if raw_rid is None:
+                        pre_cleanup_activity.add(raw_queue)
+                    else:
+                        duplicate.add(raw_rid)
             if transport_recipient:
                 raw_queue = transport_recipient.group(1)
                 raw_rid = queue_to_run.get(raw_queue)
-                statuses_on_line = STATUS_FIELD.findall(line)
+                statuses_on_line = re.findall(r"(?<![A-Za-z0-9_])status=([^,\\s()]*)", line, re.I)
                 if raw_rid is None and event is None:
                     pre_cleanup_activity.add(raw_queue)
                 if raw_rid is not None and (
@@ -270,7 +295,7 @@ def correlate(report, paths, recipient, chronology=None):
                 # Postfix DSN class and textual status must agree. A forged,
                 # malformed or contradictory enhanced status is not proof of
                 # successful delivery. Absence of DSN is allowed for older logs.
-                dsn_fields = re.findall(r"(?<![A-Za-z0-9_])dsn=([^,\s()]+)", line, re.I)
+                dsn_fields = re.findall(r"(?<![A-Za-z0-9_])dsn=([^,\s()]*)", line, re.I)
                 expected_class = {"sent": "2", "deferred": "4", "bounced": "5"}.get(status.lower())
                 if rid is not None and dsn_fields:
                     parsed = DSN.fullmatch("dsn=" + dsn_fields[0])
