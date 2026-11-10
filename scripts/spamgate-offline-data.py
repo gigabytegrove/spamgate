@@ -211,6 +211,8 @@ def snapshot(source, target):
         raise SnapshotError("snapshot target already exists")
     if not target.parent.is_dir():
         raise SnapshotError("snapshot parent must exist")
+    if target.parent.is_symlink():
+        raise SnapshotError("symlinked snapshot parent refused")
     # Refuse placing a snapshot inside the live source.
     if source.resolve() == target.parent.resolve() or source.resolve() in target.parent.resolve().parents:
         raise SnapshotError("snapshot destination inside source")
@@ -260,6 +262,8 @@ def snapshot(source, target):
 def restore(source, target):
     if target.exists() or target.is_symlink():
         raise SnapshotError("restore target must not exist")
+    if target.parent.is_symlink():
+        raise SnapshotError("symlinked restore parent refused")
     if not target.parent.is_dir():
         raise SnapshotError("restore parent must exist")
     if source.resolve() == target.parent.resolve() or source.resolve() in target.parent.resolve().parents:
