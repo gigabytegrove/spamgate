@@ -119,7 +119,7 @@ def manifest_entries(snapshot):
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"),
                           object_pairs_hook=unique_pairs,
                           parse_constant=lambda value: (_ for _ in ()).throw(SnapshotError("invalid JSON constant")))
-    if type(manifest) is not dict or manifest.get("schema") not in (1, 2, 3) or set(manifest) != ({"schema", "files"} if manifest.get("schema") == 1 else {"schema", "files", "directories"} if manifest.get("schema") == 2 else {"schema", "files", "directories", "directory_modes"}):
+    if type(manifest) is not dict or type(manifest.get("schema")) is not int or manifest["schema"] not in (1, 2, 3) or set(manifest) != ({"schema", "files"} if manifest.get("schema") == 1 else {"schema", "files", "directories"} if manifest.get("schema") == 2 else {"schema", "files", "directories", "directory_modes"}):
         raise SnapshotError("unsupported manifest")
     if manifest["schema"] >= 2:
         directories = manifest["directories"]
@@ -310,6 +310,18 @@ def snapshot(source, target):
             total += size
             if total > MAX_BYTES:
                 raise SnapshotError("snapshot exceeds size limit")
+        # A file may change after it was copied without changing its parent
+        # directory mtime. Re-read all source bytes before publication.
+        # This is intentionally offline-only: it cannot make a live DB
+        # snapshot transactionally consistent.
+        for entry in entries:
+            path = source / entry["path"]
+            metadata = regular_metadata(path)
+            if stat.S_IMODE(metadata.st_mode) & 0o777 != entry["mode"]:
+                raise SnapshotError("source file permissions changed during snapshot")
+            size, digest = digest_copy(path)
+            if (size, digest) != (entry["bytes"], entry["sha256"]):
+                raise SnapshotError("source file changed during snapshot")
         if directory_inventory(source) != original_directories:
             raise SnapshotError("source directory tree changed during snapshot")
         if {name: stat.S_IMODE((source / name).lstat().st_mode) & 0o777 for name in directories} != directory_modes:
