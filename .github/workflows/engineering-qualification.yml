@@ -80,6 +80,7 @@ jobs:
           python3 scripts/test-spamgate-evidence-chain.py -v
           python3 scripts/test-spamgate-maildir-evidence.py -v
           python3 scripts/test-spamgate-maildir-io.py -v
+          python3 scripts/test-spamgate-offline-data.py -v
           python3 scripts/spamgate-host-probe.py > /tmp/spamgate-preflight.json
           python3 -c 'import json; r=json.load(open("/tmp/spamgate-preflight.json")); assert r["status"] == "preflight_only" and not r["smtp"]["attempted"]'
       - name: Compile native Linux and Windows programs
