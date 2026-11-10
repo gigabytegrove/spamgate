@@ -199,6 +199,18 @@ def correlate(report, paths, recipient, chronology=None):
                 # unrelated cleanup must never lend its status to an old run.
                 duplicate.add(queue_to_run[other_cleanup.group(1)])
                 continue
+            # A qmgr envelope record with a missing, malformed or duplicated
+            # nrcpt field cannot establish a single-recipient queue. Do not
+            # silently ignore it and accept a later status=sent line.
+            qmgr_envelope = re.search(
+                r"\\bpostfix/qmgr\\[\\d+\\]: (" + QUEUE + r"): from=<[^<>]*>", line, re.I)
+            if qmgr_envelope:
+                envelope_queue = qmgr_envelope.group(1)
+                raw_counts = re.findall(r"(?<![A-Za-z0-9_])nrcpt=([^,\\s()]+)", line, re.I)
+                if len(raw_counts) != 1 or not re.fullmatch(r"[0-9]+", raw_counts[0]):
+                    qmgr_counts.setdefault(envelope_queue, set()).add(-1)
+                    if envelope_queue in queue_to_run:
+                        duplicate.add(queue_to_run[envelope_queue])
             qmgr = QMGR_RECIPIENTS.search(line)
             if qmgr:
                 queue_id, nrcpt = qmgr.groups()
