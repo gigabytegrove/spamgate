@@ -566,5 +566,56 @@ class ReportIntegrityTests(unittest.TestCase):
         self.assertEqual(evidence["log_chronology"]["formats"], ["iso8601", "rfc3164"])
 
 
+    def assert_ambiguous_transport_mutation(self, mutation, before_cleanup=False):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        record = mutation.format(recipient=RECIPIENT)
+        lines.insert(0 if before_cleanup else 1, record)
+        self.log.write_text("\n".join(lines) + "\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        evidence = json.loads(self.output.read_text())
+        self.assertFalse(evidence["complete_transport_correlation"])
+        self.assertEqual(evidence["entries"][0]["state"], "ambiguous_queue_identity")
+
+    def test_transport_missing_recipient_is_ambiguous(self):
+        self.assert_ambiguous_transport_mutation(
+            "Nov  9 05:00:00 host postfix/local[101]: ABCDE12345: relay=local, status=bounced")
+
+    def test_transport_empty_recipient_is_ambiguous(self):
+        self.assert_ambiguous_transport_mutation(
+            "Nov  9 05:00:00 host postfix/local[101]: ABCDE12345: to=<>, status=sent")
+
+    def test_transport_duplicate_recipient_is_ambiguous(self):
+        self.assert_ambiguous_transport_mutation(
+            "Nov  9 05:00:00 host postfix/local[101]: ABCDE12345: to=<{recipient}>, to=<other@example.org>, status=sent")
+
+    def test_transport_empty_status_before_sent_is_ambiguous(self):
+        self.assert_ambiguous_transport_mutation(
+            "Nov  9 05:00:00 host postfix/local[101]: ABCDE12345: to=<{recipient}>, status=, status=sent")
+
+    def test_transport_missing_recipient_before_cleanup_is_ambiguous(self):
+        self.assert_ambiguous_transport_mutation(
+            "Nov  9 04:59:59 host postfix/local[101]: ABCDE12345: relay=local, status=bounced",
+            before_cleanup=True)
+
+    def test_transport_empty_dsn_before_valid_dsn_is_ambiguous(self):
+        self.assert_ambiguous_transport_mutation(
+            "Nov  9 05:00:00 host postfix/local[101]: ABCDE12345: to=<{recipient}>, dsn=, dsn=2.0.0, status=sent")
+
+    def test_qmgr_empty_count_before_valid_count_is_ambiguous(self):
+        self.assert_ambiguous_transport_mutation(
+            "Nov  9 05:00:00 host postfix/qmgr[102]: ABCDE12345: from=<sender@example.org>, nrcpt=, nrcpt=1")
+
+    def test_unrelated_malformed_transport_does_not_poison_probe(self):
+        self.write_transport()
+        lines = self.log.read_text().splitlines()
+        lines.insert(1, "Nov  9 05:00:00 host postfix/local[101]: OTHER12345: status=bounced")
+        self.log.write_text("\n".join(lines) + "\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
+
 if __name__ == "__main__":
     unittest.main()
