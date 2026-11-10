@@ -317,6 +317,39 @@ class OfflineDataTests(unittest.TestCase):
                         "--acknowledge-offline")
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_manifest_file_directory_collision_refused(self):
+        self.make_backup()
+        manifest = self.backup / "manifest.json"
+        data = json.loads(manifest.read_text())
+        data["files"][0]["path"] = "messages"
+        manifest.write_text(json.dumps(data))
+        result = invoke("verify", "--source", self.backup)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("collision", result.stderr)
+
+    def test_manifest_file_parent_missing_refused(self):
+        self.make_backup()
+        manifest = self.backup / "manifest.json"
+        data = json.loads(manifest.read_text())
+        data["files"][0]["path"] = "undeclared/file.eml"
+        manifest.write_text(json.dumps(data))
+        result = invoke("verify", "--source", self.backup)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("parent missing", result.stderr)
+
+    def test_manifest_file_as_parent_refused_in_schema_one(self):
+        self.make_backup()
+        manifest = self.backup / "manifest.json"
+        data = json.loads(manifest.read_text())
+        data["schema"] = 1
+        del data["directories"]
+        del data["directory_modes"]
+        data["files"][0]["path"] = "state.json/child"
+        manifest.write_text(json.dumps(data))
+        result = invoke("verify", "--source", self.backup)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("collision", result.stderr)
+
     def test_missing_snapshot_refused(self):
         result = invoke("verify", "--source", self.root / "missing")
         self.assertNotEqual(result.returncode, 0)
