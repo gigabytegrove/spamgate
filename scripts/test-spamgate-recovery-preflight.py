@@ -121,6 +121,37 @@ class RecoveryPreflightTests(unittest.TestCase):
             findings = module.check(self.data)
         self.assertIn("nested mount point: " + str(nested), findings)
 
+    def test_dotdot_component_is_refused(self):
+        result = run(self.data / ".." / "data")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("parent traversal", result.stdout)
+
+    def test_dot_component_is_refused(self):
+        result = run(str(self.data) + "/./")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("dot or parent traversal", result.stdout)
+
+    def test_nested_mount_is_not_traversed(self):
+        spec = importlib.util.spec_from_file_location("preflight", TOOL)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        nested = self.data / "nested"
+        nested.mkdir()
+        (nested / "should-not-be-visited").write_text("x")
+        real_walk = module.os.walk
+        visited = []
+
+        def traced_walk(*args, **kwargs):
+            for item in real_walk(*args, **kwargs):
+                visited.append(str(item[0]))
+                yield item
+
+        with mock.patch.object(module, "nested_mounts", return_value=([str(nested)], None)):
+            with mock.patch.object(module.os, "walk", side_effect=traced_walk):
+                findings = module.check(self.data)
+        self.assertIn("nested mount point: " + str(nested), findings)
+        self.assertNotIn(str(nested), visited)
+
     def test_traversal_error_is_reported(self):
         spec = importlib.util.spec_from_file_location("preflight", TOOL)
         module = importlib.util.module_from_spec(spec)
