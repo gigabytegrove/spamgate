@@ -509,6 +509,34 @@ class ReportIntegrityTests(unittest.TestCase):
         self.assertEqual(result.returncode, 3, result.stderr)
         self.assertEqual(json.loads(self.output.read_text())["entries"][0]["state"], "ambiguous_queue_identity")
 
+    def test_untimestamped_log_line_prevents_transport_certification(self):
+        self.write_transport()
+        self.log.write_text(self.log.read_text() + "unattributed log fragment\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        evidence = json.loads(self.output.read_text())
+        self.assertFalse(evidence["complete_transport_correlation"])
+        self.assertFalse(evidence["log_chronology"]["chronology_validated"])
+        self.assertEqual(evidence["entries"][0]["state"], "transport_sent_not_mailbox_verified")
+
+    def test_tolerated_timestamp_regression_prevents_certification(self):
+        self.write_transport()
+        self.log.write_text(self.log.read_text() + "Nov  9 05:00:01 host postfix/qmgr[102]: OTHER12345: removed\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        evidence = json.loads(self.output.read_text())
+        self.assertFalse(evidence["complete_transport_correlation"])
+        self.assertEqual(evidence["log_chronology"]["tolerated_out_of_order_lines"], 1)
+
+    def test_mixed_log_timestamp_formats_prevent_certification(self):
+        self.write_transport()
+        self.log.write_text(self.log.read_text() + "2026-11-09T05:00:04Z host postfix/qmgr[102]: OTHER12345: removed\n")
+        result = self.invoke()
+        self.assertEqual(result.returncode, 3, result.stderr)
+        evidence = json.loads(self.output.read_text())
+        self.assertFalse(evidence["complete_transport_correlation"])
+        self.assertEqual(evidence["log_chronology"]["formats"], ["iso8601", "rfc3164"])
+
 
 if __name__ == "__main__":
     unittest.main()
