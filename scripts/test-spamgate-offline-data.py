@@ -411,6 +411,38 @@ class OfflineDataTests(unittest.TestCase):
         self.assertTrue(changed)
         self.assertFalse(self.backup.exists())
 
+    def test_symlinked_source_ancestor_refused(self):
+        alias = self.root / "alias-parent"
+        alias.symlink_to(self.root, target_is_directory=True)
+        result = invoke("snapshot", "--source", alias / "data",
+                        "--target", self.backup, "--acknowledge-offline")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("symlinked operator path", result.stderr)
+        self.assertFalse(self.backup.exists())
+
+    def test_symlinked_restore_target_ancestor_refused(self):
+        self.make_backup()
+        alias = self.root / "alias-parent"
+        alias.symlink_to(self.root, target_is_directory=True)
+        result = invoke("restore", "--source", self.backup,
+                        "--target", alias / "restored", "--acknowledge-offline")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.root / "restored").exists())
+
+    def test_dot_component_in_operator_path_refused(self):
+        result = invoke("snapshot", "--source", str(self.data) + "/../data",
+                        "--target", self.backup, "--acknowledge-offline")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("dot component", result.stderr)
+        self.assertFalse(self.backup.exists())
+
+    def test_dot_component_in_target_refused(self):
+        result = invoke("snapshot", "--source", self.data,
+                        "--target", str(self.root) + "/./backup",
+                        "--acknowledge-offline")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.backup.exists())
+
     def test_missing_snapshot_refused(self):
         result = invoke("verify", "--source", self.root / "missing")
         self.assertNotEqual(result.returncode, 0)
