@@ -214,6 +214,23 @@ class OfflineDataTests(unittest.TestCase):
         with self.assertRaises(module.SnapshotError):
             module.verify_restored_stage(stage, module.verify(self.backup))
 
+    def test_symlinked_snapshot_parent_refused(self):
+        parent = self.root / "snapshot-parent"
+        parent.symlink_to(self.root, target_is_directory=True)
+        result = invoke("snapshot", "--source", self.data,
+                        "--target", parent / "backup", "--acknowledge-offline")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.backup.exists())
+
+    def test_symlinked_restore_parent_refused(self):
+        self.make_backup()
+        parent = self.root / "restore-parent"
+        parent.symlink_to(self.root, target_is_directory=True)
+        result = invoke("restore", "--source", self.backup,
+                        "--target", parent / "restored", "--acknowledge-offline")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.root / "restored").exists())
+
     def test_missing_snapshot_refused(self):
         result = invoke("verify", "--source", self.root / "missing")
         self.assertNotEqual(result.returncode, 0)
