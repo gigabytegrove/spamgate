@@ -25,6 +25,23 @@ class SnapshotError(Exception):
     pass
 
 
+def validate_operator_path(raw):
+    """Reject lexical aliases and symlinked ancestors before any filesystem I/O.
+
+    pathlib.absolute() normalizes a few components on some platforms; inspect
+    the operator's original string first, including the final missing target.
+    """
+    if not isinstance(raw, str) or not raw or "\\x00" in raw:
+        raise SnapshotError("invalid operator path")
+    if any(component in (".", "..") for component in raw.split(os.sep)):
+        raise SnapshotError("operator path contains dot component")
+    path = Path(os.path.abspath(raw))
+    for candidate in (path, *path.parents):
+        if candidate.is_symlink():
+            raise SnapshotError(f"symlinked operator path component: {candidate}")
+    return path
+
+
 def regular_metadata(path):
     info = path.lstat()
     if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
@@ -394,11 +411,11 @@ def main(argv=None):
             cmd.add_argument("--acknowledge-offline", action="store_true", required=True)
     args = parser.parse_args(argv)
     try:
-        source = Path(args.source).absolute()
+        source = validate_operator_path(args.source)
         if args.action == "verify":
             files = verify(source)
         elif args.action == "snapshot":
-            snapshot(source, Path(args.target).absolute())
+            snapshot(source, validate_operator_path(args.target))
             files = verify(Path(args.target).absolute())
         else:
             restore(source, Path(args.target).absolute())
