@@ -164,6 +164,20 @@ def correlate(report, paths, recipient, chronology=None):
         for line in log_lines(path):
             if chronology is not None:
                 chronology.observe(line)
+            # A cleanup record must identify exactly one message. Multiple
+            # message-id fields make queue ownership ambiguous, even if the
+            # first field matches a qualification run.
+            cleanup_any = CLEANUP_ANY.search(line)
+            if cleanup_any:
+                cleanup_queue = cleanup_any.group(1)
+                message_ids = re.findall(r"(?<![A-Za-z0-9_-])message-id=<([^<>]+)>", line, re.I)
+                if len(message_ids) != 1:
+                    owner = queue_to_run.get(cleanup_queue)
+                    if owner is not None:
+                        duplicate.add(owner)
+                    else:
+                        foreign_cleanup.add(cleanup_queue)
+                    continue
             cleanup = CLEANUP.search(line)
             if cleanup:
                 queue_id, rid = cleanup.group(1), cleanup.group(2).lower()
