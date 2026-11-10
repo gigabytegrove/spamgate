@@ -15,7 +15,7 @@ import stat
 import sys
 import tempfile
 
-SCHEMA = 2
+SCHEMA = 3
 MAX_FILES = 100000
 MAX_BYTES = 100 * 1024 ** 3
 CHUNK = 1024 * 1024
@@ -114,9 +114,9 @@ def manifest_entries(snapshot):
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"),
                           object_pairs_hook=unique_pairs,
                           parse_constant=lambda value: (_ for _ in ()).throw(SnapshotError("invalid JSON constant")))
-    if type(manifest) is not dict or manifest.get("schema") not in (1, SCHEMA) or set(manifest) != ({"schema", "files"} if manifest.get("schema") == 1 else {"schema", "files", "directories"}):
+    if type(manifest) is not dict or manifest.get("schema") not in (1, 2, 3) or set(manifest) != ({"schema", "files"} if manifest.get("schema") == 1 else {"schema", "files", "directories"} if manifest.get("schema") == 2 else {"schema", "files", "directories", "directory_modes"}):
         raise SnapshotError("unsupported manifest")
-    if manifest["schema"] == SCHEMA:
+    if manifest["schema"] >= 2:
         directories = manifest["directories"]
         if type(directories) is not list or len(directories) > MAX_FILES:
             raise SnapshotError("invalid directory list")
@@ -126,6 +126,12 @@ def manifest_entries(snapshot):
         for name in names:
             if any(parent not in names for parent in ("/".join(name.split("/")[:i]) for i in range(1, len(name.split("/"))))):
                 raise SnapshotError("missing parent directory")
+    if manifest["schema"] == 3:
+        modes = manifest["directory_modes"]
+        if type(modes) is not dict or set(modes) != set(names):
+            raise SnapshotError("directory permission inventory mismatch")
+        if any(type(mode) is not int or not 0 <= mode <= 0o777 for mode in modes.values()):
+            raise SnapshotError("invalid directory permissions")
     files = manifest["files"]
     if type(files) is not list or len(files) > MAX_FILES:
         raise SnapshotError("invalid file list")
@@ -151,7 +157,22 @@ def manifest_entries(snapshot):
 
 def manifest_directories(snapshot):
     data = json.loads((snapshot / "manifest.json").read_text(encoding="utf-8"))
-    return data.get("directories") if data["schema"] == SCHEMA else None
+    return data.get("directories") if data["schema"] >= 2 else None
+
+
+def manifest_directory_modes(snapshot):
+    data = json.loads((snapshot / "manifest.json").read_text(encoding="utf-8"))
+    return data.get("directory_modes") if data["schema"] == 3 else None
+
+
+def check_directory_modes(root, modes):
+    if modes is None:
+        return
+    for name, mode in modes.items():
+        path = root / name
+        info = path.lstat()
+        if not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode) & 0o777 != mode:
+            raise SnapshotError(f"directory permission mismatch: {name}")
 
 
 def directory_names(root):
@@ -175,6 +196,7 @@ def verify(snapshot):
     directories = manifest_directories(snapshot)
     if directories is not None and directory_names(payload) != directories:
         raise SnapshotError("snapshot directory inventory mismatch")
+    check_directory_modes(payload, manifest_directory_modes(snapshot))
     expected = {entry["path"] for entry in files}
     actual = {name for name, _, _ in walk(snapshot / "files")}
     if expected != actual:
@@ -210,10 +232,11 @@ def directory_inventory(root):
     return inventory
 
 
-def verify_restored_stage(stage, entries, directories=None):
+def verify_restored_stage(stage, entries, directories=None, directory_modes=None):
     """Verify actual restored bytes before atomic publication."""
     if directories is not None and directory_names(stage) != directories:
         raise SnapshotError("restored directory inventory mismatch")
+    check_directory_modes(stage, directory_modes)
     expected = {entry["path"] for entry in entries}
     actual = {name for name, _, _ in walk(stage)}
     if actual != expected:
@@ -247,6 +270,7 @@ def snapshot(source, target):
         (stage / "files").mkdir(mode=0o700)
         original_directories = directory_inventory(source)
         directories = directory_names(source)
+        directory_modes = {name: stat.S_IMODE((source / name).lstat().st_mode) & 0o777 for name in directories}
         for name in directories:
             (stage / "files" / name).mkdir(parents=True, exist_ok=True, mode=0o700)
         entries = []
@@ -271,8 +295,12 @@ def snapshot(source, target):
                 raise SnapshotError("snapshot exceeds size limit")
         if directory_inventory(source) != original_directories:
             raise SnapshotError("source directory tree changed during snapshot")
+        if {name: stat.S_IMODE((source / name).lstat().st_mode) & 0o777 for name in directories} != directory_modes:
+            raise SnapshotError("source directory permissions changed during snapshot")
+        for name in sorted(directories, key=lambda p: p.count("/"), reverse=True):
+            os.chmod(stage / "files" / name, directory_modes[name])
         with (stage / "manifest.json").open("x", encoding="utf-8") as output:
-            json.dump({"schema": SCHEMA, "files": entries, "directories": directories}, output, sort_keys=True, indent=2)
+            json.dump({"schema": SCHEMA, "files": entries, "directories": directories, "directory_modes": directory_modes}, output, sort_keys=True, indent=2)
             output.write("\n")
             output.flush()
             os.fsync(output.fileno())
@@ -299,6 +327,7 @@ def restore(source, target):
         raise SnapshotError("restore target contains snapshot")
     files = verify(source)
     directories = manifest_directories(source)
+    directory_modes = manifest_directory_modes(source)
     stage = Path(tempfile.mkdtemp(prefix=".spamgate-restore-", dir=target.parent))
     try:
         for name in directories or []:
@@ -313,7 +342,9 @@ def restore(source, target):
             if (size, digest) != (entry["bytes"], entry["sha256"]):
                 raise SnapshotError("source changed during restore")
             os.chmod(destination, entry["mode"])
-        verify_restored_stage(stage, files, directories)
+        for name in sorted(directory_modes or {}, key=lambda p: p.count("/"), reverse=True):
+            os.chmod(stage / name, directory_modes[name])
+        verify_restored_stage(stage, files, directories, directory_modes)
         for directory, _, _ in os.walk(stage, topdown=False):
             fsync_dir(directory)
         stage.rename(target)
