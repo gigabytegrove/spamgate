@@ -365,10 +365,15 @@ def main(argv=None):
         states = {}
         for entry in entries:
             states[entry["state"]] = states.get(entry["state"], 0) + 1
-        complete = all(entry["state"] == "transport_sent_not_mailbox_verified" for entry in entries)
+        # Require validated chronology before certifying transport correlation.
+                # Retain per-message observations when chronology is incomplete.
+                chronology_result = chronology.summary()
+                complete = (chronology_result["chronology_validated"] and
+                            all(entry["state"] == "transport_sent_not_mailbox_verified"
+                                for entry in entries))
         result = {"schema": 1, "type": "postfix_transport_evidence_only", "recipient": args.recipient, "complete_transport_correlation": complete,
                   "counts": states, "entries": entries,
-                  "log_chronology": chronology.summary(),
+                  "log_chronology": chronology_result,
                   "limitations": ["Postfix status=sent does not prove Dovecot INBOX/Junk placement",
                                   "No SpamGate classifier verdicts are inferred",
                                   "Input logs and mailbox identity are operator supplied, not cryptographically authenticated",
