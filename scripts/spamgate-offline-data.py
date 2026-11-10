@@ -159,6 +159,9 @@ def verify(snapshot):
         raise SnapshotError("snapshot contents differ from manifest")
     for entry in files:
         path = snapshot / "files" / entry["path"]
+        metadata = regular_metadata(path)
+        if stat.S_IMODE(metadata.st_mode) & 0o777 != entry["mode"]:
+            raise SnapshotError(f"snapshot permission mismatch: {entry['path']}")
         size, digest = digest_copy(path)
         if size != entry["bytes"] or digest != entry["sha256"]:
             raise SnapshotError(f"snapshot checksum mismatch: {entry['path']}")
@@ -189,8 +192,11 @@ def snapshot(source, target):
                 size, sha = digest_copy(path, output)
                 output.flush()
                 os.fsync(output.fileno())
-            if size != info.st_size:
-                raise SnapshotError("source size changed")
+            current = regular_metadata(path)
+            if (size != info.st_size or
+                    (info.st_dev, info.st_ino, info.st_mtime_ns, info.st_ctime_ns, info.st_mode) !=
+                    (current.st_dev, current.st_ino, current.st_mtime_ns, current.st_ctime_ns, current.st_mode)):
+                raise SnapshotError("source metadata changed during snapshot")
             mode = stat.S_IMODE(info.st_mode) & 0o777
             os.chmod(destination, mode)
             entries.append({"path": name, "bytes": size, "sha256": sha, "mode": mode})
