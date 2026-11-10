@@ -350,6 +350,33 @@ class OfflineDataTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("collision", result.stderr)
 
+    def test_walk_refuses_traversal_errors(self):
+        from unittest import mock
+        spec = importlib.util.spec_from_file_location("offline_data", TOOL)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        def broken_walk(root, followlinks=False, onerror=None):
+            self.assertIsNotNone(onerror)
+            onerror(PermissionError("unreadable nested directory"))
+            yield root, [], []
+
+        with mock.patch.object(module.os, "walk", side_effect=broken_walk):
+            with self.assertRaisesRegex(module.SnapshotError, "filesystem traversal failed"):
+                module.walk(self.data)
+            with self.assertRaisesRegex(module.SnapshotError, "filesystem traversal failed"):
+                module.directory_inventory(self.data)
+
+    def test_snapshot_refuses_fifo_without_publishing(self):
+        import os
+        if not hasattr(os, "mkfifo"):
+            self.skipTest("POSIX FIFO unavailable")
+        os.mkfifo(self.data / "mail-pipe")
+        result = invoke("snapshot", "--source", self.data, "--target", self.backup,
+                        "--acknowledge-offline")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.backup.exists())
+
     def test_missing_snapshot_refused(self):
         result = invoke("verify", "--source", self.root / "missing")
         self.assertNotEqual(result.returncode, 0)
