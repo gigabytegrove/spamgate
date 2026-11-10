@@ -12,6 +12,32 @@ import stat
 import sys
 
 
+def nested_mounts(path, mountinfo="/proc/self/mountinfo"):
+    """Find mounts nested under data, including same-device bind mounts.
+
+    Linux mountinfo uses octal escapes for spaces and other path bytes.
+    Failure to inspect the mount table is an unsafe/unknown result, not clean.
+    """
+    def unescape(value):
+        import re
+        return re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), value)
+
+    root = str(path)
+    mounts = []
+    try:
+        with open(mountinfo, encoding="utf-8") as stream:
+            for line in stream:
+                fields = line.split(" - ", 1)[0].split()
+                if len(fields) < 5:
+                    raise ValueError("malformed mountinfo record")
+                target = unescape(fields[4])
+                if target == root or target.startswith(root.rstrip("/") + "/"):
+                    mounts.append(target)
+    except (OSError, UnicodeError, ValueError) as exc:
+        return [], "mount table cannot be inspected: " + str(exc)
+    return mounts, None
+
+
 def check(path):
     findings = []
     if not path.is_absolute():
@@ -36,6 +62,12 @@ def check(path):
     if not stat.S_ISDIR(root_info.st_mode):
         return ["data root must be a real directory"]
     root_device = root_info.st_dev
+    mounts, mount_error = nested_mounts(path)
+    if mount_error:
+        findings.append(mount_error)
+    for mount in mounts:
+        if mount != str(path):
+            findings.append("nested mount point: " + mount)
 
     def walk_error(exc):
         findings.append("directory traversal failed: " + str(exc))
@@ -57,6 +89,16 @@ def check(path):
                 findings.append("hardlinked file: " + str(child))
             elif not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)):
                 findings.append("special file: " + str(child))
+    # Detect changes to root metadata while scanning; this is not an atomic
+    # filesystem snapshot and cannot eliminate concurrent replacement races.
+    try:
+        final_root = path.lstat()
+        if (final_root.st_dev, final_root.st_ino, final_root.st_mtime_ns,
+                final_root.st_ctime_ns) != (root_info.st_dev, root_info.st_ino,
+                root_info.st_mtime_ns, root_info.st_ctime_ns):
+            findings.append("data root changed during inspection")
+    except OSError as exc:
+        findings.append("data root disappeared during inspection: " + str(exc))
     return findings
 
 

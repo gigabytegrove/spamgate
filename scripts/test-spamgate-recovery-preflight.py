@@ -78,6 +78,49 @@ class RecoveryPreflightTests(unittest.TestCase):
         result = run(Path("/"))
         self.assertEqual(result.returncode, 2)
 
+    def test_mountinfo_detects_nested_bind_mount(self):
+        spec = importlib.util.spec_from_file_location("preflight", TOOL)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        mountinfo = self.root / "mountinfo"
+        mountinfo.write_text(
+            "10 1 8:1 / / rw - ext4 /dev/sda1 rw\\n"
+            f"11 10 8:1 /other {self.data}/nested rw - ext4 /dev/sda1 rw\\n"
+        )
+        mounts, error = module.nested_mounts(self.data, str(mountinfo))
+        self.assertIsNone(error)
+        self.assertEqual(mounts, [str(self.data / "nested")])
+
+    def test_mountinfo_decodes_escaped_spaces(self):
+        spec = importlib.util.spec_from_file_location("preflight", TOOL)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        mountinfo = self.root / "mountinfo"
+        mountinfo.write_text(
+            "11 10 8:1 /other " + str(self.data) + "/my\\\\040mount rw - ext4 /dev/sda1 rw\\n"
+        )
+        mounts, error = module.nested_mounts(self.data, str(mountinfo))
+        self.assertIsNone(error)
+        self.assertEqual(mounts, [str(self.data / "my mount")])
+
+    def test_missing_mountinfo_fails_closed(self):
+        spec = importlib.util.spec_from_file_location("preflight", TOOL)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with mock.patch.object(module, "nested_mounts", return_value=([], "mount table unavailable")):
+            findings = module.check(self.data)
+        self.assertIn("mount table unavailable", findings)
+
+    def test_nested_mount_is_refused_without_crossing_it(self):
+        spec = importlib.util.spec_from_file_location("preflight", TOOL)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        nested = self.data / "nested"
+        nested.mkdir()
+        with mock.patch.object(module, "nested_mounts", return_value=([str(nested)], None)):
+            findings = module.check(self.data)
+        self.assertIn("nested mount point: " + str(nested), findings)
+
     def test_traversal_error_is_reported(self):
         spec = importlib.util.spec_from_file_location("preflight", TOOL)
         module = importlib.util.module_from_spec(spec)
