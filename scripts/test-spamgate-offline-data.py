@@ -109,6 +109,38 @@ class OfflineDataTests(unittest.TestCase):
                         "--acknowledge-offline")
         self.assertNotEqual(result.returncode, 0)
 
+    def test_extra_snapshot_root_entry_refused(self):
+        self.make_backup()
+        (self.backup / "unexpected").write_text("hidden")
+        self.assertNotEqual(invoke("verify", "--source", self.backup).returncode, 0)
+
+    def test_symlinked_manifest_refused(self):
+        self.make_backup()
+        manifest = self.backup / "manifest.json"
+        replacement = self.root / "manifest-copy.json"
+        replacement.write_bytes(manifest.read_bytes())
+        manifest.unlink()
+        manifest.symlink_to(replacement)
+        self.assertNotEqual(invoke("verify", "--source", self.backup).returncode, 0)
+
+    def test_symlinked_payload_directory_refused(self):
+        self.make_backup()
+        payload = self.backup / "files"
+        payload.rename(self.root / "payload")
+        payload.symlink_to(self.root / "payload", target_is_directory=True)
+        self.assertNotEqual(invoke("verify", "--source", self.backup).returncode, 0)
+
+    def test_source_root_symlink_refused(self):
+        alias = self.root / "alias"
+        alias.symlink_to(self.data, target_is_directory=True)
+        self.assertNotEqual(invoke("snapshot", "--source", alias, "--target",
+                                   self.backup, "--acknowledge-offline").returncode, 0)
+
+    def test_snapshot_target_ancestor_of_source_refused(self):
+        result = invoke("snapshot", "--source", self.data, "--target", self.root,
+                        "--acknowledge-offline")
+        self.assertNotEqual(result.returncode, 0)
+
     def test_missing_snapshot_refused(self):
         result = invoke("verify", "--source", self.root / "missing")
         self.assertNotEqual(result.returncode, 0)
