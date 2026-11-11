@@ -87,3 +87,29 @@ func TestRejectNULNames(t *testing.T) {
   if _,err:=Probe(context.Background(),opt);err==nil {t.Fatalf("accepted invalid name: %+v",opt)}
  }
 }
+
+func TestRejectControlBytesInSMTPReplies(t *testing.T) {
+ for _, reply := range []string{
+  "220 hi\x00there\r\n",
+  "250 hello\x1bworld\r\n",
+  "250 hi\x7fthere\r\n",
+  "250-hello\r\n250 bad\tcapability\r\n",
+ } {
+  _, _, err := readReply(bufio.NewReader(strings.NewReader(reply)))
+  if err == nil || !strings.Contains(err.Error(), "control byte") {
+   t.Errorf("accepted SMTP control byte in %q: %v", reply, err)
+  }
+ }
+}
+func TestRejectNonprintingHostnames(t *testing.T) {
+ for _, name := range []string{"host\vname", "host\fname", "host\x1bname", "host\x7fname"} {
+  for _, opt := range []Options{
+   {Address:"127.0.0.1:25", HelloName:name, Timeout:time.Second},
+   {Address:"127.0.0.1:25", ServerName:name, Timeout:time.Second},
+  } {
+   if _, err := Probe(context.Background(), opt); err == nil {
+    t.Errorf("accepted hostname %q", name)
+   }
+  }
+ }
+}
