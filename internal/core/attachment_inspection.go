@@ -49,13 +49,15 @@ func attachmentPayload(raw []byte, transfer string) ([]byte, error) {
 			return nil, err
 		}
 		return out, nil
+	case "", "7bit", "8bit", "binary":
+		return raw, nil
 	case "quoted-printable":
 		out, err := io.ReadAll(io.LimitReader(quotedPrintableReader(bytes.NewReader(raw)), (4<<20)+1))
 		if err != nil { return nil, err }
 		if len(out) > 4<<20 { return nil, fmt.Errorf("decoded MIME part exceeds 4 MiB limit") }
 		return out, nil
 	default:
-		return raw, nil
+		return nil, fmt.Errorf("unsupported Content-Transfer-Encoding")
 	}
 }
 
