@@ -284,3 +284,37 @@ func TestPostsuperTypedNilSinkDoesNotExecute(t *testing.T) {
   t.Fatalf("typed nil sink launched subprocess: %v", statErr)
  }
 }
+
+func TestPostsuperMissingExecutableDoesNotReportSuccess(t *testing.T) {
+ var out bytes.Buffer
+ err := runPostsuperCommand(context.Background(), "", []string{"-H", "A123"}, &out)
+ if err == nil || !strings.Contains(err.Error(), "executable is unavailable") {
+  t.Fatalf("missing executable accepted: %v", err)
+ }
+ if out.Len() != 0 { t.Fatalf("invalid command reported success: %q", out.String()) }
+}
+
+func TestPostsuperCanceledBeforeResultNeverWrites(t *testing.T) {
+ marker := filepath.Join(t.TempDir(), "executed")
+ path := helperScript(t, "touch '"+marker+"'; sleep 1")
+ ctx, cancel := context.WithCancel(context.Background())
+ var out bytes.Buffer
+ done := make(chan error, 1)
+ go func() { done <- runPostsuperCommand(ctx, path, []string{"-H", "A123"}, &out) }()
+ deadline := time.After(3*time.Second)
+ for {
+  if _, err := os.Stat(marker); err == nil { break }
+  select {
+  case err := <-done: t.Fatalf("command exited before cancellation: %v", err)
+  case <-deadline: t.Fatal("fixture did not start")
+  case <-time.After(10*time.Millisecond):
+  }
+ }
+ cancel()
+ select {
+ case err := <-done:
+  if !errors.Is(err, context.Canceled) { t.Fatalf("cancellation not propagated: %v", err) }
+ case <-time.After(3*time.Second): t.Fatal("cancellation did not terminate child")
+ }
+ if out.Len() != 0 { t.Fatalf("canceled release reported success: %q", out.String()) }
+}
