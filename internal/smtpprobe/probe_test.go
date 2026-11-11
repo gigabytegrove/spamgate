@@ -46,3 +46,28 @@ func TestInvalidOptions(t *testing.T){
   if _,err:=Probe(context.Background(),opt);err==nil{t.Fatalf("accepted %+v",opt)}
  }
 }
+
+func TestOversizedUnterminatedReply(t *testing.T) {
+ // No newline: bounded parsing must fail instead of waiting for unbounded allocation.
+ r:=bufio.NewReaderSize(strings.NewReader("250-"+strings.Repeat("x",8192)),128)
+ if _,_,err:=readReply(r);err==nil||!strings.Contains(err.Error(),"exceeds limit"){t.Fatalf("unexpected error: %v",err)}
+}
+func TestCanceledAndNilContext(t *testing.T) {
+ opt:=Options{Address:"127.0.0.1:25",Timeout:time.Second}
+ if _,err:=Probe(nil,opt);err==nil{t.Fatal("nil context accepted")}
+ ctx,cancel:=context.WithCancel(context.Background());cancel()
+ if _,err:=Probe(ctx,opt);err!=context.Canceled{t.Fatalf("canceled context: %v",err)}
+}
+func TestCancellationInterruptsStalledSMTPBanner(t *testing.T) {
+ ln,err:=net.Listen("tcp","127.0.0.1:0");if err!=nil{t.Fatal(err)};defer ln.Close()
+ accepted:=make(chan struct{})
+ done:=make(chan struct{})
+ go func(){defer close(done);c,e:=ln.Accept();if e!=nil{return};defer c.Close();close(accepted);var b [1]byte;_,_=c.Read(b[:])}()
+ ctx,cancel:=context.WithCancel(context.Background())
+ result:=make(chan error,1)
+ go func(){_,e:=Probe(ctx,Options{Address:ln.Addr().String(),Timeout:5*time.Second});result<-e}()
+ select{case <-accepted:case <-time.After(time.Second):t.Fatal("probe did not connect")}
+ cancel()
+ select{case err:=<-result:if err==nil{t.Fatal("cancellation accepted")};case <-time.After(time.Second):t.Fatal("cancellation did not interrupt stalled read")}
+ <-done
+}
