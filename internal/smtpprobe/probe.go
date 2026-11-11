@@ -19,6 +19,7 @@ type Result struct {
  EHLOCode int `json:"ehlo_code"`
  StartTLSAdvertised bool `json:"starttls_advertised"`
  StartTLSVerified bool `json:"starttls_verified"`
+ PostTLSStartTLSAdvertised bool `json:"post_tls_starttls_advertised"`
  TLSVersion string `json:"tls_version,omitempty"`
  TLSCertificate *CertificateInfo `json:"tls_certificate,omitempty"`
  Findings []Finding `json:"findings"`
@@ -129,6 +130,6 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  code,lines,err=readReply(reader);if err!=nil{return result,err}
  result.PostTLSEHLOCode=code
  if code!=250{return result,fmt.Errorf("post-TLS EHLO returned %d, expected 250",code)}
- _,result.PostTLSAuthMechanisms=capabilities(lines)
+ result.PostTLSStartTLSAdvertised,result.PostTLSAuthMechanisms=capabilities(lines)
  return result,nil
 }
