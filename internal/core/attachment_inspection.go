@@ -96,9 +96,17 @@ func InspectMIMEAttachments(raw []byte) ([]AttachmentFinding, error) {
 		count++
 		media, params, err := mime.ParseMediaType(h.Get("Content-Type"))
 		if err != nil {
+			appendFinding("MIME_MALFORMED", "Invalid Content-Type header; attachment classification may be incomplete", 0)
 			media = "application/octet-stream"
 		}
 		if strings.HasPrefix(media, "multipart/") {
+			// RFC 2045 forbids non-identity transfer encodings on multipart containers.
+			// Parsing encoded bytes as a boundary stream would silently skip children.
+			transfer := strings.ToLower(strings.TrimSpace(h.Get("Content-Transfer-Encoding")))
+			if transfer != "" && transfer != "7bit" && transfer != "8bit" && transfer != "binary" {
+				appendFinding("MIME_UNREADABLE", "Multipart container has unsupported transfer encoding", 0)
+				return
+			}
 			if params["boundary"] == "" {
 				appendFinding("MIME_MALFORMED", "Multipart boundary missing", 0)
 				return
@@ -162,7 +170,10 @@ func InspectMIMEAttachments(raw []byte) ([]AttachmentFinding, error) {
 			return
 		}
 		name := params["name"]
-		disp, dparams, _ := mime.ParseMediaType(h.Get("Content-Disposition"))
+		disp, dparams, dispositionErr := mime.ParseMediaType(h.Get("Content-Disposition"))
+		if h.Get("Content-Disposition") != "" && dispositionErr != nil {
+			appendFinding("MIME_MALFORMED", "Invalid Content-Disposition header; attachment filename may be hidden", 0)
+		}
 		if dparams["filename"] != "" {
 			name = dparams["filename"]
 		}
