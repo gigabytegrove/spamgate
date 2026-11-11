@@ -71,3 +71,19 @@ func TestCancellationInterruptsStalledSMTPBanner(t *testing.T) {
  select{case err:=<-result:if err==nil{t.Fatal("cancellation accepted")};case <-time.After(time.Second):t.Fatal("cancellation did not interrupt stalled read")}
  <-done
 }
+
+func TestStrictSMTPReplyFraming(t *testing.T) {
+ for _,reply:=range []string{"220 greeting\n","250-test\r\n250 done\n","25x done\r\n","250 test\r"} {
+  if _,_,err:=readReply(bufio.NewReader(strings.NewReader(reply)));err==nil {t.Errorf("accepted malformed SMTP reply %q",reply)}
+ }
+ code,lines,err:=readReply(bufio.NewReader(strings.NewReader("250-host\r\n250-STARTTLS\r\n250 AUTH PLAIN\r\n")))
+ if err!=nil||code!=250||len(lines)!=3 {t.Fatalf("code=%d lines=%v err=%v",code,lines,err)}
+}
+func TestRejectNULNames(t *testing.T) {
+ for _,opt:=range []Options{
+  {Address:"127.0.0.1:25",HelloName:"bad\x00name",Timeout:time.Second},
+  {Address:"127.0.0.1:25",ServerName:"bad\x00name",Timeout:time.Second},
+ } {
+  if _,err:=Probe(context.Background(),opt);err==nil {t.Fatalf("accepted invalid name: %+v",opt)}
+ }
+}
