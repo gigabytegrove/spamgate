@@ -21,6 +21,7 @@ type Result struct {
  StartTLSVerified bool `json:"starttls_verified"`
  TLSVersion string `json:"tls_version,omitempty"`
  TLSCertificate *CertificateInfo `json:"tls_certificate,omitempty"`
+ Findings []Finding `json:"findings"`
  AuthMechanisms []string `json:"auth_mechanisms"`
  PostTLSEHLOCode int `json:"post_tls_ehlo_code,omitempty"`
  PostTLSAuthMechanisms []string `json:"post_tls_auth_mechanisms"`
@@ -86,8 +87,9 @@ func invalidHostname(name string) bool {
  }
  return false
 }
-func Probe(ctx context.Context,opt Options)(Result,error){
- result:=Result{AuthMechanisms:[]string{},PostTLSAuthMechanisms:[]string{}}
+func Probe(ctx context.Context,opt Options)(result Result,err error){
+ result=Result{AuthMechanisms:[]string{},PostTLSAuthMechanisms:[]string{},Findings:[]Finding{}}
+ defer func(){result.Findings=Assess(result)}()
  if opt.Timeout<=0||opt.Timeout>60*time.Second{return result,errors.New("timeout must be between 1ns and 60s")}
  if ctx==nil{return result,errors.New("nil context")}
  if err:=ctx.Err();err!=nil{return result,err}
