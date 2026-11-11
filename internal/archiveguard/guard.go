@@ -6,7 +6,6 @@ import (
  "errors"
  "fmt"
  "io"
- "math"
  "path"
  "strings"
 )
@@ -32,7 +31,7 @@ func Inspect(r io.ReaderAt, size int64, limits Limits) (Report, error) {
  if size < 0 || limits.MaxFiles <= 0 || limits.MaxMemberBytes == 0 || limits.MaxTotalBytes == 0 || limits.MaxRatio == 0 {
   return report, fmt.Errorf("invalid archive size or limits")
  }
- if r == nil || limits.MaxMemberBytes > math.MaxInt64-1 || limits.MaxTotalBytes > math.MaxInt64-1 { return report, fmt.Errorf("invalid reader or limits") }
+ if r == nil || limits.MaxMemberBytes > uint64(^uint64(0)>>1)-1 || limits.MaxTotalBytes > uint64(^uint64(0)>>1)-1 { return report, fmt.Errorf("invalid reader or limits") }
  zr, err := zip.NewReader(r, size)
  if err != nil { return report, err }
  if len(zr.File) > limits.MaxFiles { return report, fmt.Errorf("%w: member count", ErrLimit) }
