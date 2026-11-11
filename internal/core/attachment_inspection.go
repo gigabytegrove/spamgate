@@ -5,6 +5,8 @@ package core
 // sandbox. No attachment is executed or written to disk.
 import (
 	"bytes"
+ "errors"
+ "github.com/gigabytegrove/spamgate/internal/archiveguard"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -187,6 +189,18 @@ func InspectMIMEAttachments(raw []byte) ([]AttachmentFinding, error) {
 			appendFinding("ATTACHMENT_EXECUTABLE_CONTENT", "Executable file signature in: "+label, 6)
 		}
 		if bytes.HasPrefix(payload, []byte("PK\x03\x04")) {
+            // A failed bounded inspection is explicitly unscanned, never clean.
+            // Retain the existing signature/depth scanner for additional evidence.
+            _, guardErr := archiveguard.Inspect(bytes.NewReader(payload), int64(len(payload)), archiveguard.Limits{
+                MaxFiles: archiveMaxEntries, MaxMemberBytes: archiveMaxExpanded,
+                MaxTotalBytes: archiveMaxExpanded, MaxRatio: 500,
+            })
+            if guardErr != nil {
+                symbol := "ARCHIVE_UNSCANNED"
+                if errors.Is(guardErr, archiveguard.ErrUnsafe) { symbol = "ARCHIVE_UNSAFE_STRUCTURE" }
+                if errors.Is(guardErr, archiveguard.ErrLimit) { symbol = "ARCHIVE_INSPECTION_LIMIT" }
+                appendFinding(symbol, "ZIP inspection incomplete: "+label, 0)
+            }
 			inspectZIPAttachment(payload, label, appendFinding)
 		}
 	}
