@@ -70,8 +70,12 @@ func (b *boundedOutput) Write(p []byte) (int, error) {
 func runWith(ctx context.Context, args []string, uid int, invoke func(context.Context, string, []string) error) error {
  if uid != 0 { return errors.New("Postfix release helper must run as root through an explicit host privilege grant") }
  if len(args) != 1 || !validQueueID(args[0]) { return errors.New("exactly one alphanumeric Postfix queue ID is required") }
+ if invoke == nil { return errors.New("Postfix release executor is unavailable") }
+ if ctx == nil { return errors.New("Postfix release context is unavailable") }
+ if err := ctx.Err(); err != nil { return fmt.Errorf("Postfix release request canceled before execution: %w", err) }
  ctx, cancel := context.WithTimeout(ctx, commandTimeout)
  defer cancel()
+ if err := ctx.Err(); err != nil { return fmt.Errorf("Postfix release request canceled before execution: %w", err) }
  return invoke(ctx, postsuperPath, []string{"-H", args[0]})
 }
 
