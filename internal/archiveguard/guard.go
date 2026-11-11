@@ -38,19 +38,22 @@ func Inspect(r io.ReaderAt, size int64, limits Limits) (Report, error) {
  seen := make(map[string]struct{}, len(zr.File))
  for _, f := range zr.File {
   name := strings.ReplaceAll(f.Name, "\\", "/")
-  clean := path.Clean(name)
+  isDirectory := strings.HasSuffix(name, "/")
+  canonical := name
+  if isDirectory { canonical = strings.TrimSuffix(name, "/") }
+  clean := path.Clean(canonical)
   if name == "" || strings.HasPrefix(name, "/") || strings.Contains(name, "\x00") || clean == ".." || strings.HasPrefix(clean, "../") || strings.Contains(name, ":") {
    return report, fmt.Errorf("%w: member path", ErrUnsafe)
   }
   if f.Flags&1 != 0 { return report, fmt.Errorf("%w: encrypted member", ErrUnsafe) }
   if f.Method != zip.Store && f.Method != zip.Deflate { return report, fmt.Errorf("%w: unsupported compression method %d", ErrUnsafe, f.Method) }
-  if clean == "." || strings.HasPrefix(name, "//") || clean != name || strings.HasSuffix(name, "/.") || strings.Contains(name, "//") { return report, fmt.Errorf("%w: invalid member path", ErrUnsafe) }
+  if clean == "." || strings.HasPrefix(name, "//") || clean != canonical || strings.HasSuffix(name, "/.") || strings.Contains(name, "//") { return report, fmt.Errorf("%w: invalid member path", ErrUnsafe) }
   key := strings.ToLower(clean)
   if _, exists := seen[key]; exists { return report, fmt.Errorf("%w: duplicate member path", ErrUnsafe) }
   seen[key] = struct{}{}
   if f.Mode()&0o170000 == 0o120000 { return report, fmt.Errorf("%w: symbolic link", ErrUnsafe) }
   if f.FileInfo().IsDir() {
-   if !strings.HasSuffix(name, "/") || f.UncompressedSize64 != 0 { return report, fmt.Errorf("%w: malformed directory", ErrUnsafe) }
+   if !isDirectory || f.UncompressedSize64 != 0 { return report, fmt.Errorf("%w: malformed directory", ErrUnsafe) }
    continue
   }
   if strings.HasSuffix(name, "/") || !f.Mode().IsRegular() { return report, fmt.Errorf("%w: nonregular member", ErrUnsafe) }
