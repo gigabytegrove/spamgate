@@ -33,8 +33,10 @@ func readReply(r *bufio.Reader)(int,[]string,error){
   if errors.Is(err,bufio.ErrBufferFull){return 0,nil,errors.New("SMTP reply line exceeds limit")}
   if err!=nil{return 0,nil,fmt.Errorf("SMTP reply interrupted: %w",err)}
   if len(line)>maxLine{return 0,nil,errors.New("SMTP reply line exceeds limit")}
-  line=strings.TrimSuffix(strings.TrimSuffix(line,"\n"),"\r")
+  if len(line)<2 || line[len(line)-2]!='\r' {return 0,nil,errors.New("SMTP reply must end with CRLF")}
+  line=line[:len(line)-2]
   if len(line)<4||(line[3]!='-'&&line[3]!=' '){return 0,nil,errors.New("malformed SMTP reply framing")}
+  if line[0]<'0'||line[0]>'9'||line[1]<'0'||line[1]>'9'||line[2]<'0'||line[2]>'9'{return 0,nil,errors.New("invalid SMTP reply code")}
   n,err:=strconv.Atoi(line[:3]);if err!=nil||n<200||n>599{return 0,nil,errors.New("invalid SMTP reply code")}
   if i==0{code=n}else if n!=code{return 0,nil,errors.New("mixed SMTP reply codes")}
   lines=append(lines,line[4:]);if line[3]==' '{return code,lines,nil}
@@ -60,16 +62,17 @@ func Probe(ctx context.Context,opt Options)(Result,error){
  if ctx==nil{return result,errors.New("nil context")}
  if err:=ctx.Err();err!=nil{return result,err}
  if opt.HelloName==""{opt.HelloName="localhost"}
- if strings.ContainsAny(opt.HelloName,"\r\n \t")||len(opt.HelloName)>253{return result,errors.New("invalid EHLO hostname")}
+ if strings.ContainsAny(opt.HelloName,"\r\n \t\x00")||len(opt.HelloName)>253{return result,errors.New("invalid EHLO hostname")}
  host,_,err:=net.SplitHostPort(opt.Address);if err!=nil{return result,fmt.Errorf("invalid address: %w",err)}
  if opt.ServerName==""{opt.ServerName=host}
- if opt.ServerName==""||len(opt.ServerName)>253||strings.ContainsAny(opt.ServerName,"\r\n \t"){return result,errors.New("invalid TLS server name")}
- dialer:=net.Dialer{Timeout:opt.Timeout}
- conn,err:=dialer.DialContext(ctx,"tcp",opt.Address);if err!=nil{return result,err};defer conn.Close()
+ if opt.ServerName==""||len(opt.ServerName)>253||strings.ContainsAny(opt.ServerName,"\r\n \t\x00"){return result,errors.New("invalid TLS server name")}
+ probeCtx,cancel:=context.WithTimeout(ctx,opt.Timeout);defer cancel()
+ dialer:=net.Dialer{}
+ conn,err:=dialer.DialContext(probeCtx,"tcp",opt.Address);if err!=nil{return result,err};defer conn.Close()
  // A canceled context without a deadline must also interrupt stalled reads.
- stop:=context.AfterFunc(ctx,func(){_ = conn.Close()})
+ stop:=context.AfterFunc(probeCtx,func(){_ = conn.Close()})
  defer stop()
- deadline:=time.Now().Add(opt.Timeout);if d,ok:=ctx.Deadline();ok&&d.Before(deadline){deadline=d}
+ deadline,_:=probeCtx.Deadline()
  if err:=conn.SetDeadline(deadline);err!=nil{return result,err}
  reader:=bufio.NewReader(conn);writer:=bufio.NewWriter(conn)
  code,_,err:=readReply(reader);if err!=nil{return result,err};result.BannerCode=code
@@ -86,7 +89,7 @@ func Probe(ctx context.Context,opt Options)(Result,error){
  code,_,err=readReply(reader);if err!=nil{return result,err}
  if code!=220{return result,fmt.Errorf("STARTTLS returned %d, expected 220",code)}
  tlsConn:=tls.Client(conn,&tls.Config{ServerName:opt.ServerName,MinVersion:tls.VersionTLS12})
- if err:=tlsConn.HandshakeContext(ctx);err!=nil{return result,fmt.Errorf("TLS verification failed: %w",err)}
+ if err:=tlsConn.HandshakeContext(probeCtx);err!=nil{return result,fmt.Errorf("TLS verification failed: %w",err)}
  state:=tlsConn.ConnectionState();result.StartTLSVerified=true;result.TLSVersion=tls.VersionName(state.Version)
  reader=bufio.NewReader(tlsConn);writer=bufio.NewWriter(tlsConn)
  if err:=send(writer,"EHLO "+opt.HelloName);err!=nil{return result,err}
