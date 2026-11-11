@@ -37,9 +37,9 @@ func readReply(r *bufio.Reader)(int,[]string,error){
   line=line[:len(line)-2]
   if len(line)<4||(line[3]!='-'&&line[3]!=' '){return 0,nil,errors.New("malformed SMTP reply framing")}
   if line[0]<'0'||line[0]>'9'||line[1]<'0'||line[1]>'9'||line[2]<'0'||line[2]>'9'{return 0,nil,errors.New("invalid SMTP reply code")}
-  n,err:=strconv.Atoi(line[:3]);if err!=nil||n<200||n>599{return 0,nil,errors.New("invalid SMTP reply code")}
+  n,err:=strconv.Atoi(string(line[:3]));if err!=nil||n<200||n>599{return 0,nil,errors.New("invalid SMTP reply code")}
   if i==0{code=n}else if n!=code{return 0,nil,errors.New("mixed SMTP reply codes")}
-  lines=append(lines,line[4:]);if line[3]==' '{return code,lines,nil}
+  lines=append(lines,string(line[4:]));if line[3]==' '{return code,lines,nil}
  }
  return 0,nil,errors.New("SMTP reply exceeds line limit")
 }
