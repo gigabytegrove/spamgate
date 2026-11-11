@@ -78,6 +78,11 @@ func InspectMIMEAttachments(raw []byte) ([]AttachmentFinding, error) {
 		if len(found) >= 20 {
 			return
 		}
+		// Reserve the last slot for an explicit indication of truncated evidence.
+		if len(found) == 19 && symbol != "MIME_FINDINGS_TRUNCATED" {
+			found = append(found, AttachmentFinding{Symbol: "MIME_FINDINGS_TRUNCATED", Detail: "Additional MIME inspection findings were omitted", Score: 0})
+			return
+		}
 		if len(detail) > 180 {
 			detail = detail[:180]
 		}
@@ -94,7 +99,12 @@ func InspectMIMEAttachments(raw []byte) ([]AttachmentFinding, error) {
 			return
 		}
 		count++
-		media, params, err := mime.ParseMediaType(h.Get("Content-Type"))
+		contentType := h.Get("Content-Type")
+		if strings.TrimSpace(contentType) == "" {
+			// RFC 2045 section 5.2 defaults absent Content-Type to text/plain.
+			contentType = "text/plain; charset=us-ascii"
+		}
+		media, params, err := mime.ParseMediaType(contentType)
 		if err != nil {
 			appendFinding("MIME_MALFORMED", "Invalid Content-Type header; attachment classification may be incomplete", 0)
 			media = "application/octet-stream"
