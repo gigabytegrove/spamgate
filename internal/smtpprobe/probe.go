@@ -70,10 +70,10 @@ func Probe(ctx context.Context,opt Options)(Result,error){
  if ctx==nil{return result,errors.New("nil context")}
  if err:=ctx.Err();err!=nil{return result,err}
  if opt.HelloName==""{opt.HelloName="localhost"}
- if invalidHostname(opt.HelloName)||len(opt.HelloName)>253{return result,errors.New("invalid EHLO hostname")}
+ if err:=validateEHLOName(opt.HelloName);err!=nil{return result,err}
  host,_,err:=net.SplitHostPort(opt.Address);if err!=nil{return result,fmt.Errorf("invalid address: %w",err)}
  if opt.ServerName==""{opt.ServerName=host}
- if opt.ServerName==""||len(opt.ServerName)>253||invalidHostname(opt.ServerName){return result,errors.New("invalid TLS server name")}
+ if err:=validateTLSName(opt.ServerName);err!=nil{return result,err}
  probeCtx,cancel:=context.WithTimeout(ctx,opt.Timeout);defer cancel()
  dialer:=net.Dialer{}
  conn,err:=dialer.DialContext(probeCtx,"tcp",opt.Address);if err!=nil{return result,err};defer conn.Close()
