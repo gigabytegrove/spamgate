@@ -75,12 +75,12 @@ func InspectMIMEAttachments(raw []byte) ([]AttachmentFinding, error) {
 	}
 	found := []AttachmentFinding{}
 	appendFinding := func(symbol, detail string, score float64) {
+		// Preserve all twenty findings when the budget is met exactly.
+		// Only the twenty-first finding proves evidence was omitted.
 		if len(found) >= 20 {
-			return
-		}
-		// Reserve the last slot for an explicit indication of truncated evidence.
-		if len(found) == 19 && symbol != "MIME_FINDINGS_TRUNCATED" {
-			found = append(found, AttachmentFinding{Symbol: "MIME_FINDINGS_TRUNCATED", Detail: "Additional MIME inspection findings were omitted", Score: 0})
+			if found[19].Symbol != "MIME_FINDINGS_TRUNCATED" {
+				found[19] = AttachmentFinding{Symbol: "MIME_FINDINGS_TRUNCATED", Detail: "Additional MIME inspection findings were omitted", Score: 0}
+			}
 			return
 		}
 		if len(detail) > 180 {
