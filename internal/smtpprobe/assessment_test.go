@@ -44,3 +44,37 @@ func TestProbeIncludesSecurityFindings(t *testing.T) {
  codes:=findingCodes(r.Findings)
  if !codes["STARTTLS_NOT_ADVERTISED"] || !codes["AUTH_ADVERTISED_BEFORE_TLS"] {t.Fatalf("missing findings: %+v",r.Findings)}
 }
+
+
+func TestAssessPostTLSAuthCapabilityChanges(t *testing.T) {
+ cases:=[]struct{
+  name string
+  result Result
+  want bool
+ }{
+  {"missing after verified TLS",Result{EHLOCode:250,StartTLSAdvertised:true,StartTLSVerified:true,AuthMechanisms:[]string{"PLAIN"},PostTLSEHLOCode:250},true},
+  {"present after verified TLS",Result{EHLOCode:250,StartTLSAdvertised:true,StartTLSVerified:true,AuthMechanisms:[]string{"PLAIN"},PostTLSEHLOCode:250,PostTLSAuthMechanisms:[]string{"PLAIN"}},false},
+  {"not advertised initially",Result{EHLOCode:250,StartTLSAdvertised:true,StartTLSVerified:true,PostTLSEHLOCode:250},false},
+  {"post TLS EHLO failed",Result{EHLOCode:250,StartTLSAdvertised:true,StartTLSVerified:true,AuthMechanisms:[]string{"PLAIN"},PostTLSEHLOCode:550},false},
+  {"TLS unverified",Result{EHLOCode:250,StartTLSAdvertised:true,AuthMechanisms:[]string{"PLAIN"},PostTLSEHLOCode:250},false},
+ }
+ for _,tc:=range cases {
+  t.Run(tc.name,func(t *testing.T){
+   got:=findingCodes(Assess(tc.result))["AUTH_NOT_ADVERTISED_AFTER_TLS"]
+   if got!=tc.want {t.Fatalf("AUTH regression=%v, want %v",got,tc.want)}
+  })
+ }
+}
+
+func TestAssessNegotiatedTLSVersion(t *testing.T) {
+ for _,tc:=range []struct{version string;verified,want bool}{
+  {"TLS 1.2",true,true},
+  {"TLS 1.3",true,false},
+  {"TLS 1.2",false,false},
+  {"",true,false},
+ }{
+  r:=Result{EHLOCode:250,StartTLSAdvertised:true,StartTLSVerified:tc.verified,TLSVersion:tc.version}
+  got:=findingCodes(Assess(r))["TLS_LEGACY_VERSION_NEGOTIATED"]
+  if got!=tc.want {t.Errorf("version=%q verified=%v got=%v want=%v",tc.version,tc.verified,got,tc.want)}
+ }
+}
