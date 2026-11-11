@@ -56,3 +56,31 @@ func TestInvalidInputs(t *testing.T) {
  }
  if _,err:=Inspect(bytes.NewReader([]byte("not zip")),7,limits());err==nil {t.Fatal("expected invalid ZIP")}
 }
+
+func TestDuplicateNormalizedPaths(t *testing.T) {
+ var b bytes.Buffer
+ z:=zip.NewWriter(&b)
+ for _,name:=range []string{"docs/a.txt","docs/./A.TXT"} {
+  w,err:=z.Create(name);if err!=nil {t.Fatal(err)}
+  if _,err=w.Write([]byte("x"));err!=nil {t.Fatal(err)}
+ }
+ if err:=z.Close();err!=nil {t.Fatal(err)}
+ _,err:=Inspect(bytes.NewReader(b.Bytes()),int64(b.Len()),limits())
+ if !errors.Is(err,ErrUnsafe) {t.Fatalf("duplicate path: %v",err)}
+}
+func TestOversizedLimitRejected(t *testing.T) {
+ b:=fixture(t,map[string]string{"a":"x"})
+ l:=limits();l.MaxMemberBytes=^uint64(0)
+ if _,err:=Inspect(bytes.NewReader(b),int64(len(b)),l);err==nil {t.Fatal("expected invalid limit")}
+}
+func TestEncryptedMemberRejected(t *testing.T) {
+ b:=fixture(t,map[string]string{"a":"x"})
+ // ZIP general-purpose flags reside at offset 6 in the local header
+ // and offset 8 in the central directory header.
+ idx:=bytes.Index(b,[]byte("PK\\x01\\x02"))
+ if idx<0 {t.Fatal("missing central directory")}
+ b[6]|=1
+ b[idx+8]|=1
+ _,err:=Inspect(bytes.NewReader(b),int64(len(b)),limits())
+ if !errors.Is(err,ErrUnsafe) {t.Fatalf("encrypted member: %v",err)}
+}
