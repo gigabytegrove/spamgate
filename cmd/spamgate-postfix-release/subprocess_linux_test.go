@@ -231,3 +231,56 @@ func TestPostsuperShortResultWriteIsFailure(t *testing.T) {
  }
  if sink.writes != 1 { t.Fatalf("unexpected sink writes: %d", sink.writes) }
 }
+
+
+func TestPostsuperPreCanceledRequestDoesNotExecute(t *testing.T) {
+ marker := filepath.Join(t.TempDir(), "executed")
+ path := helperScript(t, "touch '"+marker+"'")
+ ctx, cancel := context.WithCancel(context.Background())
+ cancel()
+ var out bytes.Buffer
+ err := runPostsuperCommand(ctx, path, []string{"-H", "A123"}, &out)
+ if !errors.Is(err, context.Canceled) { t.Fatalf("expected canceled context, got %v", err) }
+ if _, statErr := os.Stat(marker); !errors.Is(statErr, os.ErrNotExist) {
+  t.Fatalf("canceled request launched subprocess: %v", statErr)
+ }
+}
+
+func TestPostsuperExpiredRequestDoesNotExecute(t *testing.T) {
+ marker := filepath.Join(t.TempDir(), "executed")
+ path := helperScript(t, "touch '"+marker+"'")
+ ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+ defer cancel()
+ var out bytes.Buffer
+ err := runPostsuperCommand(ctx, path, []string{"-H", "A123"}, &out)
+ if !errors.Is(err, context.DeadlineExceeded) { t.Fatalf("expected deadline error, got %v", err) }
+ if _, statErr := os.Stat(marker); !errors.Is(statErr, os.ErrNotExist) {
+  t.Fatalf("expired request launched subprocess: %v", statErr)
+ }
+}
+
+func TestPostsuperNilContextDoesNotExecute(t *testing.T) {
+ marker := filepath.Join(t.TempDir(), "executed")
+ path := helperScript(t, "touch '"+marker+"'")
+ var out bytes.Buffer
+ err := runPostsuperCommand(nil, path, []string{"-H", "A123"}, &out)
+ if err == nil || !strings.Contains(err.Error(), "context is unavailable") {
+  t.Fatalf("nil context accepted: %v", err)
+ }
+ if _, statErr := os.Stat(marker); !errors.Is(statErr, os.ErrNotExist) {
+  t.Fatalf("nil context launched subprocess: %v", statErr)
+ }
+}
+
+func TestPostsuperTypedNilSinkDoesNotExecute(t *testing.T) {
+ marker := filepath.Join(t.TempDir(), "executed")
+ path := helperScript(t, "touch '"+marker+"'")
+ var sink *bytes.Buffer
+ err := runPostsuperCommand(context.Background(), path, []string{"-H", "A123"}, sink)
+ if err == nil || !strings.Contains(err.Error(), "sink is unavailable") {
+  t.Fatalf("typed nil sink accepted: %v", err)
+ }
+ if _, statErr := os.Stat(marker); !errors.Is(statErr, os.ErrNotExist) {
+  t.Fatalf("typed nil sink launched subprocess: %v", statErr)
+ }
+}
