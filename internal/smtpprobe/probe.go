@@ -4,6 +4,7 @@ import (
  "bufio"
  "context"
  "crypto/tls"
+ "crypto/x509"
  "errors"
  "fmt"
  "net"
@@ -19,9 +20,30 @@ type Result struct {
  StartTLSAdvertised bool `json:"starttls_advertised"`
  StartTLSVerified bool `json:"starttls_verified"`
  TLSVersion string `json:"tls_version,omitempty"`
+ TLSCertificate *CertificateInfo `json:"tls_certificate,omitempty"`
  AuthMechanisms []string `json:"auth_mechanisms"`
  PostTLSEHLOCode int `json:"post_tls_ehlo_code,omitempty"`
  PostTLSAuthMechanisms []string `json:"post_tls_auth_mechanisms"`
+}
+// CertificateInfo reports the verified peer leaf certificate without exposing its raw DER.
+type CertificateInfo struct {
+ Subject string `json:"subject"`
+ Issuer string `json:"issuer"`
+ DNSNames []string `json:"dns_names"`
+ NotBefore time.Time `json:"not_before"`
+ NotAfter time.Time `json:"not_after"`
+ DaysUntilExpiry int `json:"days_until_expiry"`
+}
+func certificateInfo(cert *x509.Certificate, now time.Time) *CertificateInfo {
+ if cert == nil { return nil }
+ days := int(cert.NotAfter.Sub(now).Hours()/24)
+ if cert.NotAfter.Before(now) { days = -1 }
+ return &CertificateInfo{
+  Subject: cert.Subject.String(), Issuer: cert.Issuer.String(),
+  DNSNames: append([]string{},cert.DNSNames...),
+  NotBefore: cert.NotBefore, NotAfter: cert.NotAfter,
+  DaysUntilExpiry: days,
+ }
 }
 type Options struct { Address,ServerName,HelloName string; Timeout time.Duration; RequireTLS bool }
 func readReply(r *bufio.Reader)(int,[]string,error){
@@ -99,6 +121,7 @@ func Probe(ctx context.Context,opt Options)(Result,error){
  tlsConn:=tls.Client(conn,&tls.Config{ServerName:opt.ServerName,MinVersion:tls.VersionTLS12})
  if err:=tlsConn.HandshakeContext(probeCtx);err!=nil{return result,fmt.Errorf("TLS verification failed: %w",err)}
  state:=tlsConn.ConnectionState();result.StartTLSVerified=true;result.TLSVersion=tls.VersionName(state.Version)
+ if len(state.PeerCertificates)>0 {result.TLSCertificate=certificateInfo(state.PeerCertificates[0],time.Now())}
  reader=bufio.NewReader(tlsConn);writer=bufio.NewWriter(tlsConn)
  if err:=send(writer,"EHLO "+opt.HelloName);err!=nil{return result,err}
  code,lines,err=readReply(reader);if err!=nil{return result,err}
