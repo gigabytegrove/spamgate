@@ -7,6 +7,7 @@ import (
  "errors"
  "fmt"
  "io"
+ "reflect"
  "os"
  "os/exec"
  "strings"
@@ -119,9 +120,18 @@ func safePostfixDiagnostic(raw []byte) string {
 
 // runPostsuperCommand keeps all output bounded and never interprets shell input.
 func runPostsuperCommand(ctx context.Context, name string, args []string, stdoutSink io.Writer) error {
+ if ctx == nil { return errors.New("postsuper -H context is unavailable") }
+ if err := ctx.Err(); err != nil { return fmt.Errorf("postsuper -H canceled before execution: %w", err) }
  // Validate reporting before performing the irreversible privileged queue action.
  // A missing sink must never allow postsuper to execute and then report failure.
  if stdoutSink == nil { return errors.New("postsuper -H result sink is unavailable") }
+ // An interface containing a typed nil pointer is not equal to nil.
+ // Reject it before the privileged command rather than panicking on reporting.
+ sinkValue := reflect.ValueOf(stdoutSink)
+ switch sinkValue.Kind() {
+ case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+  if sinkValue.IsNil() { return errors.New("postsuper -H result sink is unavailable") }
+ }
  // An overflowing child must be terminated immediately rather than allowed
  // to continue writing until the outer command deadline expires.
  childCtx, cancelChild := context.WithCancel(ctx)
