@@ -27,7 +27,11 @@ type Options struct { Address,ServerName,HelloName string; Timeout time.Duration
 func readReply(r *bufio.Reader)(int,[]string,error){
  var code int;var lines []string
  for i:=0;i<maxLines;i++{
-  line,err:=r.ReadString('\n');if err!=nil{return 0,nil,fmt.Errorf("SMTP reply interrupted: %w",err)}
+  // ReadSlice bounds memory even when a hostile peer never sends a newline.
+  // Discarding an oversized line is unsafe: fail the entire probe instead.
+  line,err:=r.ReadSlice('\n')
+  if errors.Is(err,bufio.ErrBufferFull){return 0,nil,errors.New("SMTP reply line exceeds limit")}
+  if err!=nil{return 0,nil,fmt.Errorf("SMTP reply interrupted: %w",err)}
   if len(line)>maxLine{return 0,nil,errors.New("SMTP reply line exceeds limit")}
   line=strings.TrimSuffix(strings.TrimSuffix(line,"\n"),"\r")
   if len(line)<4||(line[3]!='-'&&line[3]!=' '){return 0,nil,errors.New("malformed SMTP reply framing")}
@@ -53,13 +57,18 @@ func capabilities(lines []string)(bool,[]string){
 func Probe(ctx context.Context,opt Options)(Result,error){
  result:=Result{AuthMechanisms:[]string{},PostTLSAuthMechanisms:[]string{}}
  if opt.Timeout<=0||opt.Timeout>60*time.Second{return result,errors.New("timeout must be between 1ns and 60s")}
+ if ctx==nil{return result,errors.New("nil context")}
+ if err:=ctx.Err();err!=nil{return result,err}
  if opt.HelloName==""{opt.HelloName="localhost"}
  if strings.ContainsAny(opt.HelloName,"\r\n \t")||len(opt.HelloName)>253{return result,errors.New("invalid EHLO hostname")}
  host,_,err:=net.SplitHostPort(opt.Address);if err!=nil{return result,fmt.Errorf("invalid address: %w",err)}
  if opt.ServerName==""{opt.ServerName=host}
- if opt.ServerName==""||strings.ContainsAny(opt.ServerName,"\r\n \t"){return result,errors.New("invalid TLS server name")}
+ if opt.ServerName==""||len(opt.ServerName)>253||strings.ContainsAny(opt.ServerName,"\r\n \t"){return result,errors.New("invalid TLS server name")}
  dialer:=net.Dialer{Timeout:opt.Timeout}
  conn,err:=dialer.DialContext(ctx,"tcp",opt.Address);if err!=nil{return result,err};defer conn.Close()
+ // A canceled context without a deadline must also interrupt stalled reads.
+ stop:=context.AfterFunc(ctx,func(){_ = conn.Close()})
+ defer stop()
  deadline:=time.Now().Add(opt.Timeout);if d,ok:=ctx.Deadline();ok&&d.Before(deadline){deadline=d}
  if err:=conn.SetDeadline(deadline);err!=nil{return result,err}
  reader:=bufio.NewReader(conn);writer:=bufio.NewWriter(conn)
