@@ -2,7 +2,6 @@ package smtpprobe
 
 import (
  "fmt"
- "strings"
 )
 
 // Finding is a diagnostic observation, not a production mail-host compliance verdict.
@@ -41,15 +40,6 @@ func Assess(r Result) []Finding {
     Code:"AUTH_NOT_ADVERTISED_AFTER_TLS", Severity:"warning",
     Message:"AUTH was advertised before STARTTLS but not after the verified TLS handshake; inspect SMTP submission policy",
    })
-  }
-  if r.PostTLSEHLOCode == 250 {
-   for _,mechanism := range r.PostTLSAuthMechanisms {
-    if strings.EqualFold(mechanism,"PLAIN") || strings.EqualFold(mechanism,"LOGIN") {
-     // These mechanisms are not intrinsically unsafe inside verified TLS.
-     // Never label them as credential leakage.
-     break
-    }
-   }
   }
   if r.TLSCertificate != nil && r.TLSCertificate.DaysUntilExpiry <= 14 {
    findings = append(findings, Finding{
