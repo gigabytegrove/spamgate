@@ -77,7 +77,7 @@ func TestEncryptedMemberRejected(t *testing.T) {
  b:=fixture(t,map[string]string{"a":"x"})
  // ZIP general-purpose flags reside at offset 6 in the local header
  // and offset 8 in the central directory header.
- idx:=bytes.Index(b,[]byte("PK\\x01\\x02"))
+ idx:=bytes.Index(b,[]byte{0x50,0x4b,0x01,0x02})
  if idx<0 {t.Fatal("missing central directory")}
  b[6]|=1
  b[idx+8]|=1
