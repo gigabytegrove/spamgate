@@ -37,7 +37,8 @@ func Inspect(r io.ReaderAt, size int64, limits Limits) (Report, error) {
  if len(zr.File) > limits.MaxFiles { return report, fmt.Errorf("%w: member count", ErrLimit) }
  seen := make(map[string]struct{}, len(zr.File))
  for _, f := range zr.File {
-  name := strings.ReplaceAll(f.Name, "\\", "/")
+  name := f.Name
+  if strings.Contains(name, "\\") { return report, fmt.Errorf("%w: backslash in member path", ErrUnsafe) }
   isDirectory := strings.HasSuffix(name, "/")
   canonical := name
   if isDirectory { canonical = strings.TrimSuffix(name, "/") }
