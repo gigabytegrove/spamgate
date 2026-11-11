@@ -49,6 +49,12 @@ func Assess(r Result) []Finding {
   })
  }
  if r.PostTLSEHLOCode == 250 {
+  if r.PostTLSStartTLSAdvertised {
+   findings = append(findings, Finding{
+    Code:"STARTTLS_ADVERTISED_AFTER_TLS", Severity:"warning",
+    Message:"Server still advertises STARTTLS after a verified TLS handshake; inspect RFC 3207 capability handling",
+   })
+  }
   before := mechanismSet(r.AuthMechanisms)
   after := mechanismSet(r.PostTLSAuthMechanisms)
   if len(before) > 0 && len(after) == 0 {
