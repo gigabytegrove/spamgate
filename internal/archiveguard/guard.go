@@ -6,6 +6,7 @@ import (
  "errors"
  "fmt"
  "io"
+ "math"
  "path"
  "strings"
 )
@@ -31,15 +32,22 @@ func Inspect(r io.ReaderAt, size int64, limits Limits) (Report, error) {
  if size < 0 || limits.MaxFiles <= 0 || limits.MaxMemberBytes == 0 || limits.MaxTotalBytes == 0 || limits.MaxRatio == 0 {
   return report, fmt.Errorf("invalid archive size or limits")
  }
+ if r == nil || limits.MaxMemberBytes > math.MaxInt64-1 || limits.MaxTotalBytes > math.MaxInt64-1 { return report, fmt.Errorf("invalid reader or limits") }
  zr, err := zip.NewReader(r, size)
  if err != nil { return report, err }
  if len(zr.File) > limits.MaxFiles { return report, fmt.Errorf("%w: member count", ErrLimit) }
+ seen := make(map[string]struct{}, len(zr.File))
  for _, f := range zr.File {
   name := strings.ReplaceAll(f.Name, "\\", "/")
   clean := path.Clean(name)
   if name == "" || strings.HasPrefix(name, "/") || strings.Contains(name, "\x00") || clean == ".." || strings.HasPrefix(clean, "../") || strings.Contains(name, ":") {
    return report, fmt.Errorf("%w: member path", ErrUnsafe)
   }
+  if f.Flags&1 != 0 { return report, fmt.Errorf("%w: encrypted member", ErrUnsafe) }
+  if clean == "." || strings.HasPrefix(name, "//") { return report, fmt.Errorf("%w: invalid member path", ErrUnsafe) }
+  key := strings.ToLower(clean)
+  if _, exists := seen[key]; exists { return report, fmt.Errorf("%w: duplicate member path", ErrUnsafe) }
+  seen[key] = struct{}{}
   if f.Mode()&0o170000 == 0o120000 { return report, fmt.Errorf("%w: symbolic link", ErrUnsafe) }
   if f.FileInfo().IsDir() { continue }
   if !f.Mode().IsRegular() { return report, fmt.Errorf("%w: nonregular member", ErrUnsafe) }
