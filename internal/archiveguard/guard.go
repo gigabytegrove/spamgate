@@ -43,13 +43,17 @@ func Inspect(r io.ReaderAt, size int64, limits Limits) (Report, error) {
    return report, fmt.Errorf("%w: member path", ErrUnsafe)
   }
   if f.Flags&1 != 0 { return report, fmt.Errorf("%w: encrypted member", ErrUnsafe) }
-  if clean == "." || strings.HasPrefix(name, "//") { return report, fmt.Errorf("%w: invalid member path", ErrUnsafe) }
+  if f.Method != zip.Store && f.Method != zip.Deflate { return report, fmt.Errorf("%w: unsupported compression method %d", ErrUnsafe, f.Method) }
+  if clean == "." || strings.HasPrefix(name, "//") || clean != name || strings.HasSuffix(name, "/.") || strings.Contains(name, "//") { return report, fmt.Errorf("%w: invalid member path", ErrUnsafe) }
   key := strings.ToLower(clean)
   if _, exists := seen[key]; exists { return report, fmt.Errorf("%w: duplicate member path", ErrUnsafe) }
   seen[key] = struct{}{}
   if f.Mode()&0o170000 == 0o120000 { return report, fmt.Errorf("%w: symbolic link", ErrUnsafe) }
-  if f.FileInfo().IsDir() { continue }
-  if !f.Mode().IsRegular() { return report, fmt.Errorf("%w: nonregular member", ErrUnsafe) }
+  if f.FileInfo().IsDir() {
+   if !strings.HasSuffix(name, "/") || f.UncompressedSize64 != 0 { return report, fmt.Errorf("%w: malformed directory", ErrUnsafe) }
+   continue
+  }
+  if strings.HasSuffix(name, "/") || !f.Mode().IsRegular() { return report, fmt.Errorf("%w: nonregular member", ErrUnsafe) }
   declared := f.UncompressedSize64
   if declared > limits.MaxMemberBytes || declared > limits.MaxTotalBytes-report.DeclaredBytes {
    return report, fmt.Errorf("%w: declared uncompressed size", ErrLimit)
