@@ -132,3 +132,43 @@ func TestBoundedPostfixOutputRejectsInvalidLimit(t *testing.T) {
   t.Fatalf("invalid limit accepted: n=%d err=%v", n, err)
  }
 }
+
+func TestReleaseHelperRefusesCanceledRequestBeforeExecution(t *testing.T) {
+ ctx, cancel := context.WithCancel(context.Background())
+ cancel()
+ called := false
+ err := runWith(ctx, []string{"A123"}, 0, func(context.Context, string, []string) error {
+  called = true
+  return nil
+ })
+ if !errors.Is(err, context.Canceled) || called {
+  t.Fatalf("canceled release executed: called=%v err=%v", called, err)
+ }
+}
+
+func TestReleaseHelperRefusesExpiredRequestBeforeExecution(t *testing.T) {
+ ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+ defer cancel()
+ called := false
+ err := runWith(ctx, []string{"A123"}, 0, func(context.Context, string, []string) error {
+  called = true
+  return nil
+ })
+ if !errors.Is(err, context.DeadlineExceeded) || called {
+  t.Fatalf("expired release executed: called=%v err=%v", called, err)
+ }
+}
+
+func TestReleaseHelperRefusesMissingExecutorAndContext(t *testing.T) {
+ if err := runWith(context.Background(), []string{"A123"}, 0, nil); err == nil {
+  t.Fatal("nil executor accepted")
+ }
+ called := false
+ err := runWith(nil, []string{"A123"}, 0, func(context.Context, string, []string) error {
+  called = true
+  return nil
+ })
+ if err == nil || called {
+  t.Fatalf("nil context executed: called=%v err=%v", called, err)
+ }
+}
