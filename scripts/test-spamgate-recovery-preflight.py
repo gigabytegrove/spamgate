@@ -84,8 +84,8 @@ class RecoveryPreflightTests(unittest.TestCase):
         spec.loader.exec_module(module)
         mountinfo = self.root / "mountinfo"
         mountinfo.write_text(
-            "10 1 8:1 / / rw - ext4 /dev/sda1 rw\\n"
-            f"11 10 8:1 /other {self.data}/nested rw - ext4 /dev/sda1 rw\\n"
+            "10 1 8:1 / / rw - ext4 /dev/sda1 rw\n"
+            f"11 10 8:1 /other {self.data}/nested rw - ext4 /dev/sda1 rw\n"
         )
         mounts, error = module.nested_mounts(self.data, str(mountinfo))
         self.assertIsNone(error)
@@ -97,7 +97,7 @@ class RecoveryPreflightTests(unittest.TestCase):
         spec.loader.exec_module(module)
         mountinfo = self.root / "mountinfo"
         mountinfo.write_text(
-            "11 10 8:1 /other " + str(self.data) + "/my\\\\040mount rw - ext4 /dev/sda1 rw\\n"
+            "11 10 8:1 /other " + str(self.data) + "/my\\040mount rw - ext4 /dev/sda1 rw\n"
         )
         mounts, error = module.nested_mounts(self.data, str(mountinfo))
         self.assertIsNone(error)
