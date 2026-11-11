@@ -111,7 +111,7 @@ func InspectMIMEAttachments(raw []byte) ([]AttachmentFinding, error) {
 					appendFinding("MIME_MALFORMED", "Multipart section could not be parsed", 0)
 					break
 				}
-				chunk, err := io.ReadAll(io.LimitReader(part, 5<<20+1))
+				chunk, err := io.ReadAll(io.LimitReader(part, (5<<20)+1))
 				part.Close()
 				if err != nil || len(chunk) > 5<<20 {
 					appendFinding("MIME_LIMIT", "Attachment exceeds 5 MiB inspection limit", 0)
