@@ -5,6 +5,8 @@ package main
 import (
 	"context"
 	"errors"
+ "go/parser"
+ "go/token"
 	"strings"
  "sync"
 	"testing"
@@ -170,5 +172,13 @@ func TestReleaseHelperRefusesMissingExecutorAndContext(t *testing.T) {
  })
  if err == nil || called {
   t.Fatalf("nil context executed: called=%v err=%v", called, err)
+ }
+}
+
+// TestReleaseHelperSourceParses guards the privileged Linux entrypoint against
+// accidentally committed literal escape sequences outside Go string literals.
+func TestReleaseHelperSourceParses(t *testing.T) {
+ if _, err := parser.ParseFile(token.NewFileSet(), "main.go", nil, parser.AllErrors); err != nil {
+  t.Fatalf("privileged Postfix release entrypoint is not valid Go: %v", err)
  }
 }
