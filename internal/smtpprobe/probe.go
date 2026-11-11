@@ -35,6 +35,7 @@ func readReply(r *bufio.Reader)(int,[]string,error){
   if len(line)>maxLine{return 0,nil,errors.New("SMTP reply line exceeds limit")}
   if len(line)<2 || line[len(line)-2]!='\r' {return 0,nil,errors.New("SMTP reply must end with CRLF")}
   line=line[:len(line)-2]
+  for _, b := range line { if b < 32 || b == 127 { return 0,nil,errors.New("SMTP reply contains control byte") } }
   if len(line)<4||(line[3]!='-'&&line[3]!=' '){return 0,nil,errors.New("malformed SMTP reply framing")}
   if line[0]<'0'||line[0]>'9'||line[1]<'0'||line[1]>'9'||line[2]<'0'||line[2]>'9'{return 0,nil,errors.New("invalid SMTP reply code")}
   n,err:=strconv.Atoi(string(line[:3]));if err!=nil||n<200||n>599{return 0,nil,errors.New("invalid SMTP reply code")}
@@ -56,16 +57,23 @@ func capabilities(lines []string)(bool,[]string){
  }
  return startTLS,auth
 }
+func invalidHostname(name string) bool {
+ for i := 0; i < len(name); i++ {
+  b := name[i]
+  if b <= 32 || b == 127 { return true }
+ }
+ return false
+}
 func Probe(ctx context.Context,opt Options)(Result,error){
  result:=Result{AuthMechanisms:[]string{},PostTLSAuthMechanisms:[]string{}}
  if opt.Timeout<=0||opt.Timeout>60*time.Second{return result,errors.New("timeout must be between 1ns and 60s")}
  if ctx==nil{return result,errors.New("nil context")}
  if err:=ctx.Err();err!=nil{return result,err}
  if opt.HelloName==""{opt.HelloName="localhost"}
- if strings.ContainsAny(opt.HelloName,"\r\n \t\x00")||len(opt.HelloName)>253{return result,errors.New("invalid EHLO hostname")}
+ if invalidHostname(opt.HelloName)||len(opt.HelloName)>253{return result,errors.New("invalid EHLO hostname")}
  host,_,err:=net.SplitHostPort(opt.Address);if err!=nil{return result,fmt.Errorf("invalid address: %w",err)}
  if opt.ServerName==""{opt.ServerName=host}
- if opt.ServerName==""||len(opt.ServerName)>253||strings.ContainsAny(opt.ServerName,"\r\n \t\x00"){return result,errors.New("invalid TLS server name")}
+ if opt.ServerName==""||len(opt.ServerName)>253||invalidHostname(opt.ServerName){return result,errors.New("invalid TLS server name")}
  probeCtx,cancel:=context.WithTimeout(ctx,opt.Timeout);defer cancel()
  dialer:=net.Dialer{}
  conn,err:=dialer.DialContext(probeCtx,"tcp",opt.Address);if err!=nil{return result,err};defer conn.Close()
