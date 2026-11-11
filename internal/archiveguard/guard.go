@@ -35,7 +35,7 @@ func Inspect(r io.ReaderAt, size int64, limits Limits) (Report, error) {
  zr, err := zip.NewReader(r, size)
  if err != nil { return report, err }
  if len(zr.File) > limits.MaxFiles { return report, fmt.Errorf("%w: member count", ErrLimit) }
- seen := make(map[string]struct{}, len(zr.File))
+ seen := make(map[string]bool, len(zr.File)) // true identifies a directory
  for _, f := range zr.File {
   name := f.Name
   if strings.Contains(name, "\\") { return report, fmt.Errorf("%w: backslash in member path", ErrUnsafe) }
@@ -51,7 +51,21 @@ func Inspect(r io.ReaderAt, size int64, limits Limits) (Report, error) {
   if clean == "." || strings.HasPrefix(name, "//") || clean != canonical || strings.HasSuffix(name, "/.") || strings.Contains(name, "//") { return report, fmt.Errorf("%w: invalid member path", ErrUnsafe) }
   key := strings.ToLower(clean)
   if _, exists := seen[key]; exists { return report, fmt.Errorf("%w: duplicate member path", ErrUnsafe) }
-  seen[key] = struct{}{}
+  // Reject a regular file used as a parent, in either member order.
+  for ancestor := path.Dir(key); ancestor != "."; ancestor = path.Dir(ancestor) {
+   if directory, exists := seen[ancestor]; exists && !directory {
+    return report, fmt.Errorf("%w: file used as parent directory", ErrUnsafe)
+   }
+  }
+  if !isDirectory {
+   prefix := key + "/"
+   for existing := range seen {
+    if strings.HasPrefix(existing, prefix) {
+     return report, fmt.Errorf("%w: file conflicts with descendant", ErrUnsafe)
+    }
+   }
+  }
+  seen[key] = isDirectory
   if f.Mode()&0o170000 == 0o120000 { return report, fmt.Errorf("%w: symbolic link", ErrUnsafe) }
   if f.FileInfo().IsDir() {
    if !isDirectory || f.UncompressedSize64 != 0 { return report, fmt.Errorf("%w: malformed directory", ErrUnsafe) }
