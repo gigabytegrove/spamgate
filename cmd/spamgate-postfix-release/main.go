@@ -167,7 +167,10 @@ func runPostsuperCommand(ctx context.Context, name string, args []string, stdout
   // remains available, but it must not be treated as successful release.
   return fmt.Errorf("postsuper -H failed: %w: %s", err, safePostfixDiagnostic(stderr.data))
  }
- // Cancellation can arrive after Wait returns but before reporting. Never\n // present a canceled operation as confirmed successful.\n if err := ctx.Err(); err != nil { return fmt.Errorf("postsuper -H interrupted before reporting: %w", err) }\n // A nil sink is a programming error, not proof that a privileged hold was released.
+ // Cancellation can arrive after Wait returns but before reporting. Never
+ // present a canceled operation as confirmed successful.
+ if err := ctx.Err(); err != nil { return fmt.Errorf("postsuper -H interrupted before reporting: %w", err) }
+ // A nil sink is a programming error, not proof that a privileged hold was released.
  // Refuse success without a destination for the operator-visible result.
  report := safePostfixDiagnostic(append(append([]byte(nil), stdout.data...), append([]byte(" "), stderr.data...)...))+"\n"
  n, err := io.WriteString(stdoutSink, report)
