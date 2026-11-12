@@ -43,6 +43,24 @@ func attachmentNameFindings(filename string) []AttachmentFinding {
    break
   }
  }
+ // Dot lookalikes can conceal an executable suffix from ASCII-only extension
+ // checks while appearing as ordinary dots in some mail clients. Record
+ // ambiguity separately and evaluate a normalized candidate for risk.
+ // Do not rewrite the actual filename or treat normalization as proof.
+ normalized := strings.Map(func(r rune) rune {
+  switch r {
+  case '\u2024', '\u3002', '\uff0e', '\uff61':
+   return '.'
+  default:
+   return r
+  }
+ }, lower)
+ if normalized != lower {
+  add("ATTACHMENT_NAME_DOT_CONFUSABLE", "Attachment filename contains a dot-like Unicode separator", 1)
+  if riskyFilename(normalized) && !riskyFilename(lower) {
+   add("ATTACHMENT_CONFUSABLE_EXTENSION", "Dot-like Unicode separator disguises an executable, script, or macro-enabled suffix", 3)
+  }
+ }
  if strings.TrimRight(name, " .\t") != name {
   add("ATTACHMENT_NAME_TRAILING", "Attachment filename ends in ambiguous whitespace or dots", 1)
  }
