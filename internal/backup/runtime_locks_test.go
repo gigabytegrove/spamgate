@@ -8,6 +8,7 @@ import (
     "os"
     "path/filepath"
     "testing"
+    "time"
 )
 
 var ephemeralLockPaths = []string{
@@ -88,7 +89,7 @@ func TestLegacyArchiveRuntimeLocksVerifiedButNotRestored(t *testing.T) {
     zw := zip.NewWriter(f)
     contents := map[string]string{"config.json": "persistent configuration"}
     for _, name := range ephemeralLockPaths { contents[name] = "old-worker-lock" }
-    manifest := Manifest{Format: 1, Product: "SpamGate"}
+    manifest := Manifest{Format: 1, Product: "SpamGate", Created: time.Now().UTC()}
     for name, body := range contents {
         w, err := zw.Create(name)
         if err != nil { t.Fatal(err) }
