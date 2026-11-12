@@ -69,7 +69,10 @@ func attachmentNameFindings(filename string) []AttachmentFinding {
   if hasMacroOfficeExtension(lower) { score = 2 }
   add("ATTACHMENT_RISKY_EXTENSION", "Attachment has an executable, script, or macro-enabled extension", score)
  }
- parts := strings.Split(lower, ".")
+ // Analyze the normalized candidate for double-extension deception too. A
+ // confusable separator between the decoy and executable suffix must not
+ // bypass this independent finding. Do not duplicate ordinary extensions.
+ parts := strings.Split(normalized, ".")
  if len(parts) >= 3 && riskyFilename("x."+parts[len(parts)-1]) && isDocumentDecoy(parts[len(parts)-2]) {
   add("ATTACHMENT_DOUBLE_EXTENSION", "Attachment filename disguises a dangerous suffix behind a document or media extension", 3)
  }
