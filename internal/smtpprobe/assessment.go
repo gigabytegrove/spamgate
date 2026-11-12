@@ -41,6 +41,7 @@ func Assess(r Result) []Finding {
    Message:"Server did not advertise STARTTLS in its initial EHLO response",
   })
  }
+ findings = append(findings, capabilityEvidenceFindings(r, false)...)
  if !r.StartTLSVerified { return findings }
  if r.TLSVersion == "TLS 1.2" {
   findings = append(findings, Finding{
@@ -49,6 +50,7 @@ func Assess(r Result) []Finding {
   })
  }
  if r.PostTLSEHLOCode == 250 {
+  findings = append(findings, capabilityEvidenceFindings(r, true)...)
   if r.PostTLSStartTLSAdvertised {
    findings = append(findings, Finding{
     Code:"STARTTLS_ADVERTISED_AFTER_TLS", Severity:"warning",
