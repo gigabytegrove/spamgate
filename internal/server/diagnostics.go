@@ -21,6 +21,8 @@ type RelayDiagnostic struct {
  STARTTLSAdvertised bool `json:"starttls_advertised"`
  TLSVerified bool `json:"tls_verified"`
  AUTHAdvertised bool `json:"auth_advertised"`
+ AUTHMechanisms []string `json:"auth_mechanisms,omitempty"`
+ AUTHMechanismsKnown bool `json:"auth_mechanisms_known"`
  CredentialsConfigured bool `json:"credentials_configured"`
  Detail string `json:"detail"`
  CheckedAt time.Time `json:"checked_at"`
@@ -36,6 +38,36 @@ func relayExtensions(message string) map[string]bool {
   if len(fields)>0{out[strings.ToUpper(fields[0])]=true}
  }
  return out
+}
+
+// relayAuthMechanisms returns only mechanism tokens advertised in a successful
+// EHLO response. The server's identity line is not a capability. The AUTH
+// extension may be present with no mechanisms, which is not actionable.
+func relayAuthMechanisms(message string) []string {
+ lines:=strings.Split(message,"\n")
+ seen:=map[string]bool{}
+ var mechanisms []string
+ for _,line:=range lines[1:] {
+  fields:=strings.Fields(line)
+  if len(fields)<2 || !strings.EqualFold(fields[0],"AUTH") { continue }
+  for _,token:=range fields[1:] {
+   valid:=len(token)<=40 && len(token)>0
+   for _,r:=range token {
+    if !(r>='A'&&r<='Z'||r>='a'&&r<='z'||r>='0'&&r<='9'||r=='-'||r=='_') {valid=false;break}
+   }
+   if !valid {continue}
+   name:=strings.ToUpper(token)
+   if !seen[name] {seen[name]=true;mechanisms=append(mechanisms,name)}
+  }
+ }
+ return mechanisms
+}
+
+func relayEHLODetails(proto *textproto.Conn)(map[string]bool,[]string,error){
+ if err:=proto.PrintfLine("EHLO spamgate.local");err!=nil{return nil,nil,err}
+ _,message,err:=proto.ReadResponse(250)
+ if err!=nil{return nil,nil,err}
+ return relayExtensions(message),relayAuthMechanisms(message),nil
 }
 
 func relayEHLO(proto *textproto.Conn)(map[string]bool,error){
@@ -73,7 +105,7 @@ func probeRelay(ctx context.Context,addr,tlsMode string,credentialsConfigured bo
  }
  proto:=textproto.NewConn(conn)
  if _,_,err:=proto.ReadResponse(220);err!=nil{result.Detail="SMTP banner rejected: "+err.Error();return result}
- extensions,err:=relayEHLO(proto)
+ extensions,mechanisms,err:=relayEHLODetails(proto)
  if err!=nil{result.Detail="SMTP EHLO failed (HELO fallback is not accepted): "+err.Error();return result}
  result.SMTPReady=true
  result.STARTTLSAdvertised=extensions["STARTTLS"]
@@ -90,15 +122,17 @@ func probeRelay(ctx context.Context,addr,tlsMode string,credentialsConfigured bo
   result.TLSVerified=true
   conn=secure
   proto=textproto.NewConn(conn)
-  extensions,err=relayEHLO(proto)
+  extensions,mechanisms,err=relayEHLODetails(proto)
   if err!=nil{result.SMTPReady=false;result.Detail="Post-STARTTLS EHLO failed: "+err.Error();return result}
  }
  result.AUTHAdvertised=extensions["AUTH"]
+ result.AUTHMechanisms=mechanisms
+ result.AUTHMechanismsKnown=len(mechanisms)>0
  switch {
  case credentialsConfigured&&tlsMode=="none":
   result.Detail="SMTP EHLO succeeded but credentials are configured with plaintext TLS mode none; no authentication was attempted"
- case credentialsConfigured&&!result.AUTHAdvertised:
-  result.Detail="SMTP EHLO succeeded but the server does not advertise AUTH after TLS negotiation; no credentials were sent"
+ case credentialsConfigured&&!result.AUTHMechanismsKnown:
+  result.Detail="SMTP EHLO succeeded but the server does not advertise usable AUTH mechanisms after TLS negotiation; no credentials were sent"
  default:
   result.Detail=fmt.Sprintf("SMTP banner and EHLO succeeded; TLS mode %s; encrypted channel verified=%t; AUTH advertised=%t. No authentication or delivery was attempted",tlsMode,result.TLSVerified,result.AUTHAdvertised)
  }
