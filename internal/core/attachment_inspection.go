@@ -123,7 +123,7 @@ func InspectMIMEAttachments(raw []byte) ([]AttachmentFinding, error) {
 			}
 			mr := multipart.NewReader(bytes.NewReader(data), params["boundary"])
 			for count < 60 {
-				part, err := mr.NextPart()
+				part, err := mr.NextRawPart()
 				if err == io.EOF {
 					break
 				}
@@ -147,7 +147,7 @@ func InspectMIMEAttachments(raw []byte) ([]AttachmentFinding, error) {
 			// Exhausting the part budget is not evidence that the multipart ended.
 			// Check for one more part so a hidden 61st attachment is reported.
 			if count >= 60 {
-				part, nextErr := mr.NextPart()
+				part, nextErr := mr.NextRawPart()
 				if nextErr == nil {
 					_ = part.Close()
 					appendFinding("MIME_LIMIT", "More than 60 MIME sections; remaining parts uninspected", 0)
