@@ -1,0 +1,7 @@
+# SMTP AUTH prerequisite diagnostic evidence — 2026-11-12
+
+The read-only relay probe now reports `auth_prerequisites_observed` only when relay credentials are configured, the SMTP channel has successfully verified TLS, and the final EHLO advertises at least one syntactically valid AUTH mechanism. It reports `auth_warning` with stable values `credentials_configured_without_tls`, `no_advertised_auth_mechanisms`, or `tls_not_verified` when applicable. Existing `smtp_ready` continues to describe successful banner/EHLO negotiation, **not** authenticated delivery readiness.
+
+This deliberately does **not** establish that the relay and client share a supported mechanism, that supplied credentials work, that authentication succeeds, or that mail is delivered. The probe never sends AUTH, MAIL FROM, RCPT TO, or DATA. The new loopback socket regressions cover plaintext credentials, absent/empty AUTH, no configured credentials, and a command transcript that permits only EHLO and QUIT.
+
+The isolated GitHub CI laboratory is not a production ISPConfig/Postfix/Dovecot qualification. Outstanding gates #1–#9 remain open pending durable mail-path, disposition/holds, classifier calibration, tenant enforcement, diagnostics, browser acceptance, backup/restore, native update/rollback, and real-host end-to-end regression evidence. Native launcher `/opt/spamgate/spamgate`, worker `spamgate-worker`, persistent `/opt/spamgate/data`, and Milter ports 38470/38472 remain unchanged. No mail-server configuration is modified by this diagnostic.
