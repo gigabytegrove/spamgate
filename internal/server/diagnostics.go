@@ -23,6 +23,10 @@ type RelayDiagnostic struct {
  AUTHAdvertised bool `json:"auth_advertised"`
  AUTHMechanisms []string `json:"auth_mechanisms,omitempty"`
  AUTHMechanismsKnown bool `json:"auth_mechanisms_known"`
+ SMTPUTF8Advertised bool `json:"smtputf8_advertised"`
+ EightBitMIMEAdvertised bool `json:"eight_bit_mime_advertised"`
+ PIPELININGAdvertised bool `json:"pipelining_advertised"`
+ SIZEAdvertised bool `json:"size_advertised"`
  CredentialsConfigured bool `json:"credentials_configured"`
  Detail string `json:"detail"`
  CheckedAt time.Time `json:"checked_at"`
@@ -35,9 +39,17 @@ func relayExtensions(message string) map[string]bool {
  lines:=strings.Split(message,"\n")
  for _,line:=range lines[1:]{
   fields:=strings.Fields(line)
-  if len(fields)>0{out[strings.ToUpper(fields[0])]=true}
+  if len(fields)>0 && validRelayExtension(fields[0]) {out[strings.ToUpper(fields[0])]=true}
  }
  return out
+}
+
+// validRelayExtension rejects malformed or control-bearing extension keywords.
+// Only ASCII letters, digits and hyphens are legal in the diagnostic key.
+func validRelayExtension(value string) bool {
+ if len(value)==0 || len(value)>64 {return false}
+ for _,r:=range value {if !(r>='A'&&r<='Z'||r>='a'&&r<='z'||r>='0'&&r<='9'||r=='-'){return false}}
+ return true
 }
 
 // relayAuthMechanisms returns only mechanism tokens advertised in a successful
@@ -125,6 +137,10 @@ func probeRelay(ctx context.Context,addr,tlsMode string,credentialsConfigured bo
   extensions,mechanisms,err=relayEHLODetails(proto)
   if err!=nil{result.SMTPReady=false;result.Detail="Post-STARTTLS EHLO failed: "+err.Error();return result}
  }
+ result.SMTPUTF8Advertised=extensions["SMTPUTF8"]
+ result.EightBitMIMEAdvertised=extensions["8BITMIME"]
+ result.PIPELININGAdvertised=extensions["PIPELINING"]
+ result.SIZEAdvertised=extensions["SIZE"]
  result.AUTHAdvertised=extensions["AUTH"]
  result.AUTHMechanisms=mechanisms
  result.AUTHMechanismsKnown=len(mechanisms)>0
