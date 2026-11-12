@@ -36,6 +36,7 @@ type RelayDiagnostic struct {
  SIZELimitBytes *uint64 `json:"size_limit_bytes,omitempty"`
  SIZELimitKnown bool `json:"size_limit_known"`
  SIZEParameterMalformed bool `json:"size_parameter_malformed"`
+ CapabilityWarnings []string `json:"capability_warnings"`
  CredentialsConfigured bool `json:"credentials_configured"`
  Detail string `json:"detail"`
  CheckedAt time.Time `json:"checked_at"`
@@ -106,12 +107,12 @@ func relaySizeLimit(message string) (*uint64, bool) {
  return limit,false
 }
 
-func relayEHLODetails(proto *textproto.Conn)(map[string]bool,[]string,*uint64,bool,error){
- if err:=proto.PrintfLine("EHLO spamgate.local");err!=nil{return nil,nil,nil,false,err}
+func relayEHLODetails(proto *textproto.Conn)(map[string]bool,[]string,*uint64,bool,[]string,error){
+ if err:=proto.PrintfLine("EHLO spamgate.local");err!=nil{return nil,nil,nil,false,nil,err}
  _,message,err:=proto.ReadResponse(250)
  if err!=nil{return nil,nil,nil,false,err}
  limit,malformed:=relaySizeLimit(message)
- return relayExtensions(message),relayAuthMechanisms(message),limit,malformed,nil
+ return relayExtensions(message),relayAuthMechanisms(message),limit,malformed,relayCapabilityWarnings(message),nil
 }
 
 func relayEHLO(proto *textproto.Conn)(map[string]bool,error){
@@ -149,7 +150,7 @@ func probeRelay(ctx context.Context,addr,tlsMode string,credentialsConfigured bo
  }
  proto:=textproto.NewConn(conn)
  if _,_,err:=proto.ReadResponse(220);err!=nil{result.Detail="SMTP banner rejected: "+err.Error();return result}
- extensions,mechanisms,sizeLimit,sizeMalformed,err:=relayEHLODetails(proto)
+ extensions,mechanisms,sizeLimit,sizeMalformed,warnings,err:=relayEHLODetails(proto)
  if err!=nil{result.Detail="SMTP EHLO failed (HELO fallback is not accepted): "+err.Error();return result}
  result.SMTPReady=true
  result.STARTTLSAdvertised=extensions["STARTTLS"]
@@ -166,7 +167,7 @@ func probeRelay(ctx context.Context,addr,tlsMode string,credentialsConfigured bo
   result.TLSVerified=true
   conn=secure
   proto=textproto.NewConn(conn)
-  extensions,mechanisms,sizeLimit,sizeMalformed,err=relayEHLODetails(proto)
+  extensions,mechanisms,sizeLimit,sizeMalformed,warnings,err=relayEHLODetails(proto)
   if err!=nil{result.SMTPReady=false;result.Detail="Post-STARTTLS EHLO failed: "+err.Error();return result}
  }
  result.SMTPUTF8Advertised=extensions["SMTPUTF8"]
@@ -181,6 +182,7 @@ func probeRelay(ctx context.Context,addr,tlsMode string,credentialsConfigured bo
  result.SIZELimitBytes=sizeLimit
  result.SIZELimitKnown=sizeLimit!=nil
  result.SIZEParameterMalformed=sizeMalformed
+ result.CapabilityWarnings=warnings
  result.AUTHAdvertised=extensions["AUTH"]
  result.AUTHMechanisms=mechanisms
  result.AUTHMechanismsKnown=len(mechanisms)>0
