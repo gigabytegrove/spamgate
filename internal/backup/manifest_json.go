@@ -23,5 +23,8 @@ func decodeBackupManifest(data []byte, manifest *Manifest) error {
     if err := decoder.Decode(manifest); err != nil {
         return fmt.Errorf("invalid backup manifest schema: %w", err)
     }
+    if err := validateManifestSemantics(*manifest); err != nil {
+        return fmt.Errorf("invalid backup manifest evidence: %w", err)
+    }
     return nil
 }
