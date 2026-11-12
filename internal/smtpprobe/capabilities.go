@@ -42,6 +42,11 @@ func capabilities(lines []string) (bool, []string) {
 			}
 		}
 	}
+	if !trustworthyAUTH(lines) {
+		// Never promote a partially valid or duplicated AUTH advertisement
+		// to trustworthy mechanism evidence.
+		auth = []string{}
+	}
 	return startTLS && trustworthyStartTLS(lines), auth
 }
 
