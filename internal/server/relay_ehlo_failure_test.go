@@ -2,6 +2,7 @@ package server
 
 import (
  "bufio"
+ "context"
  "fmt"
  "net"
  "net/textproto"
@@ -73,7 +74,7 @@ func TestProbeRelayEHLORejectionDoesNotSubmitMail(t *testing.T) {
   }
   commands <- seen
  }()
- result := probeRelay(t.Context(), listener.Addr().String(), "none", true)
+ result := probeRelay(context.Background(), listener.Addr().String(), "none", true)
  if !result.TCPReachable || result.SMTPReady || result.AUTHAdvertised || result.TLSVerified {
   t.Fatalf("rejected EHLO was misreported: %+v", result)
  }
