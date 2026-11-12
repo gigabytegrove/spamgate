@@ -99,6 +99,21 @@ func InspectMIMEAttachments(raw []byte) ([]AttachmentFinding, error) {
 			return
 		}
 		count++
+		// Ambiguous duplicate MIME routing headers are not safe to interpret:
+		// different MTAs and mail clients can select different values.
+		// Do not claim the body was successfully inspected in that case.
+		for _, field := range []string{"Content-Type", "Content-Disposition", "Content-Transfer-Encoding"} {
+			values := 0
+			for key, entries := range h {
+				if strings.EqualFold(key, field) {
+					values += len(entries)
+				}
+			}
+			if values > 1 {
+				appendFinding("MIME_MALFORMED", "Duplicate MIME routing header; part not inspected", 0)
+				return
+			}
+		}
 		contentType := h.Get("Content-Type")
 		if strings.TrimSpace(contentType) == "" {
 			// RFC 2045 section 5.2 defaults absent Content-Type to text/plain.
