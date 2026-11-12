@@ -19,7 +19,7 @@ func sizeEvidence(lines []string) (advertised, known bool, limit uint64, warning
 			continue
 		}
 		keyword := strings.ToUpper(fields[0])
-		if keyword != "SIZE" && !strings.HasPrefix(keyword, "SIZE=") {
+		if !sizeKeywordCandidate(keyword) {
 			continue
 		}
 		advertised = true
@@ -68,4 +68,22 @@ func sizeEvidence(lines []string) (advertised, known bool, limit uint64, warning
 		return advertised, false, 0, warning
 	}
 	return advertised, known, limit, ""
+}
+
+// sizeKeywordCandidate recognizes malformed SIZE separators as well as the
+// legitimate bare keyword. A malformed declaration must not be silently
+// skipped when a later valid SIZE line is present.
+func sizeKeywordCandidate(keyword string) bool {
+	if keyword == "SIZE" {
+		return true
+	}
+	if !strings.HasPrefix(keyword, "SIZE") || len(keyword) == 4 {
+		return false
+	}
+	switch keyword[4] {
+	case '=', ':', ';', ',', '/', '+', '-':
+		return true
+	default:
+		return false
+	}
 }
