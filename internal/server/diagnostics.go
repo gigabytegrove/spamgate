@@ -24,6 +24,8 @@ type RelayDiagnostic struct {
  AUTHAdvertised bool `json:"auth_advertised"`
  AUTHMechanisms []string `json:"auth_mechanisms,omitempty"`
  AUTHMechanismsKnown bool `json:"auth_mechanisms_known"`
+ AUTHUsable bool `json:"auth_usable"`
+ AUTHWarning string `json:"auth_warning,omitempty"`
  SMTPUTF8Advertised bool `json:"smtputf8_advertised"`
  EightBitMIMEAdvertised bool `json:"eight_bit_mime_advertised"`
  PIPELININGAdvertised bool `json:"pipelining_advertised"`
@@ -186,6 +188,17 @@ func probeRelay(ctx context.Context,addr,tlsMode string,credentialsConfigured bo
  result.AUTHAdvertised=extensions["AUTH"]
  result.AUTHMechanisms=mechanisms
  result.AUTHMechanismsKnown=len(mechanisms)>0
+ // AUTHUsable is capability-only evidence, never proof of credentials or login.
+ // Plaintext transport must never be described as safe for credential use.
+ result.AUTHUsable=credentialsConfigured && tlsMode!="none" && result.TLSVerified && result.AUTHMechanismsKnown
+ switch {
+ case credentialsConfigured&&tlsMode=="none":
+  result.AUTHWarning="credentials_configured_without_tls"
+ case credentialsConfigured&&!result.AUTHMechanismsKnown:
+  result.AUTHWarning="no_advertised_auth_mechanisms"
+ case credentialsConfigured&&!result.TLSVerified:
+  result.AUTHWarning="tls_not_verified"
+ }
  switch {
  case credentialsConfigured&&tlsMode=="none":
   result.Detail="SMTP EHLO succeeded but credentials are configured with plaintext TLS mode none; no authentication was attempted"
