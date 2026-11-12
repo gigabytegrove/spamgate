@@ -19,16 +19,16 @@ func attachmentNameFindings(filename string) []AttachmentFinding {
  }
  // Preserve evidence about the original decoded filename before path.Base
  // discards attacker-supplied directory components.
- if strings.ContainsAny(filename, "/\\\\") {
+ if strings.ContainsAny(filename, "/\\") {
   add("ATTACHMENT_NAME_PATH", "Attachment filename contains path separators", 2)
  }
- for _, r := range name {
+ for _, r := range filename {
   if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
    add("ATTACHMENT_NAME_CONTROL", "Attachment filename contains control or line separator characters", 2)
    break
   }
  }
- for _, r := range name {
+ for _, r := range filename {
   if isFilenameBidiControl(r) {
    add("ATTACHMENT_NAME_BIDI", "Attachment filename contains bidirectional override/control characters", 3)
    break
