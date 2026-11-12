@@ -26,7 +26,7 @@ func TestSizeEvidence(t *testing.T) {
   {"duplicate equal", []string{"host", "SIZE 100", "SIZE 100"}, true, false, 0, "DUPLICATE_SIZE_ADVERTISEMENT"},
   {"duplicate conflicting", []string{"host", "SIZE 100", "SIZE 200"}, true, false, 0, "DUPLICATE_SIZE_ADVERTISEMENT"},
   {"duplicate malformed", []string{"host", "SIZE 10", "SIZE nope"}, true, false, 0, "DUPLICATE_SIZE_ADVERTISEMENT"},
-  {"keyword prefix", []string{"host", "SIZE=100"}, false, false, 0, ""},
+  {"keyword prefix", []string{"host", "SIZE=100"}, true, false, 0, "MALFORMED_SIZE_ADVERTISEMENT"},
   {"leading zero", []string{"host", "SIZE 00010"}, true, true, 10, ""},
   {"too many digits", []string{"host", "SIZE 000000000000000000001"}, true, false, 0, "MALFORMED_SIZE_ADVERTISEMENT"},
  }
