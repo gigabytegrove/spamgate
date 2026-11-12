@@ -13,9 +13,20 @@ func attachmentNameFindings(filename string) []AttachmentFinding {
  if filename == "" || filename == "unnamed attachment" { return nil }
  name := path.Base(strings.ReplaceAll(filename, "\\", "/"))
  lower := strings.ToLower(strings.TrimRight(name, " .\t"))
- out := make([]AttachmentFinding, 0, 3)
+ out := make([]AttachmentFinding, 0, 5)
  add := func(symbol, detail string, score float64) {
   out = append(out, AttachmentFinding{Symbol: symbol, Detail: detail, Score: score})
+ }
+ // Preserve evidence about the original decoded filename before path.Base
+ // discards attacker-supplied directory components.
+ if strings.ContainsAny(filename, "/\\\\") {
+  add("ATTACHMENT_NAME_PATH", "Attachment filename contains path separators", 2)
+ }
+ for _, r := range name {
+  if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
+   add("ATTACHMENT_NAME_CONTROL", "Attachment filename contains control or line separator characters", 2)
+   break
+  }
  }
  for _, r := range name {
   if isFilenameBidiControl(r) {
