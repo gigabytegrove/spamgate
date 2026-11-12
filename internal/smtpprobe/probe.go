@@ -17,6 +17,14 @@ type Result struct {
  BannerCode int `json:"banner_code"`
  EHLOCode int `json:"ehlo_code"`
  StartTLSAdvertised bool `json:"starttls_advertised"`
+ SizeAdvertised bool `json:"size_advertised"`
+ SizeLimitKnown bool `json:"size_limit_known"`
+ SizeLimitBytes uint64 `json:"size_limit_bytes"`
+ SizeWarning string `json:"size_warning,omitempty"`
+ PostTLSSizeAdvertised bool `json:"post_tls_size_advertised"`
+ PostTLSSizeLimitKnown bool `json:"post_tls_size_limit_known"`
+ PostTLSSizeLimitBytes uint64 `json:"post_tls_size_limit_bytes"`
+ PostTLSSizeWarning string `json:"post_tls_size_warning,omitempty"`
  StartTLSVerified bool `json:"starttls_verified"`
  PostTLSStartTLSAdvertised bool `json:"post_tls_starttls_advertised"`
  TLSVersion string `json:"tls_version,omitempty"`
@@ -105,6 +113,7 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  code,lines,err:=readReply(reader);if err!=nil{return result,err};result.EHLOCode=code
  if code!=250{return result,fmt.Errorf("EHLO returned %d, expected 250",code)}
  result.EHLOWarnings=capabilityWarnings(lines)
+ result.SizeAdvertised,result.SizeLimitKnown,result.SizeLimitBytes,result.SizeWarning=sizeEvidence(lines)
  result.StartTLSAdvertised,result.AuthMechanisms=capabilities(lines)
  if !result.StartTLSAdvertised{
   if opt.RequireTLS{return result,errors.New("STARTTLS not advertised; refusing downgrade")}
@@ -123,6 +132,7 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  result.PostTLSEHLOCode=code
  if code!=250{return result,fmt.Errorf("post-TLS EHLO returned %d, expected 250",code)}
  result.PostTLSEHLOWarnings=capabilityWarnings(lines)
+ result.PostTLSSizeAdvertised,result.PostTLSSizeLimitKnown,result.PostTLSSizeLimitBytes,result.PostTLSSizeWarning=sizeEvidence(lines)
  result.PostTLSStartTLSAdvertised,result.PostTLSAuthMechanisms=capabilities(lines)
  return result,nil
 }
