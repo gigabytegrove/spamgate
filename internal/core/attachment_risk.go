@@ -34,6 +34,15 @@ func attachmentNameFindings(filename string) []AttachmentFinding {
    break
   }
  }
+ // Unicode format controls can make two visually identical attachment names
+ // compare differently. Preserve this as low-weight evidence; ordinary
+ // non-ASCII letters and combining marks are not suspicious by themselves.
+ for _, r := range filename {
+  if unicode.Is(unicode.Cf, r) && !isFilenameBidiControl(r) {
+   add("ATTACHMENT_NAME_INVISIBLE", "Attachment filename contains invisible formatting characters", 1)
+   break
+  }
+ }
  if strings.TrimRight(name, " .\t") != name {
   add("ATTACHMENT_NAME_TRAILING", "Attachment filename ends in ambiguous whitespace or dots", 1)
  }
@@ -72,7 +81,7 @@ func attachmentLabel(name string) string {
  var b strings.Builder
  b.Grow(min(len(name), 120))
  for _, r := range name {
-  if unicode.IsControl(r) || isFilenameBidiControl(r) || r == '\u2028' || r == '\u2029' || r == utf8.RuneError { r = '_' }
+  if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || isFilenameBidiControl(r) || r == '\u2028' || r == '\u2029' || r == utf8.RuneError { r = '_' }
   if b.Len()+utf8.RuneLen(r) > 120 { break }
   b.WriteRune(r)
  }
