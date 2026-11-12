@@ -1,7 +1,6 @@
 package smtpprobe
 
 import (
- "math"
  "testing"
 )
 
@@ -18,7 +17,7 @@ func TestSizeEvidence(t *testing.T) {
   {"unbounded", []string{"host", "SIZE"}, true, false, 0, ""},
   {"zero is known", []string{"host", "size 0"}, true, true, 0, ""},
   {"numeric", []string{"host", "SIZE 10485760"}, true, true, 10485760, ""},
-  {"uint64 max", []string{"host", "SIZE 18446744073709551615"}, true, true, math.MaxUint64, ""},
+  {"uint64 max", []string{"host", "SIZE 18446744073709551615"}, true, true, ^uint64(0), ""},
   {"overflow", []string{"host", "SIZE 18446744073709551616"}, true, false, 0, "MALFORMED_SIZE_ADVERTISEMENT"},
   {"negative", []string{"host", "SIZE -1"}, true, false, 0, "MALFORMED_SIZE_ADVERTISEMENT"},
   {"plus", []string{"host", "SIZE +1"}, true, false, 0, "MALFORMED_SIZE_ADVERTISEMENT"},
