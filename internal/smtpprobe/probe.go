@@ -22,6 +22,8 @@ type Result struct {
  TLSVersion string `json:"tls_version,omitempty"`
  TLSCertificate *CertificateInfo `json:"tls_certificate,omitempty"`
  Findings []Finding `json:"findings"`
+ EHLOWarnings []string `json:"ehlo_warnings"`
+ PostTLSEHLOWarnings []string `json:"post_tls_ehlo_warnings"`
  AuthMechanisms []string `json:"auth_mechanisms"`
  PostTLSEHLOCode int `json:"post_tls_ehlo_code,omitempty"`
  PostTLSAuthMechanisms []string `json:"post_tls_auth_mechanisms"`
@@ -78,7 +80,7 @@ func invalidHostname(name string) bool {
  return false
 }
 func Probe(ctx context.Context,opt Options)(result Result,err error){
- result=Result{AuthMechanisms:[]string{},PostTLSAuthMechanisms:[]string{},Findings:[]Finding{}}
+ result=Result{AuthMechanisms:[]string{},PostTLSAuthMechanisms:[]string{},Findings:[]Finding{},EHLOWarnings:[]string{},PostTLSEHLOWarnings:[]string{}}
  defer func(){result.Findings=Assess(result)}()
  if opt.Timeout<=0||opt.Timeout>60*time.Second{return result,errors.New("timeout must be between 1ns and 60s")}
  if ctx==nil{return result,errors.New("nil context")}
@@ -102,6 +104,7 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  if err:=send(writer,"EHLO "+opt.HelloName);err!=nil{return result,err}
  code,lines,err:=readReply(reader);if err!=nil{return result,err};result.EHLOCode=code
  if code!=250{return result,fmt.Errorf("EHLO returned %d, expected 250",code)}
+ result.EHLOWarnings=capabilityWarnings(lines)
  result.StartTLSAdvertised,result.AuthMechanisms=capabilities(lines)
  if !result.StartTLSAdvertised{
   if opt.RequireTLS{return result,errors.New("STARTTLS not advertised; refusing downgrade")}
@@ -119,6 +122,7 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  code,lines,err=readReply(reader);if err!=nil{return result,err}
  result.PostTLSEHLOCode=code
  if code!=250{return result,fmt.Errorf("post-TLS EHLO returned %d, expected 250",code)}
+ result.PostTLSEHLOWarnings=capabilityWarnings(lines)
  result.PostTLSStartTLSAdvertised,result.PostTLSAuthMechanisms=capabilities(lines)
  return result,nil
 }
