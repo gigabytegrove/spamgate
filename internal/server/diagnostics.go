@@ -110,7 +110,7 @@ func relaySizeLimit(message string) (*uint64, bool) {
 func relayEHLODetails(proto *textproto.Conn)(map[string]bool,[]string,*uint64,bool,[]string,error){
  if err:=proto.PrintfLine("EHLO spamgate.local");err!=nil{return nil,nil,nil,false,nil,err}
  _,message,err:=proto.ReadResponse(250)
- if err!=nil{return nil,nil,nil,false,err}
+ if err!=nil{return nil,nil,nil,false,nil,err}
  limit,malformed:=relaySizeLimit(message)
  return relayExtensions(message),relayAuthMechanisms(message),limit,malformed,relayCapabilityWarnings(message),nil
 }
