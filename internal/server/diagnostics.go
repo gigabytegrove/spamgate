@@ -9,6 +9,7 @@ import (
  "net/textproto"
  "os"
  "strings"
+ "strconv"
  "time"
 )
 
@@ -27,6 +28,9 @@ type RelayDiagnostic struct {
  EightBitMIMEAdvertised bool `json:"eight_bit_mime_advertised"`
  PIPELININGAdvertised bool `json:"pipelining_advertised"`
  SIZEAdvertised bool `json:"size_advertised"`
+ SIZELimitBytes *uint64 `json:"size_limit_bytes,omitempty"`
+ SIZELimitKnown bool `json:"size_limit_known"`
+ SIZEParameterMalformed bool `json:"size_parameter_malformed"`
  CredentialsConfigured bool `json:"credentials_configured"`
  Detail string `json:"detail"`
  CheckedAt time.Time `json:"checked_at"`
@@ -75,11 +79,34 @@ func relayAuthMechanisms(message string) []string {
  return mechanisms
 }
 
-func relayEHLODetails(proto *textproto.Conn)(map[string]bool,[]string,error){
- if err:=proto.PrintfLine("EHLO spamgate.local");err!=nil{return nil,nil,err}
+// relaySizeLimit distinguishes SIZE with no advertised maximum from a numeric
+// maximum. Malformed, duplicated or conflicting SIZE declarations never yield
+// a trusted limit. A zero limit is valid per RFC 1870 (no fixed maximum).
+func relaySizeLimit(message string) (*uint64, bool) {
+ lines := strings.Split(message, "\n")
+ var found bool
+ var limit *uint64
+ for _, line := range lines[1:] {
+  fields := strings.Fields(line)
+  if len(fields)==0 || !strings.EqualFold(fields[0], "SIZE") {continue}
+  if found {return nil,true}
+  found=true
+  if len(fields)==1 {continue}
+  if len(fields)!=2 {return nil,true}
+  for _, c := range fields[1] {if c<'0'||c>'9' {return nil,true}}
+  n,err:=strconv.ParseUint(fields[1],10,64)
+  if err!=nil {return nil,true}
+  limit=&n
+ }
+ return limit,false
+}
+
+func relayEHLODetails(proto *textproto.Conn)(map[string]bool,[]string,*uint64,bool,error){
+ if err:=proto.PrintfLine("EHLO spamgate.local");err!=nil{return nil,nil,nil,false,err}
  _,message,err:=proto.ReadResponse(250)
  if err!=nil{return nil,nil,err}
- return relayExtensions(message),relayAuthMechanisms(message),nil
+ limit,malformed:=relaySizeLimit(message)
+ return relayExtensions(message),relayAuthMechanisms(message),limit,malformed,nil
 }
 
 func relayEHLO(proto *textproto.Conn)(map[string]bool,error){
@@ -117,7 +144,7 @@ func probeRelay(ctx context.Context,addr,tlsMode string,credentialsConfigured bo
  }
  proto:=textproto.NewConn(conn)
  if _,_,err:=proto.ReadResponse(220);err!=nil{result.Detail="SMTP banner rejected: "+err.Error();return result}
- extensions,mechanisms,err:=relayEHLODetails(proto)
+ extensions,mechanisms,sizeLimit,sizeMalformed,err:=relayEHLODetails(proto)
  if err!=nil{result.Detail="SMTP EHLO failed (HELO fallback is not accepted): "+err.Error();return result}
  result.SMTPReady=true
  result.STARTTLSAdvertised=extensions["STARTTLS"]
@@ -134,13 +161,16 @@ func probeRelay(ctx context.Context,addr,tlsMode string,credentialsConfigured bo
   result.TLSVerified=true
   conn=secure
   proto=textproto.NewConn(conn)
-  extensions,mechanisms,err=relayEHLODetails(proto)
+  extensions,mechanisms,sizeLimit,sizeMalformed,err=relayEHLODetails(proto)
   if err!=nil{result.SMTPReady=false;result.Detail="Post-STARTTLS EHLO failed: "+err.Error();return result}
  }
  result.SMTPUTF8Advertised=extensions["SMTPUTF8"]
  result.EightBitMIMEAdvertised=extensions["8BITMIME"]
  result.PIPELININGAdvertised=extensions["PIPELINING"]
  result.SIZEAdvertised=extensions["SIZE"]
+ result.SIZELimitBytes=sizeLimit
+ result.SIZELimitKnown=sizeLimit!=nil
+ result.SIZEParameterMalformed=sizeMalformed
  result.AUTHAdvertised=extensions["AUTH"]
  result.AUTHMechanisms=mechanisms
  result.AUTHMechanismsKnown=len(mechanisms)>0
