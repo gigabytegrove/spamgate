@@ -27,6 +27,11 @@ type RelayDiagnostic struct {
  SMTPUTF8Advertised bool `json:"smtputf8_advertised"`
  EightBitMIMEAdvertised bool `json:"eight_bit_mime_advertised"`
  PIPELININGAdvertised bool `json:"pipelining_advertised"`
+ DSNAdvertised bool `json:"dsn_advertised"`
+ CHUNKINGAdvertised bool `json:"chunking_advertised"`
+ BINARYMIMEAdvertised bool `json:"binary_mime_advertised"`
+ REQUIRETLSAdvertised bool `json:"requiretls_advertised"`
+ EnhancedStatusCodesAdvertised bool `json:"enhanced_status_codes_advertised"`
  SIZEAdvertised bool `json:"size_advertised"`
  SIZELimitBytes *uint64 `json:"size_limit_bytes,omitempty"`
  SIZELimitKnown bool `json:"size_limit_known"`
@@ -167,6 +172,11 @@ func probeRelay(ctx context.Context,addr,tlsMode string,credentialsConfigured bo
  result.SMTPUTF8Advertised=extensions["SMTPUTF8"]
  result.EightBitMIMEAdvertised=extensions["8BITMIME"]
  result.PIPELININGAdvertised=extensions["PIPELINING"]
+ result.DSNAdvertised=extensions["DSN"]
+ result.CHUNKINGAdvertised=extensions["CHUNKING"]
+ result.BINARYMIMEAdvertised=extensions["BINARYMIME"]
+ result.REQUIRETLSAdvertised=extensions["REQUIRETLS"]
+ result.EnhancedStatusCodesAdvertised=extensions["ENHANCEDSTATUSCODES"]
  result.SIZEAdvertised=extensions["SIZE"]
  result.SIZELimitBytes=sizeLimit
  result.SIZELimitKnown=sizeLimit!=nil
