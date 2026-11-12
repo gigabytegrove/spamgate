@@ -71,16 +71,6 @@ func readReply(r *bufio.Reader)(int,[]string,error){
 func send(w *bufio.Writer,command string)error{
  if _,err:=w.WriteString(command+"\r\n");err!=nil{return err};return w.Flush()
 }
-func capabilities(lines []string)(bool,[]string){
- startTLS:=false;auth:=[]string{}
- for _,line:=range lines{
-  fields:=strings.Fields(strings.ToUpper(line));if len(fields)==0{continue}
-  if fields[0]=="STARTTLS"{startTLS=true}
-  if fields[0]=="AUTH"{auth=append(auth,fields[1:]...)}
-  if strings.HasPrefix(fields[0],"AUTH="){auth=append(auth,strings.TrimPrefix(fields[0],"AUTH="));auth=append(auth,fields[1:]...)}
- }
- return startTLS,auth
-}
 func invalidHostname(name string) bool {
  for i := 0; i < len(name); i++ {
   b := name[i]
