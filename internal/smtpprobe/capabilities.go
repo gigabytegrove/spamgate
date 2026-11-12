@@ -42,7 +42,7 @@ func capabilities(lines []string) (bool, []string) {
 			}
 		}
 	}
-	return startTLS, auth
+	return startTLS && trustworthyStartTLS(lines), auth
 }
 
 func validAuthMechanism(token string) bool {
