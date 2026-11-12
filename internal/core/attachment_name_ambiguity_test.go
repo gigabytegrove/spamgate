@@ -4,11 +4,6 @@ import (
  "testing"
 )
 
-func hasAttachmentSymbol(findings []AttachmentFinding, symbol string) bool {
- for _, f := range findings { if f.Symbol == symbol { return true } }
- return false
-}
-
 func TestAttachmentNamePathAndControlEvidence(t *testing.T) {
  cases := []struct {
   name string
