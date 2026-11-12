@@ -24,7 +24,7 @@ type RelayDiagnostic struct {
  AUTHAdvertised bool `json:"auth_advertised"`
  AUTHMechanisms []string `json:"auth_mechanisms,omitempty"`
  AUTHMechanismsKnown bool `json:"auth_mechanisms_known"`
- AUTHUsable bool `json:"auth_usable"`
+ AUTHPrerequisitesObserved bool `json:"auth_prerequisites_observed"`
  AUTHWarning string `json:"auth_warning,omitempty"`
  SMTPUTF8Advertised bool `json:"smtputf8_advertised"`
  EightBitMIMEAdvertised bool `json:"eight_bit_mime_advertised"`
@@ -188,9 +188,9 @@ func probeRelay(ctx context.Context,addr,tlsMode string,credentialsConfigured bo
  result.AUTHAdvertised=extensions["AUTH"]
  result.AUTHMechanisms=mechanisms
  result.AUTHMechanismsKnown=len(mechanisms)>0
- // AUTHUsable is capability-only evidence, never proof of credentials or login.
+ // AUTHPrerequisitesObserved is capability-only evidence, never proof of credentials or login.
  // Plaintext transport must never be described as safe for credential use.
- result.AUTHUsable=credentialsConfigured && tlsMode!="none" && result.TLSVerified && result.AUTHMechanismsKnown
+ result.AUTHPrerequisitesObserved=credentialsConfigured && tlsMode!="none" && result.TLSVerified && result.AUTHMechanismsKnown
  switch {
  case credentialsConfigured&&tlsMode=="none":
   result.AUTHWarning="credentials_configured_without_tls"
