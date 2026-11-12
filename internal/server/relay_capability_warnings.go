@@ -32,6 +32,7 @@ func relayCapabilityWarnings(message string) []string {
  if counts["BINARYMIME"]>0 && counts["CHUNKING"]==0 {
   warnings["binarymime_without_chunking"]=true
  }
+ if len(warnings)==0 { return nil }
  result := make([]string,0,len(warnings))
  for warning := range warnings { result=append(result,warning) }
  sort.Strings(result)
