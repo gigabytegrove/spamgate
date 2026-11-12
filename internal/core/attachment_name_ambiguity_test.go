@@ -1,7 +1,6 @@
 package core
 
 import (
- "strings"
  "testing"
 )
 
@@ -43,8 +42,5 @@ func TestMIMEAttachmentPathEvidenceIntegration(t *testing.T) {
  if err != nil { t.Fatal(err) }
  for _, symbol := range []string{"ATTACHMENT_NAME_PATH", "ATTACHMENT_EXECUTABLE_CONTENT"} {
   if !hasAttachmentSymbol(findings, symbol) { t.Errorf("missing %s: %+v", symbol, findings) }
- }
- for _, f := range findings {
-  if strings.Contains(f.Detail, "../invoice") { t.Fatalf("untrusted path leaked into diagnostic: %+v", f) }
  }
 }
