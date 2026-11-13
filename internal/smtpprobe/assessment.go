@@ -81,10 +81,10 @@ func Assess(r Result) []Finding {
  if r.PostTLSEHLOCode == 250 {
   // Capability disappearance is observable even when neither side supplies
   // a numeric SIZE limit. Keep this separate from numeric policy drift.
-  if r.SizeAdvertised && !r.PostTLSSizeAdvertised {
+  if r.SizeAdvertised && !r.PostTLSSizeAdvertised && r.SizeWarning == "" && r.PostTLSSizeWarning == "" {
    findings = append(findings, Finding{Code:"SIZE_NOT_ADVERTISED_AFTER_TLS",Severity:"warning",Message:"SMTP SIZE capability disappeared after verified STARTTLS; inspect post-TLS extension policy"})
   }
-  if !r.SizeAdvertised && r.PostTLSSizeAdvertised {
+  if !r.SizeAdvertised && r.PostTLSSizeAdvertised && r.SizeWarning == "" && r.PostTLSSizeWarning == "" {
    findings = append(findings, Finding{Code:"SIZE_ADVERTISED_ONLY_AFTER_TLS",Severity:"info",Message:"SMTP SIZE capability appeared only after verified STARTTLS; inspect extension policy"})
   }
   if r.SizeLimitKnown && r.PostTLSSizeLimitKnown && r.SizeWarning == "" && r.PostTLSSizeWarning == "" && r.SizeAdvertised && r.PostTLSSizeAdvertised && r.SizeLimitBytes != r.PostTLSSizeLimitBytes {
