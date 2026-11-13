@@ -26,11 +26,26 @@ func mechanismSet(mechanisms []string) map[string]bool {
 // Assess only reports protocol observations. An advertised AUTH mechanism does
 // not prove the server accepts credentials, and a verified STARTTLS connection
 // does not prove that delivery or SMTP authentication works.
+// ambiguousAUTH reports whether the EHLO parser rejected AUTH evidence. An
+// invalid advertisement is not proof that AUTH is unavailable.
+func ambiguousAUTH(warnings []string) bool {
+ for _, code := range warnings {
+  switch code {
+  case "DUPLICATE_AUTH_MECHANISM", "MALFORMED_AUTH_MECHANISM", "EMPTY_AUTH_ADVERTISEMENT", "DUPLICATE_EXTENSION":
+   return true
+  }
+ }
+ return false
+}
+
 func Assess(r Result) []Finding {
  findings := []Finding{}
  if r.EHLOCode != 250 {
   if r.EHLOCode != 0 { findings = append(findings, Finding{Code:"EHLO_NOT_ACCEPTED",Severity:"warning",Message:"SMTP server did not accept initial EHLO; capabilities and authentication policy could not be assessed"}) }
   return findings
+ }
+ if ambiguousAUTH(r.EHLOWarnings) {
+  findings = append(findings, Finding{Code:"AUTH_EVIDENCE_UNTRUSTWORTHY",Severity:"warning",Message:"Initial EHLO AUTH evidence is malformed or ambiguous; authentication availability cannot be inferred"})
  }
  if len(r.AuthMechanisms) > 0 {
   findings = append(findings, Finding{
@@ -82,6 +97,11 @@ func Assess(r Result) []Finding {
     Message:"Server still advertises STARTTLS after a verified TLS handshake; inspect RFC 3207 capability handling",
    })
   }
+  if ambiguousAUTH(r.PostTLSEHLOWarnings) {
+   findings = append(findings, Finding{Code:"POST_TLS_AUTH_EVIDENCE_UNTRUSTWORTHY",Severity:"warning",Message:"Post-TLS EHLO AUTH evidence is malformed or ambiguous; authentication availability cannot be inferred"})
+  }
+  // Do not interpret an invalid advertisement as an empty AUTH mechanism set.
+  if !ambiguousAUTH(r.EHLOWarnings) && !ambiguousAUTH(r.PostTLSEHLOWarnings) {
   before := mechanismSet(r.AuthMechanisms)
   after := mechanismSet(r.PostTLSAuthMechanisms)
   if len(before) == 0 && len(after) > 0 {
@@ -119,6 +139,7 @@ func Assess(r Result) []Finding {
      Message:"One or more AUTH mechanisms advertised before STARTTLS are absent after verified TLS; compare server submission policy",
     })
    }
+  }
   }
  }
  if r.TLSCertificate != nil && r.TLSCertificate.DaysUntilExpiry <= 14 {
