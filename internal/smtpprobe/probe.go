@@ -25,6 +25,7 @@ type Result struct {
  PostTLSSizeLimitKnown bool `json:"post_tls_size_limit_known"`
  PostTLSSizeLimitBytes uint64 `json:"post_tls_size_limit_bytes"`
  PostTLSSizeWarning string `json:"post_tls_size_warning,omitempty"`
+ StartTLSReplyCode int `json:"starttls_reply_code,omitempty"`
  StartTLSVerified bool `json:"starttls_verified"`
  PostTLSStartTLSAdvertised bool `json:"post_tls_starttls_advertised"`
  TLSVersion string `json:"tls_version,omitempty"`
@@ -121,6 +122,7 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  }
  if err:=send(writer,"STARTTLS");err!=nil{return result,err}
  code,_,err=readReply(reader);if err!=nil{return result,err}
+ result.StartTLSReplyCode=code
  if code!=220{return result,fmt.Errorf("STARTTLS returned %d, expected 220",code)}
  tlsConn:=tls.Client(conn,&tls.Config{ServerName:opt.ServerName,MinVersion:tls.VersionTLS12})
  if err:=tlsConn.HandshakeContext(probeCtx);err!=nil{return result,fmt.Errorf("TLS verification failed: %w",err)}
