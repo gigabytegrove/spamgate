@@ -26,9 +26,12 @@ func TestPolicyPreviewTemporaryRejectionTotals(t *testing.T) {
  }
  encoded,err:=json.Marshal(totals)
  if err!=nil {t.Fatal(err)}
- var result map[string]int
+ var result struct {
+  WouldSoftReject int `json:"would_soft_reject"`
+  WouldReject int `json:"would_reject"`
+ }
  if err:=json.Unmarshal(encoded,&result);err!=nil {t.Fatal(err)}
- if result["would_soft_reject"]!=1 || result["would_reject"]!=1 {
+ if result.WouldSoftReject!=1 || result.WouldReject!=1 {
   t.Fatalf("missing distinct JSON counters: %s",encoded)
  }
 }
