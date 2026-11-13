@@ -32,7 +32,10 @@ func capabilityWarnings(lines []string) []string {
    }
   }
   if canonical == "" { continue }
-  if seen[canonical] { add("DUPLICATE_EXTENSION") }
+  if seen[canonical] {
+   add("DUPLICATE_EXTENSION")
+   if canonical == "AUTH" { add("DUPLICATE_AUTH_EXTENSION") }
+  }
   seen[canonical] = true
   switch canonical {
   case "STARTTLS", "CHUNKING", "BINARYMIME", "8BITMIME", "SMTPUTF8", "PIPELINING":
