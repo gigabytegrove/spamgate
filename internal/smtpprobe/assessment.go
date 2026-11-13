@@ -45,6 +45,14 @@ func Assess(r Result) []Finding {
   })
  }
  findings = append(findings, capabilityEvidenceFindings(r, false)...)
+ // A refusal is different from a missing STARTTLS extension or a failed
+ // certificate verification. Only an observed SMTP reply supports this finding.
+ if r.StartTLSAdvertised && r.StartTLSReplyCode != 0 && r.StartTLSReplyCode != 220 {
+  findings = append(findings, Finding{
+   Code:"STARTTLS_COMMAND_REJECTED", Severity:"warning",
+   Message:fmt.Sprintf("SMTP server advertised STARTTLS but rejected the command with reply %d; TLS authentication and submission were not tested",r.StartTLSReplyCode),
+  })
+ }
  if !r.StartTLSVerified { return findings }
  if r.TLSVersion == "TLS 1.2" {
   findings = append(findings, Finding{
