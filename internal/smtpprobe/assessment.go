@@ -40,6 +40,14 @@ func ambiguousAUTH(warnings []string) bool {
 
 func Assess(r Result) []Finding {
  findings := []Finding{}
+ // A rejected SMTP greeting is a transport/protocol failure, not an EHLO
+ // policy verdict. Report it even if no EHLO exchange could take place.
+ if r.BannerCode != 0 && r.BannerCode != 220 {
+  findings = append(findings, Finding{
+   Code:"SMTP_GREETING_NOT_ACCEPTED", Severity:"warning",
+   Message:fmt.Sprintf("SMTP server greeting returned %d rather than 220; no successful SMTP session was established",r.BannerCode),
+  })
+ }
  if r.EHLOCode != 250 {
   if r.EHLOCode != 0 { findings = append(findings, Finding{Code:"EHLO_NOT_ACCEPTED",Severity:"warning",Message:"SMTP server did not accept initial EHLO; capabilities and authentication policy could not be assessed"}) }
   return findings
