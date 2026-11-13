@@ -21,8 +21,12 @@ func trustworthyAUTH(lines []string) bool {
    mechanisms = append([]string{keyword[len("AUTH="):]}, mechanisms...)
   }
   if len(mechanisms) == 0 { return false }
+  seen := make(map[string]bool, len(mechanisms))
   for _, mechanism := range mechanisms {
    if !validAuthMechanism(mechanism) { return false }
+   normalized := strings.ToUpper(mechanism)
+   if seen[normalized] { return false }
+   seen[normalized] = true
   }
  }
  return count == 1
