@@ -149,6 +149,29 @@ func TestRelayCapabilityPreflightOverTCP(t *testing.T) {
 			if tt.wantError != "" && (sendErr == nil || !strings.Contains(sendErr.Error(), tt.wantError)) {
 				t.Fatalf("expected error containing %q, got %v", tt.wantError, sendErr)
 			}
+			// Invalid originals are rejected before dialing. Closing the listener
+			// unblocks Accept; no SMTP session should exist to finish.
+			var invalidOriginal *invalidRelayOriginalError
+			if errors.As(sendErr, &invalidOriginal) {
+				if tt.wantMail {
+					t.Fatalf("unexpected preflight rejection: %v", sendErr)
+				}
+				if err := ln.Close(); err != nil {
+					t.Fatal(err)
+				}
+				select {
+				case result := <-done:
+					if len(result.commands) != 0 {
+						t.Fatalf("invalid original reached SMTP peer: %q", result.commands)
+					}
+					if result.err == nil || !errors.Is(result.err, net.ErrClosed) {
+						t.Fatalf("expected unaccepted listener to close, got %v", result.err)
+					}
+				case <-time.After(time.Second):
+					t.Fatal("SMTP peer did not stop after listener closure")
+				}
+				return
+			}
 			select {
 			case result := <-done:
 				if result.err != nil {
