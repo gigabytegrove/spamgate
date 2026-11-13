@@ -28,7 +28,10 @@ func mechanismSet(mechanisms []string) map[string]bool {
 // does not prove that delivery or SMTP authentication works.
 func Assess(r Result) []Finding {
  findings := []Finding{}
- if r.EHLOCode != 250 { return findings }
+ if r.EHLOCode != 250 {
+  if r.EHLOCode != 0 { findings = append(findings, Finding{Code:"EHLO_NOT_ACCEPTED",Severity:"warning",Message:"SMTP server did not accept initial EHLO; capabilities and authentication policy could not be assessed"}) }
+  return findings
+ }
  if len(r.AuthMechanisms) > 0 {
   findings = append(findings, Finding{
    Code:"AUTH_ADVERTISED_BEFORE_TLS", Severity:"warning",
@@ -49,7 +52,13 @@ func Assess(r Result) []Finding {
    Message:"The diagnostic negotiated TLS 1.2; this alone does not prove the server lacks TLS 1.3",
   })
  }
+ if r.PostTLSEHLOCode != 0 && r.PostTLSEHLOCode != 250 {
+  findings = append(findings, Finding{Code:"POST_TLS_EHLO_NOT_ACCEPTED",Severity:"warning",Message:"SMTP server did not accept EHLO after verified STARTTLS; post-TLS capabilities and authentication policy could not be assessed"})
+ }
  if r.PostTLSEHLOCode == 250 {
+  if r.SizeLimitKnown && r.PostTLSSizeLimitKnown && r.SizeLimitBytes != r.PostTLSSizeLimitBytes {
+   findings = append(findings, Finding{Code:"SIZE_LIMIT_CHANGED_AFTER_TLS",Severity:"info",Message:"Advertised SMTP SIZE limit differs after verified STARTTLS; inspect configured message-size policy"})
+  }
   findings = append(findings, capabilityEvidenceFindings(r, true)...)
   if r.PostTLSStartTLSAdvertised {
    findings = append(findings, Finding{
