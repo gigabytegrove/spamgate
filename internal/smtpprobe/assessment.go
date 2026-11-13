@@ -56,6 +56,14 @@ func Assess(r Result) []Finding {
   findings = append(findings, Finding{Code:"POST_TLS_EHLO_NOT_ACCEPTED",Severity:"warning",Message:"SMTP server did not accept EHLO after verified STARTTLS; post-TLS capabilities and authentication policy could not be assessed"})
  }
  if r.PostTLSEHLOCode == 250 {
+  // Capability disappearance is observable even when neither side supplies
+  // a numeric SIZE limit. Keep this separate from numeric policy drift.
+  if r.SizeAdvertised && !r.PostTLSSizeAdvertised {
+   findings = append(findings, Finding{Code:"SIZE_NOT_ADVERTISED_AFTER_TLS",Severity:"warning",Message:"SMTP SIZE capability disappeared after verified STARTTLS; inspect post-TLS extension policy"})
+  }
+  if !r.SizeAdvertised && r.PostTLSSizeAdvertised {
+   findings = append(findings, Finding{Code:"SIZE_ADVERTISED_ONLY_AFTER_TLS",Severity:"info",Message:"SMTP SIZE capability appeared only after verified STARTTLS; inspect extension policy"})
+  }
   if r.SizeLimitKnown && r.PostTLSSizeLimitKnown && r.SizeLimitBytes != r.PostTLSSizeLimitBytes {
    findings = append(findings, Finding{Code:"SIZE_LIMIT_CHANGED_AFTER_TLS",Severity:"info",Message:"Advertised SMTP SIZE limit differs after verified STARTTLS; inspect configured message-size policy"})
   }
@@ -68,6 +76,9 @@ func Assess(r Result) []Finding {
   }
   before := mechanismSet(r.AuthMechanisms)
   after := mechanismSet(r.PostTLSAuthMechanisms)
+  if len(before) == 0 && len(after) > 0 {
+   findings = append(findings, Finding{Code:"AUTH_ADVERTISED_ONLY_AFTER_TLS",Severity:"info",Message:"SMTP AUTH is advertised only after verified STARTTLS; credentials were not submitted or tested"})
+  }
   if len(before) > 0 && len(after) == 0 {
    findings = append(findings, Finding{
     Code:"AUTH_NOT_ADVERTISED_AFTER_TLS", Severity:"warning",
