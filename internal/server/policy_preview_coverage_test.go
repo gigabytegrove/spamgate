@@ -27,9 +27,12 @@ func TestPolicyPreviewHistoricalDispositionAccounting(t *testing.T) {
  }
  encoded,err:=json.Marshal(totals)
  if err!=nil {t.Fatal(err)}
- var decoded map[string]int
+ var decoded struct {
+  Determinate int `json:"determinate"`
+  HistoricalSoftReject int `json:"historical_soft_reject"`
+ }
  if err:=json.Unmarshal(encoded,&decoded);err!=nil {t.Fatal(err)}
- if decoded["determinate"]!=5 || decoded["historical_soft_reject"]!=1 {t.Fatalf("missing JSON evidence: %s",encoded)}
+ if decoded.Determinate!=5 || decoded.HistoricalSoftReject!=1 {t.Fatalf("missing JSON evidence: %s",encoded)}
 }
 
 func TestPolicyPreviewIndeterminateExcludedFromHistoricalCounters(t *testing.T) {
