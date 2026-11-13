@@ -118,7 +118,7 @@ func previewOne(m core.Message, p policyPreviewRequest, policies []core.Recipien
 		result.Note = "Historical forced action is unrecognized; comparison unavailable"
 		return result
 	}
-	selected := core.SelectRecipientThresholds(core.Settings{
+	// A forced verdict is only trustworthy when it agrees with the saved final\n	// verdict. Conflicting persisted evidence must not be replayed as certainty.\n	if m.Scoring != nil && m.Scoring.ForcedAction != "" && m.Scoring.ForcedAction != m.Action {\n		result.Indeterminate = true\n		result.Note = "Historical forced action conflicts with saved final action; comparison unavailable"\n		return result\n	}\n	selected := core.SelectRecipientThresholds(core.Settings{
 		TagThreshold: p.TagThreshold, QuarantineThreshold: p.QuarantineThreshold, RejectThreshold: p.RejectThreshold,
 	}, policies, m.Recipients)
 	result.PolicySource = selected.Source
