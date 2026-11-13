@@ -72,7 +72,7 @@ func Assess(r Result) []Finding {
   if !r.SizeAdvertised && r.PostTLSSizeAdvertised {
    findings = append(findings, Finding{Code:"SIZE_ADVERTISED_ONLY_AFTER_TLS",Severity:"info",Message:"SMTP SIZE capability appeared only after verified STARTTLS; inspect extension policy"})
   }
-  if r.SizeLimitKnown && r.PostTLSSizeLimitKnown && r.SizeLimitBytes != r.PostTLSSizeLimitBytes {
+  if r.SizeLimitKnown && r.PostTLSSizeLimitKnown && r.SizeWarning == "" && r.PostTLSSizeWarning == "" && r.SizeAdvertised && r.PostTLSSizeAdvertised && r.SizeLimitBytes != r.PostTLSSizeLimitBytes {
    findings = append(findings, Finding{Code:"SIZE_LIMIT_CHANGED_AFTER_TLS",Severity:"info",Message:"Advertised SMTP SIZE limit differs after verified STARTTLS; inspect configured message-size policy"})
   }
   findings = append(findings, capabilityEvidenceFindings(r, true)...)
