@@ -18,11 +18,15 @@ func TestPolicyPreviewExactBoundariesAndRecipientFallback(t *testing.T) {
 	for _, tc := range []struct {
 		score float64
 		want  string
-	}{{-1, "accept"}, {3.99, "accept"}, {4, "tag"}, {7.999, "tag"}, {8, "quarantine"}, {14.99, "quarantine"}, {15, "reject"}} {
+	}{{3.99, "accept"}, {4, "tag"}, {7.999, "tag"}, {8, "quarantine"}, {14.99, "quarantine"}, {15, "reject"}} {
 		item := previewOne(core.Message{ID: "case", Score: tc.score, Action: "accept", Recipients: []string{"other@example.org"}}, p, rps)
 		if item.HypotheticalAction != tc.want {
 			t.Fatalf("score %f: %s != %s", tc.score, item.HypotheticalAction, tc.want)
 		}
+	}
+	invalid := previewOne(core.Message{ID: "invalid", Score: -1, Action: "accept"}, p, rps)
+	if !invalid.Indeterminate || invalid.HypotheticalAction != "" || invalid.Changed {
+		t.Fatalf("negative historical score must be indeterminate: %+v", invalid)
 	}
 	single := previewOne(core.Message{Score: 4, Action: "tag", Recipients: []string{"ONE@example.org"}}, p, rps)
 	if single.HypotheticalAction != "reject" || single.PolicySource != "mailbox" {
