@@ -587,6 +587,15 @@ func (s *SMTP) handle(conn net.Conn) {
 					resetEnvelope()
 					continue
 				}
+				// The queue must never acknowledge an original that the delivery
+				// worker will deterministically dead-letter on its first attempt.
+				// Apply the same offline validation at SMTP acceptance and replay.
+				if preflightErr := validateRelayOriginal(m, queuedRaw); preflightErr != nil {
+					s.log.Warn("SMTP original failed relay preflight", "id", m.ID, "error", preflightErr)
+					reply(554, "5.6.0 Original cannot be relayed safely")
+					resetEnvelope()
+					continue
+				}
 				if e = s.Queue.Enqueue(m, queuedRaw); e != nil {
 					s.log.Error("durable queue could not accept message", "id", m.ID, "error", e)
 					reply(451, "4.3.0 Durable queue unavailable")
