@@ -46,6 +46,11 @@ func (r *Relay) Send(ctx context.Context, m core.Message, raw []byte) error {
 	if r == nil {
 		return errors.New("no relay configured")
 	}
+	// Validate immutable spool contents before any DNS, TLS, AUTH or socket work.
+	// Invalid originals must enter dead-letter even while the relay is down.
+	if err := validateRelayOriginal(m, raw); err != nil {
+		return wrapInvalidRelayOriginal(err)
+	}
 	// Validate at the last responsible boundary as well as environment
 	// construction: tests, integrations and future callers build Relay directly.
 	// Never open a socket before rejecting unsafe authentication settings.
