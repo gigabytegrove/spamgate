@@ -32,7 +32,7 @@ func TestAssessSTARTTLSCommandRefusalEvidence(t *testing.T) {
 }
 
 func TestProbeSTARTTLSRefusalRetainsReplyAndNeverSubmitsMail(t *testing.T) {
- addr, commands:=server(t,"250-test\\r\\n250 STARTTLS\\r\\n")
+ addr, commands:=server(t,"250-test\r\n250 STARTTLS\r\n")
  result,err:=Probe(context.Background(),Options{Address:addr,Timeout:2*time.Second,RequireTLS:true})
  if err==nil || !strings.Contains(err.Error(),"454") { t.Fatalf("expected refusal: %v",err) }
  if result.StartTLSReplyCode!=454 || result.StartTLSVerified { t.Fatalf("invalid TLS evidence: %+v",result) }
