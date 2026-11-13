@@ -38,6 +38,7 @@ type policyPreviewTotals struct {
 	WouldTag               int `json:"would_tag"`
 	WouldQuarantine        int `json:"would_quarantine"`
 	WouldReject            int `json:"would_reject"`
+	WouldSoftReject        int `json:"would_soft_reject"`
 	ForcedPreserved        int `json:"forced_preserved"`
 	MultiRecipientFallback int `json:"multi_recipient_fallback"`
 	UniformShared          int `json:"uniform_shared"`
@@ -126,6 +127,22 @@ func previewOne(m core.Message, p policyPreviewRequest, policies []core.Recipien
 	result.Changed = result.HypotheticalAction != result.HistoricalAction
 	return result
 }
+// accumulatePolicyPreview counts only determinate hypothetical outcomes.
+// soft_reject is a real SMTP temporary failure, not a permanent reject.
+func accumulatePolicyPreview(totals *policyPreviewTotals, result policyPreviewItem) {
+ if result.Indeterminate { return }
+ if result.Changed { totals.Changed++ }
+ if result.Forced { totals.ForcedPreserved++ }
+ if result.PolicySource == "global_multi_recipient" { totals.MultiRecipientFallback++ }
+ if result.PolicySource == "mailbox_shared" { totals.UniformShared++ }
+ switch result.HypotheticalAction {
+ case "accept": totals.WouldAccept++
+ case "tag": totals.WouldTag++
+ case "quarantine": totals.WouldQuarantine++
+ case "reject": totals.WouldReject++
+ case "soft_reject": totals.WouldSoftReject++
+ }
+}
 func (s *Server) previewPolicy(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.authorized(w, r, true, true); !ok {
 		return
@@ -158,32 +175,11 @@ func (s *Server) previewPolicy(w http.ResponseWriter, r *http.Request) {
 			totals.Indeterminate++
 			continue
 		}
-		if result.Changed {
-			totals.Changed++
-		}
-		if result.Forced {
-			totals.ForcedPreserved++
-		}
-		if result.PolicySource == "global_multi_recipient" {
-			totals.MultiRecipientFallback++
-		}
-		if result.PolicySource == "mailbox_shared" {
-			totals.UniformShared++
-		}
-		switch result.HypotheticalAction {
-		case "accept":
-			totals.WouldAccept++
-		case "tag":
-			totals.WouldTag++
-		case "quarantine":
-			totals.WouldQuarantine++
-		case "reject":
-			totals.WouldReject++
-		}
+		accumulatePolicyPreview(&totals, result)
 	}
 	jsonReply(w, http.StatusOK, map[string]any{
 		"simulation": true, "persisted": false, "mail_sent": false, "configuration_changed": false,
 		"candidate": in, "total_retained_matching": history.Total, "totals": totals, "items": items,
-		"limitations": []string{"Replays saved final scores against candidate thresholds; it does not re-scan messages or recalculate SPF, DKIM, DMARC, MIME, learning, or custom rule matches.", "Historical forced verdicts remain forced; rule edits, overrides and recipient splitting cannot be predicted from a score alone.", "Non-finite scores and unrecognized historical actions are reported as indeterminate and excluded from hypothetical verdict totals.", "Results are hypothetical scanner verdicts, not evidence that Postfix held, rejected, or delivered messages."},
+		"limitations": []string{"Replays saved final scores against candidate thresholds; it does not re-scan messages or recalculate SPF, DKIM, DMARC, MIME, learning, or custom rule matches.", "Historical forced verdicts remain forced; rule edits, overrides and recipient splitting cannot be predicted from a score alone.", "Non-finite or out-of-range scores and unrecognized historical actions are reported as indeterminate and excluded from hypothetical verdict totals.", "Results are hypothetical scanner verdicts, not evidence that Postfix held, rejected, or delivered messages."},
 	})
 }
