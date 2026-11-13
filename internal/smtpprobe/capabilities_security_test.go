@@ -17,7 +17,7 @@ func TestCapabilitiesEvidenceBoundaries(t *testing.T) {
   {"identity auth", []string{"AUTH PLAIN"}, false, []string{}},
   {"normal", []string{"mail.example ESMTP", "STARTTLS", "AUTH PLAIN LOGIN"}, true, []string{"PLAIN","LOGIN"}},
   {"duplicate AUTH advertisements rejected", []string{"host", "auth plain PLAIN login", "AUTH=LOGIN CRAM-MD5"}, false, []string{}},
-  {"single AUTH advertisement deduplicated", []string{"host", "AUTH PLAIN plain LOGIN"}, false, []string{"PLAIN","LOGIN"}},
+  {"single AUTH advertisement with duplicate mechanisms rejected", []string{"host", "AUTH PLAIN plain LOGIN"}, false, []string{}},
   {"malformed", []string{"host", "STARTTLS unexpected", "AUTH PLAIN=oops bad/token", "AUTH= bad@token"}, false, []string{}},
   {"length bound", []string{"host", "AUTH "+strings.Repeat("X",41)+" PLAIN"}, false, []string{}},
   {"empty", nil, false, []string{}},
