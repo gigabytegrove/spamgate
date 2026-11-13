@@ -29,6 +29,7 @@ type policyPreviewItem struct {
 	Indeterminate      bool    `json:"indeterminate"`
 	PolicySource       string  `json:"policy_source"`
 	Note               string  `json:"note,omitempty"`
+	ScoreValid         bool    `json:"score_valid"`
 }
 
 type policyPreviewTotals struct {
@@ -103,11 +104,12 @@ func previewOne(m core.Message, p policyPreviewRequest, policies []core.Recipien
 	// Persisted history is untrusted evidence. Never manufacture a verdict from
 	// a non-finite score or an unrecognized historical/forced action.
 	if math.IsNaN(m.Score) || math.IsInf(m.Score, 0) || m.Score < 0 || m.Score > 1000 {
-		result.Score = 0 // JSON has no representation for NaN or infinity.
+		result.Score = 0 // JSON has no representation for NaN or infinity; score_valid=false disambiguates zero.
 		result.Indeterminate = true
 		result.Note = "Historical score is outside the supported finite range; hypothetical verdict unavailable"
 		return result
 	}
+	result.ScoreValid = true
 	if !previewKnownAction(m.Action) {
 		result.Indeterminate = true
 		result.Note = "Historical action is unrecognized; comparison unavailable"
@@ -170,6 +172,18 @@ func accumulatePolicyPreview(totals *policyPreviewTotals, result policyPreviewIt
  case "soft_reject": totals.WouldSoftReject++
  }
 }
+// previewCoveragePercent reports retained-history coverage, not classifier accuracy.
+// Corrupt or inconsistent totals cannot produce a percentage above 100.
+func previewCoveragePercent(examined, total int) float64 {
+	if total <= 0 {
+		if examined == 0 { return 100 }
+		return 0
+	}
+	if examined < 0 { return 0 }
+	if examined >= total { return 100 }
+	return float64(examined) * 100 / float64(total)
+}
+
 func (s *Server) previewPolicy(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.authorized(w, r, true, true); !ok {
 		return
@@ -209,6 +223,7 @@ func (s *Server) previewPolicy(w http.ResponseWriter, r *http.Request) {
 		"candidate": in, "total_retained_matching": history.Total, "totals": totals, "items": items,
         "sample_determinate": totals.Determinate, "sample_indeterminate": totals.Indeterminate,
         "sample_complete": history.Total <= len(history.Items), "sample_truncated": history.Total > len(history.Items),
+        "sample_coverage_percent": previewCoveragePercent(len(history.Items), history.Total),
 		"limitations": []string{"Replays saved final scores against candidate thresholds; it does not re-scan messages or recalculate SPF, DKIM, DMARC, MIME, learning, or custom rule matches.", "Historical forced verdicts remain forced; rule edits, overrides and recipient splitting cannot be predicted from a score alone.", "Non-finite or out-of-range scores and unrecognized historical actions are reported as indeterminate and excluded from hypothetical verdict totals.", "Results are hypothetical scanner verdicts, not evidence that Postfix held, rejected, or delivered messages.", "The requested history limit may truncate the retained population; totals describe only examined records, not the entire mail stream.", "Historical-to-candidate transition counts are not ground-truth false-positive or false-negative measurements; message labels and actual delivery outcomes are not inferred."},
 	})
 }
