@@ -21,8 +21,8 @@ func TestAssessAmbiguousAUTHDoesNotInventDrift(t *testing.T) {
   {"invalid post TLS duplicate",func(r *Result){r.PostTLSEHLOWarnings=[]string{"DUPLICATE_AUTH_MECHANISM"}},"POST_TLS_AUTH_EVIDENCE_UNTRUSTWORTHY",false},
   {"invalid post TLS empty",func(r *Result){r.PostTLSEHLOWarnings=[]string{"EMPTY_AUTH_ADVERTISEMENT"};r.PostTLSAuthMechanisms=nil},"POST_TLS_AUTH_EVIDENCE_UNTRUSTWORTHY",false},
   {"invalid initial malformed",func(r *Result){r.EHLOWarnings=[]string{"MALFORMED_AUTH_MECHANISM"}},"AUTH_EVIDENCE_UNTRUSTWORTHY",false},
-  {"invalid initial repeated extension",func(r *Result){r.EHLOWarnings=[]string{"DUPLICATE_EXTENSION"}},"AUTH_EVIDENCE_UNTRUSTWORTHY",false},
-  {"invalid post TLS repeated extension",func(r *Result){r.PostTLSEHLOWarnings=[]string{"DUPLICATE_EXTENSION"}},"POST_TLS_AUTH_EVIDENCE_UNTRUSTWORTHY",false},
+  {"invalid initial repeated extension",func(r *Result){r.EHLOWarnings=[]string{"DUPLICATE_AUTH_EXTENSION"}},"AUTH_EVIDENCE_UNTRUSTWORTHY",false},
+  {"invalid post TLS repeated extension",func(r *Result){r.PostTLSEHLOWarnings=[]string{"DUPLICATE_AUTH_EXTENSION"}},"POST_TLS_AUTH_EVIDENCE_UNTRUSTWORTHY",false},
   {"unrelated warning",func(r *Result){r.PostTLSEHLOWarnings=[]string{"BINARYMIME_WITHOUT_CHUNKING"}},"",true},
  }
  for _,tc:=range cases {
