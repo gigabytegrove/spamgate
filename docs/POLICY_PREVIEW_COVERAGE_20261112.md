@@ -1,0 +1,7 @@
+# Policy replay sample coverage and historical disposition evidence
+
+The read-only `POST /api/v1/policy/preview` endpoint now returns `sample_complete` and `sample_truncated` based on the history query's reported retained total versus the number of returned records. These fields describe the selected retained history, not all messages ever received or all Postfix transactions. The existing `limit` remains capped at 500. The response retains `simulation: true`, `persisted: false`, and `mail_sent: false`.
+
+The `totals` object now includes `determinate` and `historical_accept`, `historical_tag`, `historical_quarantine`, `historical_reject`, and `historical_soft_reject`. The counters are incremented only for determinate history entries. `examined` includes indeterminate entries; `determinate + indeterminate == examined` for a completed request. Historical counters sum to `determinate`, as do hypothetical action counters. The existing `changed` and `forced_preserved` counters retain their meanings.
+
+This is a diagnostic integrity improvement, not mail-host acceptance. No production Postfix/Dovecot hold, queue durability, authentication, classifier false-positive, backup/restore or update/rollback gate is qualified by this change. Regression source is committed; exact-HEAD CI and live-host evidence must be inspected separately. The permanent foreground launcher, worker, persistent data directory and Milter ports remain unchanged.
