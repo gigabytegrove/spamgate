@@ -87,6 +87,20 @@ func Assess(r Result) []Finding {
   if len(before) == 0 && len(after) > 0 {
    findings = append(findings, Finding{Code:"AUTH_ADVERTISED_ONLY_AFTER_TLS",Severity:"info",Message:"SMTP AUTH is advertised only after verified STARTTLS; credentials were not submitted or tested"})
   }
+  // Detect additions as well as removals. A server can retain every
+  // pre-TLS mechanism while introducing a weaker or unexpected one after TLS.
+  if len(before) > 0 && len(after) > 0 {
+   added := false
+   for mechanism := range after {
+    if !before[mechanism] { added = true; break }
+   }
+   if added {
+    findings = append(findings, Finding{
+     Code:"AUTH_MECHANISMS_ADDED_AFTER_TLS", Severity:"info",
+     Message:"One or more additional AUTH mechanisms appeared after verified STARTTLS; compare the server submission policy without submitting credentials",
+    })
+   }
+  }
   if len(before) > 0 && len(after) == 0 {
    findings = append(findings, Finding{
     Code:"AUTH_NOT_ADVERTISED_AFTER_TLS", Severity:"warning",
