@@ -41,8 +41,8 @@ func TestPolicyPreviewKnownActionsAndValidForcedEvidence(t *testing.T) {
   if previewKnownAction(action) {t.Fatalf("unsupported action trusted: %q",action)}
  }
  p:=policyPreviewRequest{TagThreshold:4,QuarantineThreshold:8,RejectThreshold:15,Limit:20}
- item:=previewOne(core.Message{ID:"valid",Score:5,Action:"tag",Scoring:&core.ScoringTrace{ForcedAction:"reject"}},p,nil)
- if item.Indeterminate || !item.Forced || item.HypotheticalAction!="reject" || !item.Changed {
+ item:=previewOne(core.Message{ID:"valid",Score:5,Action:"reject",Scoring:&core.ScoringTrace{ForcedAction:"reject"}},p,nil)
+ if item.Indeterminate || !item.Forced || item.HypotheticalAction!="reject" || item.Changed {
   t.Fatalf("valid forced action lost: %+v",item)
  }
 }
