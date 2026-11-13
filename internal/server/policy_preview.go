@@ -94,10 +94,10 @@ func previewOne(m core.Message, p policyPreviewRequest, policies []core.Recipien
 	result := policyPreviewItem{ID: m.ID, Score: m.Score, HistoricalAction: m.Action, PolicySource: "global"}
 	// Persisted history is untrusted evidence. Never manufacture a verdict from
 	// a non-finite score or an unrecognized historical/forced action.
-	if math.IsNaN(m.Score) || math.IsInf(m.Score, 0) {
+	if math.IsNaN(m.Score) || math.IsInf(m.Score, 0) || m.Score < 0 || m.Score > 1000 {
 		result.Score = 0 // JSON has no representation for NaN or infinity.
 		result.Indeterminate = true
-		result.Note = "Historical score is not finite; hypothetical verdict unavailable"
+		result.Note = "Historical score is outside the supported finite range; hypothetical verdict unavailable"
 		return result
 	}
 	if !previewKnownAction(m.Action) {
