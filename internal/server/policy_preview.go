@@ -26,6 +26,7 @@ type policyPreviewItem struct {
 	HypotheticalAction string  `json:"hypothetical_action"`
 	Changed            bool    `json:"changed"`
 	Forced             bool    `json:"forced"`
+	Indeterminate      bool    `json:"indeterminate"`
 	PolicySource       string  `json:"policy_source"`
 	Note               string  `json:"note,omitempty"`
 }
@@ -40,6 +41,7 @@ type policyPreviewTotals struct {
 	ForcedPreserved        int `json:"forced_preserved"`
 	MultiRecipientFallback int `json:"multi_recipient_fallback"`
 	UniformShared          int `json:"uniform_shared"`
+	Indeterminate         int `json:"indeterminate"`
 }
 
 func validatePreview(p policyPreviewRequest) error {
@@ -79,8 +81,35 @@ func policyDecision(score, tag, quarantine, reject float64) string {
 		return "accept"
 	}
 }
+func previewKnownAction(action string) bool {
+	switch action {
+	case "accept", "tag", "quarantine", "reject", "soft_reject":
+		return true
+	default:
+		return false
+	}
+}
+
 func previewOne(m core.Message, p policyPreviewRequest, policies []core.RecipientPolicy) policyPreviewItem {
 	result := policyPreviewItem{ID: m.ID, Score: m.Score, HistoricalAction: m.Action, PolicySource: "global"}
+	// Persisted history is untrusted evidence. Never manufacture a verdict from
+	// a non-finite score or an unrecognized historical/forced action.
+	if math.IsNaN(m.Score) || math.IsInf(m.Score, 0) {
+		result.Score = 0 // JSON has no representation for NaN or infinity.
+		result.Indeterminate = true
+		result.Note = "Historical score is not finite; hypothetical verdict unavailable"
+		return result
+	}
+	if !previewKnownAction(m.Action) {
+		result.Indeterminate = true
+		result.Note = "Historical action is unrecognized; comparison unavailable"
+		return result
+	}
+	if m.Scoring != nil && m.Scoring.ForcedAction != "" && !previewKnownAction(m.Scoring.ForcedAction) {
+		result.Indeterminate = true
+		result.Note = "Historical forced action is unrecognized; comparison unavailable"
+		return result
+	}
 	selected := core.SelectRecipientThresholds(core.Settings{
 		TagThreshold: p.TagThreshold, QuarantineThreshold: p.QuarantineThreshold, RejectThreshold: p.RejectThreshold,
 	}, policies, m.Recipients)
@@ -125,6 +154,10 @@ func (s *Server) previewPolicy(w http.ResponseWriter, r *http.Request) {
 		result := previewOne(m, in, policies)
 		items = append(items, result)
 		totals.Examined++
+		if result.Indeterminate {
+			totals.Indeterminate++
+			continue
+		}
 		if result.Changed {
 			totals.Changed++
 		}
@@ -151,6 +184,6 @@ func (s *Server) previewPolicy(w http.ResponseWriter, r *http.Request) {
 	jsonReply(w, http.StatusOK, map[string]any{
 		"simulation": true, "persisted": false, "mail_sent": false, "configuration_changed": false,
 		"candidate": in, "total_retained_matching": history.Total, "totals": totals, "items": items,
-		"limitations": []string{"Replays saved final scores against candidate thresholds; it does not re-scan messages or recalculate SPF, DKIM, DMARC, MIME, learning, or custom rule matches.", "Historical forced verdicts remain forced; rule edits, overrides and recipient splitting cannot be predicted from a score alone.", "Results are hypothetical scanner verdicts, not evidence that Postfix held, rejected, or delivered messages."},
+		"limitations": []string{"Replays saved final scores against candidate thresholds; it does not re-scan messages or recalculate SPF, DKIM, DMARC, MIME, learning, or custom rule matches.", "Historical forced verdicts remain forced; rule edits, overrides and recipient splitting cannot be predicted from a score alone.", "Non-finite scores and unrecognized historical actions are reported as indeterminate and excluded from hypothetical verdict totals.", "Results are hypothetical scanner verdicts, not evidence that Postfix held, rejected, or delivered messages."},
 	})
 }
