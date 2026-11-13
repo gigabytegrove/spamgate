@@ -31,7 +31,7 @@ func mechanismSet(mechanisms []string) map[string]bool {
 func ambiguousAUTH(warnings []string) bool {
  for _, code := range warnings {
   switch code {
-  case "DUPLICATE_AUTH_MECHANISM", "MALFORMED_AUTH_MECHANISM", "EMPTY_AUTH_ADVERTISEMENT", "DUPLICATE_EXTENSION":
+  case "DUPLICATE_AUTH_MECHANISM", "MALFORMED_AUTH_MECHANISM", "EMPTY_AUTH_ADVERTISEMENT", "DUPLICATE_AUTH_EXTENSION":
    return true
   }
  }
