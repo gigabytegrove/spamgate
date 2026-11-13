@@ -78,6 +78,17 @@ func validatePreview(p policyPreviewRequest) error {
 	}
 	return nil
 }
+// validateEffectivePreviewPolicies applies the same bounds to persisted tenant
+// policies as to user-supplied candidates. A malformed stored policy must never
+// silently influence a simulation or masquerade as an explicit global fallback.
+func validateEffectivePreviewPolicies(policies []core.RecipientPolicy) error {
+	candidate := policies
+	return validatePreview(policyPreviewRequest{
+		TagThreshold: 1, QuarantineThreshold: 2, RejectThreshold: 3,
+		Limit: 1, RecipientPolicies: &candidate,
+	})
+}
+
 func policyDecision(score, tag, quarantine, reject float64) string {
 	switch {
 	case score >= reject:
@@ -200,6 +211,11 @@ func (s *Server) previewPolicy(w http.ResponseWriter, r *http.Request) {
 	policies := s.Store.Config().RecipientPolicies
 	if in.RecipientPolicies != nil {
 		policies = *in.RecipientPolicies
+	} else if err := validateEffectivePreviewPolicies(policies); err != nil {
+		// Stored policy corruption is an operational failure, not a valid
+		// candidate replay. Do not silently fall back to global thresholds.
+		fail(w, http.StatusServiceUnavailable, "Stored recipient policies are invalid; preview unavailable")
+		return
 	}
 	history, err := s.Store.SearchHistory(core.HistoryQuery{Limit: in.Limit}, "")
 	if err != nil {
