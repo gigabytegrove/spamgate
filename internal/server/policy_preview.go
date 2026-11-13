@@ -43,6 +43,12 @@ type policyPreviewTotals struct {
 	MultiRecipientFallback int `json:"multi_recipient_fallback"`
 	UniformShared          int `json:"uniform_shared"`
 	Indeterminate         int `json:"indeterminate"`
+	Determinate           int `json:"determinate"`
+	HistoricalAccept      int `json:"historical_accept"`
+	HistoricalTag         int `json:"historical_tag"`
+	HistoricalQuarantine  int `json:"historical_quarantine"`
+	HistoricalReject      int `json:"historical_reject"`
+	HistoricalSoftReject  int `json:"historical_soft_reject"`
 }
 
 func validatePreview(p policyPreviewRequest) error {
@@ -131,6 +137,14 @@ func previewOne(m core.Message, p policyPreviewRequest, policies []core.Recipien
 // soft_reject is a real SMTP temporary failure, not a permanent reject.
 func accumulatePolicyPreview(totals *policyPreviewTotals, result policyPreviewItem) {
  if result.Indeterminate { return }
+ totals.Determinate++
+ switch result.HistoricalAction {
+ case "accept": totals.HistoricalAccept++
+ case "tag": totals.HistoricalTag++
+ case "quarantine": totals.HistoricalQuarantine++
+ case "reject": totals.HistoricalReject++
+ case "soft_reject": totals.HistoricalSoftReject++
+ }
  if result.Changed { totals.Changed++ }
  if result.Forced { totals.ForcedPreserved++ }
  if result.PolicySource == "global_multi_recipient" { totals.MultiRecipientFallback++ }
@@ -180,6 +194,7 @@ func (s *Server) previewPolicy(w http.ResponseWriter, r *http.Request) {
 	jsonReply(w, http.StatusOK, map[string]any{
 		"simulation": true, "persisted": false, "mail_sent": false, "configuration_changed": false,
 		"candidate": in, "total_retained_matching": history.Total, "totals": totals, "items": items,
-		"limitations": []string{"Replays saved final scores against candidate thresholds; it does not re-scan messages or recalculate SPF, DKIM, DMARC, MIME, learning, or custom rule matches.", "Historical forced verdicts remain forced; rule edits, overrides and recipient splitting cannot be predicted from a score alone.", "Non-finite or out-of-range scores and unrecognized historical actions are reported as indeterminate and excluded from hypothetical verdict totals.", "Results are hypothetical scanner verdicts, not evidence that Postfix held, rejected, or delivered messages."},
+        "sample_complete": history.Total <= len(history.Items), "sample_truncated": history.Total > len(history.Items),
+		"limitations": []string{"Replays saved final scores against candidate thresholds; it does not re-scan messages or recalculate SPF, DKIM, DMARC, MIME, learning, or custom rule matches.", "Historical forced verdicts remain forced; rule edits, overrides and recipient splitting cannot be predicted from a score alone.", "Non-finite or out-of-range scores and unrecognized historical actions are reported as indeterminate and excluded from hypothetical verdict totals.", "Results are hypothetical scanner verdicts, not evidence that Postfix held, rejected, or delivered messages.", "The requested history limit may truncate the retained population; totals describe only examined records, not the entire mail stream."},
 	})
 }
