@@ -28,7 +28,7 @@ func TestCapabilityWarnings(t *testing.T) {
 
 func TestCapabilityWarningsDeterministic(t *testing.T) {
  lines:=[]string{"host", "AUTH bad/token", "AUTH", "BINARYMIME"}
- want:=[]string{"MALFORMED_AUTH_MECHANISM", "EMPTY_AUTH_ADVERTISEMENT", "DUPLICATE_EXTENSION", "BINARYMIME_WITHOUT_CHUNKING"}
+ want:=[]string{"MALFORMED_AUTH_MECHANISM", "EMPTY_AUTH_ADVERTISEMENT", "DUPLICATE_EXTENSION", "DUPLICATE_AUTH_EXTENSION", "BINARYMIME_WITHOUT_CHUNKING"}
  for i:=0;i<20;i++ {
   if got:=capabilityWarnings(lines);!reflect.DeepEqual(got,want) {t.Fatalf("iteration %d got %q want %q",i,got,want)}
  }
