@@ -43,8 +43,14 @@ func capabilityWarnings(lines []string) []string {
    mechanisms := fields[1:]
    if keyword != "AUTH" { mechanisms = append([]string{keyword[len("AUTH="):]}, mechanisms...) }
    valid := 0
+   mechanismsSeen := make(map[string]bool, len(mechanisms))
    for _, mechanism := range mechanisms {
-    if validAuthMechanism(mechanism) { valid++ } else { add("MALFORMED_AUTH_MECHANISM") }
+    if validAuthMechanism(mechanism) {
+     valid++
+     normalized := strings.ToUpper(mechanism)
+     if mechanismsSeen[normalized] { add("DUPLICATE_AUTH_MECHANISM") }
+     mechanismsSeen[normalized] = true
+    } else { add("MALFORMED_AUTH_MECHANISM") }
    }
    if valid == 0 { add("EMPTY_AUTH_ADVERTISEMENT") }
   }
