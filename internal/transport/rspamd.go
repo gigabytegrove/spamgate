@@ -92,8 +92,13 @@ func (s *RspamdWorker) check(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, flagsErr.Error(), http.StatusUnprocessableEntity)
 		return
 	}
-	if metadata.Compression != "" || strings.Contains(strings.ToLower(metadata.ContentEncoding), "zstd") {
-		http.Error(w, "compressed messages are not supported", 415)
+	validatedHelo, preflightErr := rspamdValidateRequestPreflight(metadata)
+	if preflightErr != nil {
+		status := http.StatusUnsupportedMediaType
+		if strings.Contains(preflightErr.Error(), "Helo") {
+			status = http.StatusBadRequest
+		}
+		http.Error(w, preflightErr.Error(), status)
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
@@ -108,7 +113,7 @@ func (s *RspamdWorker) check(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid IP header", 400)
 		return
 	}
-	msg, err := s.Scanner.Scan(r.Context(), core.Input{Raw: raw, Sender: metadata.Sender, Recipients: recipients, ClientIP: clientIP, Helo: metadata.Helo, Connector: "rspamd-http"})
+	msg, err := s.Scanner.Scan(r.Context(), core.Input{Raw: raw, Sender: metadata.Sender, Recipients: recipients, ClientIP: clientIP, Helo: validatedHelo, Connector: "rspamd-http"})
 	if err != nil {
 		http.Error(w, "message scan failed: "+err.Error(), 422)
 		return
