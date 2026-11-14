@@ -185,7 +185,7 @@ func SMTPFromEnv(store *core.Store, relay *Relay) (*SMTP, error) {
 	}
 	for _, piece := range strings.Split(domainText, ",") {
 		piece = strings.ToLower(strings.TrimSpace(piece))
-		if piece == "" || strings.ContainsAny(piece, " @:/\\") || !strings.Contains(piece, ".") {
+		if !validSMTPRecipientDomain(piece) {
 			return nil, errors.New("invalid allowed recipient domain")
 		}
 		s.Domains = append(s.Domains, piece)
