@@ -112,8 +112,8 @@ func (s *RspamdWorker) check(w http.ResponseWriter, r *http.Request) {
 	for i := range recipients {
 		recipients[i] = strings.TrimSpace(strings.Trim(recipients[i], "<>"))
 	}
-	clientIP := strings.TrimSpace(r.Header.Get("IP"))
-	if clientIP != "" && net.ParseIP(clientIP) == nil {
+	clientIP, validClientIP := rspamdClientIP(r.Header.Get("IP"))
+	if !validClientIP {
 		http.Error(w, "invalid IP header", 400)
 		return
 	}
