@@ -7,7 +7,7 @@ import "fmt"
 // to an MTA as "no action": that would silently fail open.
 func rspamdDisposition(action string) (string, error) {
  switch action {
- case "allow", "no action", "":
+ case "accept", "no action", "":
   // Empty is not a valid final scanner decision.
   if action == "" { return "", fmt.Errorf("empty scanner disposition") }
   return "no action", nil
