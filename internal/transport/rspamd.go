@@ -121,7 +121,7 @@ func (s *RspamdWorker) check(w http.ResponseWriter, r *http.Request) {
 	recipients := metadata.Recipients
 	msg, err := s.Scanner.Scan(r.Context(), core.Input{Raw: raw, Sender: metadata.Sender, Recipients: recipients, ClientIP: clientIP, Helo: validatedHelo, Connector: "rspamd-http"})
 	if err != nil {
-		http.Error(w, "message scan failed: "+err.Error(), 422)
+		http.Error(w, "message scan failed", http.StatusUnprocessableEntity)
 		return
 	}
 	if !flags["no_log"] {
@@ -157,17 +157,26 @@ func (s *RspamdWorker) check(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(reply)
 }
 func (s *RspamdWorker) Listen(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	ln, err := net.Listen("tcp", s.ListenAddress)
 	if err != nil {
 		return err
 	}
 	defer ln.Close()
 	srv := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 8 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 45 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+	done := make(chan struct{})
+	defer close(done)
 	go func() {
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(shutdownCtx)
+		select {
+		case <-ctx.Done():
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(shutdownCtx)
+		case <-done:
+			return
+		}
 	}()
 	err = srv.Serve(ln)
 	if errors.Is(err, http.ErrServerClosed) {
