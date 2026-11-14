@@ -158,7 +158,7 @@ func (s *RspamdWorker) check(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(append(payload, '\\n'))
+	_, _ = w.Write(append(payload, '\n'))
 }
 func (s *RspamdWorker) Listen(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
