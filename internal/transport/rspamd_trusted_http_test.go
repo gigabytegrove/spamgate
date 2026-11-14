@@ -21,6 +21,9 @@ func TestRspamdHTTPTrustBoundaryBeforeAuthentication(t *testing.T) {
   {"IPv6 outside denied", "[2001:db9::55]:53000", http.StatusForbidden},
   {"malformed remote denied", "192.0.2.55", http.StatusForbidden},
   {"unparseable address denied", "not-an-ip:53000", http.StatusForbidden},
+  {"mapped IPv4 must not inherit IPv4 trust", "[::ffff:192.0.2.55]:53000", http.StatusForbidden},
+  {"mapped hexadecimal IPv4 denied", "[::ffff:c000:237]:53000", http.StatusForbidden},
+  {"zone-qualified address denied", "[fe80::1%eth0]:53000", http.StatusForbidden},
  }
  for _, tc := range cases {
   t.Run(tc.name, func(t *testing.T) {
