@@ -94,10 +94,7 @@ func (s *RspamdWorker) check(w http.ResponseWriter, r *http.Request) {
 	}
 	validatedHelo, preflightErr := rspamdValidateRequestPreflight(metadata)
 	if preflightErr != nil {
-		status := http.StatusUnsupportedMediaType
-		if strings.Contains(preflightErr.Error(), "Helo") {
-			status = http.StatusBadRequest
-		}
+		status := rspamdPreflightHTTPStatus(preflightErr)
 		http.Error(w, preflightErr.Error(), status)
 		return
 	}
