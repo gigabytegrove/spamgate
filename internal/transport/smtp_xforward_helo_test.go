@@ -25,6 +25,12 @@ func TestParseSMTPXForwardHelo(t *testing.T) {
   {"[IPv6:fe80::1%eth0]", "", false},
   {"[IPv6:192.0.2.5]", "", false},
   {"[not-an-ip]", "", false},
+  {"[IPv6:2001:db8::5%eth0]", "", false},
+  {"[IPv6:2001:db8::ffff:192.0.2.5]", "", false},
+  {"[192.0.2.999]", "", false},
+  {"[IPv6:]", "", false},
+  {"[IPv6:2001:db8::5", "", false},
+  {"[192.0.2.5]extra", "", false},
   {"[2001:db8::5]", "", false},
   {"mail.example.org=evil", "", false},
   {"mail.example.org/evil", "", false},
@@ -43,4 +49,20 @@ func TestParseSMTPXForwardHeloLengths(t *testing.T) {
  label := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
  if _, ok := parseSMTPXForwardHelo(label+".example"); !ok { t.Fatal("63-byte label rejected") }
  if _, ok := parseSMTPXForwardHelo(label+"a.example"); ok { t.Fatal("64-byte label accepted") }
+}
+
+func TestParseSMTPXForwardHeloInvalidValuesAreEmpty(t *testing.T) {
+ for _, value := range []string{"[IPv6:bad]", "[IPv6:fe80::1%eth0]", "[IPv6:::ffff:192.0.2.5]", "[192.0.2.999]", "[2001:db8::1]", "[invalid]", "[IPv6:]"} {
+  got, ok := parseSMTPXForwardHelo(value)
+  if ok || got != "" { t.Errorf("%q returned (%q, %v), want empty invalid result", value, got, ok) }
+ }
+}
+
+func FuzzParseSMTPXForwardHelo(f *testing.F) {
+ for _, seed := range []string{"mail.example.org", "[192.0.2.5]", "[IPv6:2001:db8::5]", "[IPv6:bad]", "[IPv6:fe80::1%eth0]", "[UNAVAILABLE]", "", "mail\\r\\nInjected:yes"} { f.Add(seed) }
+ f.Fuzz(func(t *testing.T, value string) {
+  parsed, ok := parseSMTPXForwardHelo(value)
+  if !ok && parsed != "" { t.Fatalf("invalid identity leaked: %q", parsed) }
+  if ok && parsed != "" && parsed != value { t.Fatalf("identity rewritten: %q -> %q", value, parsed) }
+ })
 }
