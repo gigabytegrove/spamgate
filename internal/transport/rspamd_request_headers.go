@@ -4,7 +4,6 @@ import (
  "errors"
  "fmt"
  "net/http"
- "strings"
 )
 
 type rspamdRequestMetadata struct {
@@ -60,6 +59,5 @@ func rspamdReadRequestMetadata(h http.Header) (rspamdRequestMetadata, error) {
  }
  m.Sender, err = rspamdMailboxIdentity(m.Sender, true)
  if err != nil { return m, fmt.Errorf("invalid From header: %w", err) }
- m.Helo = strings.TrimSpace(m.Helo)
  return m, nil
 }
