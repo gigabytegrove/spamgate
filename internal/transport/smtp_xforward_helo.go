@@ -28,7 +28,7 @@ func parseSMTPXForwardHelo(value string) (string, bool) {
   if strings.HasPrefix(candidate, "IPv6:") {
    candidate = strings.TrimPrefix(candidate, "IPv6:")
    addr, err := netip.ParseAddr(candidate)
-   if err != nil || !addr.Is6() || addr.Is4In6() || addr.Zone() != "" {
+   if err != nil || !addr.Is6() || addr.Is4In6() || addr.Zone() != "" || strings.Contains(candidate, ".") {
    return "", false
   }
   return value, true

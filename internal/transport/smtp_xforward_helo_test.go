@@ -27,6 +27,8 @@ func TestParseSMTPXForwardHelo(t *testing.T) {
   {"[not-an-ip]", "", false},
   {"[IPv6:2001:db8::5%eth0]", "", false},
   {"[IPv6:2001:db8::ffff:192.0.2.5]", "", false},
+  {"[IPv6:2001:db8::192.0.2.5]", "", false},
+  {"[IPv6:::ffff:192.0.2.5]", "", false},
   {"[192.0.2.999]", "", false},
   {"[IPv6:]", "", false},
   {"[IPv6:2001:db8::5", "", false},
@@ -52,7 +54,7 @@ func TestParseSMTPXForwardHeloLengths(t *testing.T) {
 }
 
 func TestParseSMTPXForwardHeloInvalidValuesAreEmpty(t *testing.T) {
- for _, value := range []string{"[IPv6:bad]", "[IPv6:fe80::1%eth0]", "[IPv6:::ffff:192.0.2.5]", "[192.0.2.999]", "[2001:db8::1]", "[invalid]", "[IPv6:]"} {
+ for _, value := range []string{"[IPv6:2001:db8::ffff:192.0.2.5]", "[IPv6:2001:db8::192.0.2.5]", "[IPv6:bad]", "[IPv6:fe80::1%eth0]", "[IPv6:::ffff:192.0.2.5]", "[192.0.2.999]", "[2001:db8::1]", "[invalid]", "[IPv6:]"} {
   got, ok := parseSMTPXForwardHelo(value)
   if ok || got != "" { t.Errorf("%q returned (%q, %v), want empty invalid result", value, got, ok) }
  }
