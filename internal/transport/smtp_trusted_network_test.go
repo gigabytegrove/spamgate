@@ -16,6 +16,10 @@ func TestParseSMTPTrustedNetworkNoSilentExpansion(t *testing.T) {
   {"2001:db8::5/128", true},
   {"2001:db8::5/64", false},
   {"::/0", true},
+  {"::ffff:192.0.2.0/120", false},
+  {"::ffff:c000:200/120", false},
+  {"::ffff:192.0.2.5/128", false},
+  {"2001:db8::/32", true},
   {"192.0.2.0/33", false},
   {"192.0.2.0/24 ", false},
   {"", false},
@@ -51,4 +55,25 @@ func TestTrustedNetworkDoesNotIncludeAdjacentHosts(t *testing.T) {
  n,err:=parseSMTPTrustedNetwork("192.0.2.5/32")
  if err!=nil {t.Fatal(err)}
  if n.Contains(net.ParseIP("192.0.2.6")) {t.Fatal("adjacent host trusted")}
+}
+
+func TestTrustedCIDRRejectsMappedIPv6WithoutChangingNativeIPv4(t *testing.T) {
+	for _, tc := range []struct {
+		cidr string
+		accept bool
+	}{
+		{"::ffff:192.0.2.0/120", false},
+		{"::ffff:c000:200/120", false},
+		{"::ffff:192.0.2.5/128", false},
+		{"192.0.2.0/24", true},
+		{"192.0.2.5/32", true},
+		{"2001:db8::/64", true},
+	} {
+		t.Run(tc.cidr, func(t *testing.T) {
+			n, err := parseSMTPTrustedNetwork(tc.cidr)
+			if (err == nil) != tc.accept {
+				t.Fatalf("parse %q: network=%v error=%v, want accepted=%v", tc.cidr, n, err, tc.accept)
+			}
+		})
+	}
 }
