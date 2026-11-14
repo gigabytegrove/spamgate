@@ -379,9 +379,8 @@ func (s *SMTP) handle(conn net.Conn) {
 						invalid = true
 						break
 					}
-					candidate := strings.Trim(value, "[]")
-					candidate = strings.TrimPrefix(candidate, "IPv6:")
-					if net.ParseIP(candidate) == nil {
+					candidate, valid := parseSMTPXForwardAddress(value)
+					if !valid {
 						invalid = true
 						break
 					}
@@ -395,6 +394,9 @@ func (s *SMTP) handle(conn net.Conn) {
 					if value == "[UNAVAILABLE]" || value == "[TEMPUNAVAIL]" {
 						proposedHelo = ""
 					}
+				default:
+					// Unknown metadata must not be silently accepted as an identity.
+					invalid = true
 				}
 				if invalid {
 					break
