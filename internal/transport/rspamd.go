@@ -133,28 +133,32 @@ func (s *RspamdWorker) check(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "scanner returned unsupported disposition", http.StatusServiceUnavailable)
 		return
 	}
-	if !flags["no_log"] {
-		if err := s.Store.Save(msg); err != nil {
-			http.Error(w, "history persistence failed", 503)
-			return
-		}
-	}
 	cfg := s.Store.Config()
-	symbols := map[string]map[string]any{}
-	for _, f := range msg.Findings {
-		if cur, ok := symbols[f.Symbol]; ok {
-			cur["score"] = cur["score"].(float64) + f.Score
-			cur["options"] = append(cur["options"].([]string), f.Detail)
-		} else {
-			symbols[f.Symbol] = map[string]any{"name": f.Symbol, "score": f.Score, "options": []string{f.Detail}, "description": f.Source}
-		}
+	symbols, symbolsErr := rspamdSymbols(msg.Findings)
+	if symbolsErr != nil {
+		http.Error(w, "scanner returned invalid aggregated scoring data", http.StatusServiceUnavailable)
+		return
 	}
 	reply := map[string]any{"is_skipped": false, "score": msg.Score, "required_score": cfg.Settings.RejectThreshold, "action": action, "symbols": symbols, "message-id": msg.MessageID, "thresholds": map[string]float64{"reject": cfg.Settings.RejectThreshold, "add header": cfg.Settings.TagThreshold, "quarantine": cfg.Settings.QuarantineThreshold}, "scan_id": msg.ID}
 	if action == "add header" {
 		reply["milter"] = map[string]any{"add_headers": map[string]any{"X-Spam": map[string]any{"value": "Yes", "order": 0}}}
 	}
+	// Serialize before durable history is committed: a malformed scanner result
+	// must not leave persisted history followed by a broken HTTP response.
+	payload, marshalErr := json.Marshal(reply)
+	if marshalErr != nil {
+		http.Error(w, "scanner returned an invalid response", http.StatusServiceUnavailable)
+		return
+	}
+	if !flags["no_log"] {
+		if err := s.Store.Save(msg); err != nil {
+			http.Error(w, "history persistence failed", http.StatusServiceUnavailable)
+			return
+		}
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(reply)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(append(payload, '\\n'))
 }
 func (s *RspamdWorker) Listen(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
