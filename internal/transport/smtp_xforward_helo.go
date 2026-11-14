@@ -28,10 +28,16 @@ func parseSMTPXForwardHelo(value string) (string, bool) {
   if strings.HasPrefix(candidate, "IPv6:") {
    candidate = strings.TrimPrefix(candidate, "IPv6:")
    addr, err := netip.ParseAddr(candidate)
-   return value, err == nil && addr.Is6() && !addr.Is4In6() && addr.Zone() == ""
+   if err != nil || !addr.Is6() || addr.Is4In6() || addr.Zone() != "" {
+   return "", false
+  }
+  return value, true
   }
   addr, err := netip.ParseAddr(candidate)
-  return value, err == nil && addr.Is4()
+  if err != nil || !addr.Is4() {
+   return "", false
+  }
+  return value, true
  }
  // HELO DNS names are ASCII LDH labels; do not silently normalize a
  // malformed value into a different SPF identity.
