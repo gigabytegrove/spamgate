@@ -128,6 +128,10 @@ func (s *RspamdWorker) check(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "scanner returned invalid scoring data", http.StatusServiceUnavailable)
 		return
 	}
+	if err := rspamdValidateResponseIdentity(msg); err != nil {
+		http.Error(w, "scanner returned invalid response identity", http.StatusServiceUnavailable)
+		return
+	}
 	action, dispositionErr := rspamdDisposition(msg.Action)
 	if dispositionErr != nil {
 		http.Error(w, "scanner returned unsupported disposition", http.StatusServiceUnavailable)
