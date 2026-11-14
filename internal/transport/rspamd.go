@@ -6,7 +6,6 @@ package transport
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -70,8 +69,7 @@ func (s *RspamdWorker) Handler() http.Handler {
 			return
 		}
 		if s.Token != "" {
-			presented := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-			if subtle.ConstantTimeCompare([]byte(presented), []byte(s.Token)) != 1 {
+			if !rspamdBearerAuthorized(r.Header.Values("Authorization"), s.Token) {
 				http.Error(w, "unauthorized", 401)
 				return
 			}
