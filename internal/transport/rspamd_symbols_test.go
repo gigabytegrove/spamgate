@@ -3,6 +3,7 @@ package transport
 import (
  "errors"
  "math"
+ "strings"
  "testing"
 
  "github.com/gigabytegrove/spamgate/internal/core"
@@ -44,4 +45,39 @@ func TestRspamdSymbolsDistinctLargeFiniteScores(t *testing.T) {
  symbols,err:=rspamdSymbols([]core.Finding{{Symbol:"A",Score:math.MaxFloat64},{Symbol:"B",Score:math.MaxFloat64}})
  if err!=nil {t.Fatal(err)}
  if len(symbols)!=2 {t.Fatalf("symbols=%d",len(symbols))}
+}
+
+func TestRspamdSymbolsRejectInvalidMetadata(t *testing.T) {
+ cases:=[]struct{name string; finding core.Finding}{
+  {"empty symbol",core.Finding{Symbol:""}},
+  {"newline symbol",core.Finding{Symbol:"SAFE\nINJECT"}},
+  {"punctuation symbol",core.Finding{Symbol:"RULE.NAME"}},
+  {"leading underscore",core.Finding{Symbol:"_RULE"}},
+  {"oversized symbol",core.Finding{Symbol:strings.Repeat("A",rspamdMaxSymbolBytes+1)}},
+  {"newline detail",core.Finding{Symbol:"RULE",Detail:"hello\r\nworld"}},
+  {"oversized detail",core.Finding{Symbol:"RULE",Detail:strings.Repeat("x",rspamdMaxDetailBytes+1)}},
+  {"control source",core.Finding{Symbol:"RULE",Source:"source\x00"}},
+  {"oversized source",core.Finding{Symbol:"RULE",Source:strings.Repeat("x",rspamdMaxSourceBytes+1)}},
+  {"invalid UTF8",core.Finding{Symbol:"RULE",Detail:string([]byte{0xff})}},
+ }
+ for _,tc:=range cases {
+  t.Run(tc.name,func(t *testing.T){
+   got,err:=rspamdSymbols([]core.Finding{{Symbol:"GOOD",Score:1},tc.finding})
+   if !errors.Is(err,errRspamdSymbolMetadata) {t.Fatalf("err=%v",err)}
+   if got!=nil {t.Fatalf("partial symbols returned: %v",got)}
+  })
+ }
+}
+
+func TestRspamdSymbolsFindingLimit(t *testing.T) {
+ findings:=make([]core.Finding,rspamdMaxFindings+1)
+ for i:=range findings { findings[i].Symbol="RULE" }
+ got,err:=rspamdSymbols(findings)
+ if !errors.Is(err,errRspamdSymbolMetadata)||got!=nil {t.Fatalf("result=%v err=%v",got,err)}
+}
+
+func TestRspamdSymbolsBoundaries(t *testing.T) {
+ f:=core.Finding{Symbol:strings.Repeat("A",rspamdMaxSymbolBytes),Detail:strings.Repeat("x",rspamdMaxDetailBytes),Source:strings.Repeat("s",rspamdMaxSourceBytes)}
+ result,err:=rspamdSymbols([]core.Finding{f})
+ if err!=nil||len(result)!=1 {t.Fatalf("result=%v err=%v",result,err)}
 }
