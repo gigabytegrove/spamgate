@@ -87,18 +87,10 @@ func (s *RspamdWorker) check(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request metadata: "+metadataErr.Error(), http.StatusBadRequest)
 		return
 	}
-	flags := map[string]bool{}
-	for _, flag := range strings.Split(strings.ToLower(metadata.Flags), ",") {
-		flags[strings.TrimSpace(flag)] = true
-	}
-	// Unsupported compatibility flags must not silently alter a client's expectations.
-	for flag := range flags {
-		switch flag {
-		case "", "no_log", "pass_all", "groups", "milter":
-		default:
-			http.Error(w, "unsupported Rspamd flag: "+flag, 422)
-			return
-		}
+	flags, flagsErr := rspamdParseFlags(metadata.Flags)
+	if flagsErr != nil {
+		http.Error(w, flagsErr.Error(), http.StatusUnprocessableEntity)
+		return
 	}
 	if metadata.Compression != "" || strings.Contains(strings.ToLower(metadata.ContentEncoding), "zstd") {
 		http.Error(w, "compressed messages are not supported", 415)
