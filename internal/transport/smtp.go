@@ -177,7 +177,7 @@ func SMTPFromEnv(store *core.Store, relay *Relay) (*SMTP, error) {
 			}
 			piece += "/" + strconv.Itoa(bits)
 		}
-		_, network, e := net.ParseCIDR(piece)
+		network, e := parseSMTPTrustedNetwork(piece)
 		if e != nil {
 			return nil, fmt.Errorf("invalid SMTP trusted CIDR: %w", e)
 		}
