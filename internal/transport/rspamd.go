@@ -101,18 +101,27 @@ func (s *RspamdWorker) check(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, preflightErr.Error(), status)
 		return
 	}
+	clientIP, validClientIP := rspamdClientIP(metadata.ClientIP)
+	if !validClientIP {
+		http.Error(w, "invalid IP header", http.StatusBadRequest)
+		return
+	}
+	if r.ContentLength > 10<<20 {
+		http.Error(w, "message exceeds 10 MiB", http.StatusRequestEntityTooLarge)
+		return
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "message exceeds 10 MiB or cannot be read", 413)
+		var limitErr *http.MaxBytesError
+		if errors.As(err, &limitErr) {
+			http.Error(w, "message exceeds 10 MiB", http.StatusRequestEntityTooLarge)
+		} else {
+			http.Error(w, "message body could not be read", http.StatusBadRequest)
+		}
 		return
 	}
 	recipients := metadata.Recipients
-	clientIP, validClientIP := rspamdClientIP(metadata.ClientIP)
-	if !validClientIP {
-		http.Error(w, "invalid IP header", 400)
-		return
-	}
 	msg, err := s.Scanner.Scan(r.Context(), core.Input{Raw: raw, Sender: metadata.Sender, Recipients: recipients, ClientIP: clientIP, Helo: validatedHelo, Connector: "rspamd-http"})
 	if err != nil {
 		http.Error(w, "message scan failed: "+err.Error(), 422)
