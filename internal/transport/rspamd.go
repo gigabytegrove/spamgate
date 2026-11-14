@@ -124,6 +124,11 @@ func (s *RspamdWorker) check(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "message scan failed", http.StatusUnprocessableEntity)
 		return
 	}
+	action, dispositionErr := rspamdDisposition(msg.Action)
+	if dispositionErr != nil {
+		http.Error(w, "scanner returned unsupported disposition", http.StatusServiceUnavailable)
+		return
+	}
 	if !flags["no_log"] {
 		if err := s.Store.Save(msg); err != nil {
 			http.Error(w, "history persistence failed", 503)
@@ -140,14 +145,10 @@ func (s *RspamdWorker) check(w http.ResponseWriter, r *http.Request) {
 			symbols[f.Symbol] = map[string]any{"name": f.Symbol, "score": f.Score, "options": []string{f.Detail}, "description": f.Source}
 		}
 	}
-	action := "no action"
-	switch msg.Action {
-	case "tag":
-		action = "add header"
-	case "reject":
-		action = "reject"
-	case "quarantine":
-		action = "quarantine"
+	action, dispositionErr := rspamdDisposition(msg.Action)
+	if dispositionErr != nil {
+		http.Error(w, "scanner returned unsupported disposition", http.StatusServiceUnavailable)
+		return
 	}
 	reply := map[string]any{"is_skipped": false, "score": msg.Score, "required_score": cfg.Settings.RejectThreshold, "action": action, "symbols": symbols, "message-id": msg.MessageID, "thresholds": map[string]float64{"reject": cfg.Settings.RejectThreshold, "add header": cfg.Settings.TagThreshold, "quarantine": cfg.Settings.QuarantineThreshold}, "scan_id": msg.ID}
 	if action == "add header" {
