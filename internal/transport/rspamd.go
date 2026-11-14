@@ -124,6 +124,10 @@ func (s *RspamdWorker) check(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "message scan failed", http.StatusUnprocessableEntity)
 		return
 	}
+	if err := rspamdValidateScanResult(msg, s.Store.Config()); err != nil {
+		http.Error(w, "scanner returned invalid scoring data", http.StatusServiceUnavailable)
+		return
+	}
 	action, dispositionErr := rspamdDisposition(msg.Action)
 	if dispositionErr != nil {
 		http.Error(w, "scanner returned unsupported disposition", http.StatusServiceUnavailable)
