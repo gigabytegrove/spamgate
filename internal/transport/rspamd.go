@@ -82,8 +82,13 @@ func (s *RspamdWorker) Handler() http.Handler {
 	})
 }
 func (s *RspamdWorker) check(w http.ResponseWriter, r *http.Request) {
+	metadata, metadataErr := rspamdReadRequestMetadata(r.Header)
+	if metadataErr != nil {
+		http.Error(w, "invalid request metadata: "+metadataErr.Error(), http.StatusBadRequest)
+		return
+	}
 	flags := map[string]bool{}
-	for _, flag := range strings.Split(strings.ToLower(r.Header.Get("Flags")), ",") {
+	for _, flag := range strings.Split(strings.ToLower(metadata.Flags), ",") {
 		flags[strings.TrimSpace(flag)] = true
 	}
 	// Unsupported compatibility flags must not silently alter a client's expectations.
@@ -95,7 +100,7 @@ func (s *RspamdWorker) check(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if r.Header.Get("Compression") != "" || strings.Contains(strings.ToLower(r.Header.Get("Content-Encoding")), "zstd") {
+	if metadata.Compression != "" || strings.Contains(strings.ToLower(metadata.ContentEncoding), "zstd") {
 		http.Error(w, "compressed messages are not supported", 415)
 		return
 	}
@@ -105,19 +110,13 @@ func (s *RspamdWorker) check(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "message exceeds 10 MiB or cannot be read", 413)
 		return
 	}
-	recipients := append([]string(nil), r.Header.Values("Rcpt")...)
-	if r.Header.Get("Deliver-To") != "" {
-		recipients = append(recipients, r.Header.Get("Deliver-To"))
-	}
-	for i := range recipients {
-		recipients[i] = strings.TrimSpace(strings.Trim(recipients[i], "<>"))
-	}
-	clientIP, validClientIP := rspamdClientIP(r.Header.Get("IP"))
+	recipients := metadata.Recipients
+	clientIP, validClientIP := rspamdClientIP(metadata.ClientIP)
 	if !validClientIP {
 		http.Error(w, "invalid IP header", 400)
 		return
 	}
-	msg, err := s.Scanner.Scan(r.Context(), core.Input{Raw: raw, Sender: strings.TrimSpace(strings.Trim(r.Header.Get("From"), "<>")), Recipients: recipients, ClientIP: clientIP, Helo: strings.TrimSpace(r.Header.Get("Helo")), Connector: "rspamd-http"})
+	msg, err := s.Scanner.Scan(r.Context(), core.Input{Raw: raw, Sender: metadata.Sender, Recipients: recipients, ClientIP: clientIP, Helo: metadata.Helo, Connector: "rspamd-http"})
 	if err != nil {
 		http.Error(w, "message scan failed: "+err.Error(), 422)
 		return
