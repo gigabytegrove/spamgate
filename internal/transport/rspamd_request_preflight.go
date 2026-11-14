@@ -1,27 +1,43 @@
 package transport
 
 import (
- "fmt"
- "strings"
+    "errors"
+    "fmt"
+    "strings"
 )
 
-// rspamdValidateRequestPreflight refuses encodings the HTTP compatibility
-// worker cannot decode. A non-zstd encoding must not silently reach the MIME
-// scanner as though it were a plain RFC 5322 message.
+var (
+    errRspamdUnsupportedEncoding = errors.New("unsupported request encoding")
+    errRspamdInvalidHelo = errors.New("invalid Helo header")
+)
+
+// rspamdValidateRequestPreflight returns typed errors so HTTP status selection
+// never depends on the wording of an error message.
 func rspamdValidateRequestPreflight(m rspamdRequestMetadata) (string, error) {
- if m.Compression != "" {
-  return "", fmt.Errorf("unsupported Compression header")
- }
- encoding := strings.TrimSpace(m.ContentEncoding)
- if encoding != "" && !strings.EqualFold(encoding, "identity") {
-  return "", fmt.Errorf("unsupported Content-Encoding header")
- }
- if m.Helo == "" {
-  return "", nil
- }
- helo, valid := parseSMTPXForwardHelo(m.Helo)
- if !valid {
-  return "", fmt.Errorf("invalid Helo header")
- }
- return helo, nil
+    if m.Compression != "" {
+        return "", fmt.Errorf("%w: Compression header", errRspamdUnsupportedEncoding)
+    }
+    encoding := strings.TrimSpace(m.ContentEncoding)
+    if encoding != "" && !strings.EqualFold(encoding, "identity") {
+        return "", fmt.Errorf("%w: Content-Encoding header", errRspamdUnsupportedEncoding)
+    }
+    if m.Helo == "" {
+        return "", nil
+    }
+    helo, valid := parseSMTPXForwardHelo(m.Helo)
+    if !valid {
+        return "", errRspamdInvalidHelo
+    }
+    return helo, nil
+}
+
+func rspamdPreflightHTTPStatus(err error) int {
+    switch {
+    case errors.Is(err, errRspamdInvalidHelo):
+        return 400
+    case errors.Is(err, errRspamdUnsupportedEncoding):
+        return 415
+    default:
+        return 400
+    }
 }
