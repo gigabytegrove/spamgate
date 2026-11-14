@@ -1,37 +1,40 @@
 package transport
 
 import (
-	"errors"
-	"net"
-	"strings"
+ "errors"
+ "net"
+ "net/netip"
+ "strings"
 )
 
-// parseSMTPTrustedNetwork requires canonical network addresses. ParseCIDR
-// otherwise silently masks host bits, expanding the set of trusted peers.
-// IPv4-mapped IPv6 CIDRs are rejected: they are easy to confuse with native
-// IPv4 prefixes, and net.IPNet.Contains normalizes mapped addresses.
+// parseSMTPTrustedNetwork accepts only explicit canonical network addresses.
+// Host bits must never be silently masked into a broader trusted network.
 func parseSMTPTrustedNetwork(value string) (*net.IPNet, error) {
-	if strings.TrimSpace(value) != value || value == "" {
-		return nil, errors.New("trusted network must not contain whitespace")
-	}
-	address, prefix, ok := strings.Cut(value, "/")
-	if !ok || address == "" || prefix == "" {
-		return nil, errors.New("trusted network requires an explicit CIDR prefix")
-	}
-	// Do not accept the mapped IPv6 spelling of an IPv4 trust rule.
-	// Require the operator to spell the IPv4 range explicitly instead.
-	if strings.Contains(address, ":") {
-		ip := net.ParseIP(address)
-		if ip != nil && ip.To4() != nil {
-			return nil, errors.New("IPv4-mapped IPv6 trusted CIDR is ambiguous; use an IPv4 CIDR")
-		}
-	}
-	ip, network, err := net.ParseCIDR(value)
-	if err != nil {
-		return nil, err
-	}
-	if !ip.Equal(network.IP) {
-		return nil, errors.New("trusted CIDR has host bits set; specify the network address or an explicit single-host prefix")
-	}
-	return network, nil
+ if value == "" || strings.TrimSpace(value) != value {
+  return nil, errors.New("trusted network must not contain surrounding whitespace")
+ }
+ address, mask, found := strings.Cut(value, "/")
+ if !found || address == "" || mask == "" || strings.Contains(mask, "/") {
+  return nil, errors.New("trusted network requires one explicit CIDR prefix")
+ }
+ addr, err := netip.ParseAddr(address)
+ if err != nil || addr.Zone() != "" || addr.Is4In6() {
+  return nil, errors.New("trusted network requires an unambiguous IPv4 or IPv6 address")
+ }
+ // Dotted IPv4 embedded in an IPv6 ACL is ambiguous even when nonmapped.
+ if addr.Is6() && strings.Contains(address, ".") {
+  return nil, errors.New("trusted IPv6 CIDR must use hexadecimal address notation")
+ }
+ prefix, err := netip.ParsePrefix(value)
+ if err != nil || !prefix.IsValid() || prefix.Addr() != addr {
+  return nil, errors.New("invalid trusted network CIDR")
+ }
+ if prefix.Masked() != prefix {
+  return nil, errors.New("trusted CIDR has host bits set; specify the network address or a single-host prefix")
+ }
+ bits := prefix.Bits()
+ if addr.Is4() {
+  return &net.IPNet{IP: net.IP(addr.AsSlice()), Mask: net.CIDRMask(bits, 32)}, nil
+ }
+ return &net.IPNet{IP: net.IP(addr.AsSlice()), Mask: net.CIDRMask(bits, 128)}, nil
 }
