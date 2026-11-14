@@ -81,3 +81,15 @@ func TestRspamdSymbolsBoundaries(t *testing.T) {
  result,err:=rspamdSymbols([]core.Finding{f})
  if err!=nil||len(result)!=1 {t.Fatalf("result=%v err=%v",result,err)}
 }
+
+func TestRspamdSymbolsAggregateMetadataBudget(t *testing.T) {
+ within := make([]core.Finding, 256)
+ for i := range within {
+  within[i] = core.Finding{Symbol:"RULE", Detail:strings.Repeat("x", 4090)}
+ }
+ result,err:=rspamdSymbols(within)
+ if err!=nil || len(result)!=1 {t.Fatalf("within budget: result=%d err=%v",len(result),err)}
+ exceeded:=append(within,core.Finding{Symbol:"RULE",Detail:strings.Repeat("y",4090)})
+ got,err:=rspamdSymbols(exceeded)
+ if !errors.Is(err,errRspamdSymbolMetadata) || got!=nil {t.Fatalf("over budget: result=%v err=%v",got,err)}
+}
