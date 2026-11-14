@@ -22,6 +22,7 @@ const (
  rspamdMaxSymbolBytes = 256
  rspamdMaxDetailBytes = 4096
  rspamdMaxSourceBytes = 256
+ rspamdMaxFindingMetadataBytes = 1 << 20
 )
 
 func rspamdValidFindingText(value string, limit int, allowEmpty bool) bool {
@@ -56,10 +57,15 @@ func rspamdSymbols(findings []core.Finding) (map[string]map[string]any, error) {
   return nil, errRspamdSymbolMetadata
  }
  symbols := make(map[string]map[string]any, len(findings))
+ metadataBytes := 0
  for _, f := range findings {
   if !rspamdValidSymbol(f.Symbol) ||
    !rspamdValidFindingText(f.Detail, rspamdMaxDetailBytes, true) ||
    !rspamdValidFindingText(f.Source, rspamdMaxSourceBytes, true) {
+   return nil, errRspamdSymbolMetadata
+  }
+  metadataBytes += len(f.Symbol) + len(f.Detail) + len(f.Source)
+  if metadataBytes > rspamdMaxFindingMetadataBytes {
    return nil, errRspamdSymbolMetadata
   }
   if math.IsNaN(f.Score) || math.IsInf(f.Score, 0) {
