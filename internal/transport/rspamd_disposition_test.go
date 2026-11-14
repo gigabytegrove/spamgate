@@ -4,7 +4,7 @@ import "testing"
 
 func TestRspamdDisposition(t *testing.T) {
  cases := []struct { input, want string; valid bool }{
-  {"allow", "no action", true},
+  {"accept", "no action", true},
   {"no action", "no action", true},
   {"tag", "add header", true},
   {"reject", "reject", true},
