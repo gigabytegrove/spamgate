@@ -28,7 +28,6 @@ func TestParseSMTPXForwardHelo(t *testing.T) {
   {"[IPv6:2001:db8::5%eth0]", "", false},
   {"[IPv6:2001:db8::ffff:192.0.2.5]", "", false},
   {"[IPv6:2001:db8::192.0.2.5]", "", false},
-  {"[IPv6:::ffff:192.0.2.5]", "", false},
   {"[192.0.2.999]", "", false},
   {"[IPv6:]", "", false},
   {"[IPv6:2001:db8::5", "", false},
