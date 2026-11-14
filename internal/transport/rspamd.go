@@ -64,19 +64,7 @@ func (s *RspamdWorker) Handler() http.Handler {
 	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		host, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			http.Error(w, "forbidden", 403)
-			return
-		}
-		ip := net.ParseIP(host)
-		allowed := false
-		for _, cidr := range s.Trusted {
-			if ip != nil && cidr.Contains(ip) {
-				allowed = true
-				break
-			}
-		}
+		allowed := rspamdPeerTrusted(r.RemoteAddr, s.Trusted)
 		if !allowed {
 			http.Error(w, "forbidden", 403)
 			return
