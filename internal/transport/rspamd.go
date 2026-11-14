@@ -9,7 +9,6 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -29,29 +28,7 @@ type RspamdWorker struct {
 }
 
 func parseTrustedCIDRs(raw string) ([]*net.IPNet, error) {
-	var list []*net.IPNet
-	for _, part := range strings.Split(raw, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		if ip := net.ParseIP(part); ip != nil {
-			if ip.To4() != nil {
-				part += "/32"
-			} else {
-				part += "/128"
-			}
-		}
-		_, cidr, err := net.ParseCIDR(part)
-		if err != nil {
-			return nil, fmt.Errorf("invalid trusted CIDR %q: %w", part, err)
-		}
-		list = append(list, cidr)
-	}
-	if len(list) == 0 {
-		return nil, errors.New("Rspamd worker requires at least one trusted CIDR")
-	}
-	return list, nil
+ return parseRspamdTrustedNetworks(raw)
 }
 func RspamdFromEnv(store *core.Store) (*RspamdWorker, error) {
 	addr := strings.TrimSpace(os.Getenv("SPAMGATE_RSPAMD_LISTEN"))
