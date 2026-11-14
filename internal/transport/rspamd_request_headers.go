@@ -48,10 +48,18 @@ func rspamdReadRequestMetadata(h http.Header) (rspamdRequestMetadata, error) {
  for _, recipient := range rcpts {
   if len(recipient) == 0 || len(recipient) > 512 { return m, errors.New("invalid Rcpt header length") }
   for _, r := range recipient { if r < 0x20 || r == 0x7f { return m, errors.New("Rcpt header contains control character") } }
-  m.Recipients = append(m.Recipients, strings.TrimSpace(strings.Trim(recipient, "<>")))
+  identity, err := rspamdMailboxIdentity(recipient, false)
+  if err != nil { return m, fmt.Errorf("invalid Rcpt header: %w", err) }
+  m.Recipients = append(m.Recipients, identity)
  }
- if deliverTo != "" { m.Recipients = append(m.Recipients, strings.TrimSpace(strings.Trim(deliverTo, "<>"))) }
- m.Sender = strings.TrimSpace(strings.Trim(m.Sender, "<>"))
+ if deliverTo != "" {
+  identity, err := rspamdMailboxIdentity(deliverTo, false)
+  if err != nil { return m, fmt.Errorf("invalid Deliver-To header: %w", err) }
+  if len(m.Recipients) >= 100 { return m, errors.New("too many recipients") }
+  m.Recipients = append(m.Recipients, identity)
+ }
+ m.Sender, err = rspamdMailboxIdentity(m.Sender, true)
+ if err != nil { return m, fmt.Errorf("invalid From header: %w", err) }
  m.Helo = strings.TrimSpace(m.Helo)
  return m, nil
 }
