@@ -386,14 +386,16 @@ func (s *SMTP) handle(conn net.Conn) {
 					}
 					proposedIP, hasIP = candidate, true
 				case "HELO":
-					if hasHelo || len(value) > 255 || strings.ContainsAny(value, "\r\n\x00") {
+					if hasHelo {
 						invalid = true
 						break
 					}
-					proposedHelo, hasHelo = value, true
-					if value == "[UNAVAILABLE]" || value == "[TEMPUNAVAIL]" {
-						proposedHelo = ""
+					candidateHelo, valid := parseSMTPXForwardHelo(value)
+					if !valid {
+						invalid = true
+						break
 					}
+					proposedHelo, hasHelo = candidateHelo, true
 				default:
 					// Unknown metadata must not be silently accepted as an identity.
 					invalid = true
