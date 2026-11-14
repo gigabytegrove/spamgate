@@ -145,11 +145,6 @@ func (s *RspamdWorker) check(w http.ResponseWriter, r *http.Request) {
 			symbols[f.Symbol] = map[string]any{"name": f.Symbol, "score": f.Score, "options": []string{f.Detail}, "description": f.Source}
 		}
 	}
-	action, dispositionErr := rspamdDisposition(msg.Action)
-	if dispositionErr != nil {
-		http.Error(w, "scanner returned unsupported disposition", http.StatusServiceUnavailable)
-		return
-	}
 	reply := map[string]any{"is_skipped": false, "score": msg.Score, "required_score": cfg.Settings.RejectThreshold, "action": action, "symbols": symbols, "message-id": msg.MessageID, "thresholds": map[string]float64{"reject": cfg.Settings.RejectThreshold, "add header": cfg.Settings.TagThreshold, "quarantine": cfg.Settings.QuarantineThreshold}, "scan_id": msg.ID}
 	if action == "add header" {
 		reply["milter"] = map[string]any{"add_headers": map[string]any{"X-Spam": map[string]any{"value": "Yes", "order": 0}}}
