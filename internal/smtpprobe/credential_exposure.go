@@ -1,5 +1,7 @@
 package smtpprobe
 
+import "strings"
+
 // credentialExposureFindings identifies credential-bearing AUTH mechanisms
 // advertised on an unencrypted SMTP connection. It never sends credentials.
 // An EHLO advertisement is not proof that the server accepts AUTH commands.
@@ -9,7 +11,7 @@ func credentialExposureFindings(r Result) []Finding {
 	}
 	exposed := false
 	for _, mechanism := range r.AuthMechanisms {
-		switch mechanism {
+		switch strings.ToUpper(strings.TrimSpace(mechanism)) {
 		case "PLAIN", "LOGIN":
 			exposed = true
 		}
