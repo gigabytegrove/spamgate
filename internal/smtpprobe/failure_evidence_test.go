@@ -2,6 +2,8 @@ package smtpprobe
 
 import (
 	"context"
+ "net"
+ "io"
 	"strings"
 	"testing"
 	"time"
@@ -28,7 +30,11 @@ func TestProbeConfigurationFailureHasStructuredEvidence(t *testing.T) {
 }
 
 func TestProbeGreetingFailureHasStructuredEvidence(t *testing.T) {
-	addr, _ := server(t, "250 AUTH PLAIN\r\n")
+	listener, listenErr := net.Listen("tcp", "127.0.0.1:0")
+ if listenErr != nil { t.Fatal(listenErr) }
+ defer listener.Close()
+ go func() { conn, acceptErr := listener.Accept(); if acceptErr == nil { _, _ = io.WriteString(conn, "554 Service unavailable\r\n"); _ = conn.Close() } }()
+ addr := listener.Addr().String()
 	r, err := Probe(context.Background(), Options{Address: addr, Timeout: time.Second})
 	if err == nil { t.Fatal("expected greeting failure") }
 	if r.FailureStage != "greeting" || !findingPresent(r.Findings, "SMTP_GREETING_FAILED") {
