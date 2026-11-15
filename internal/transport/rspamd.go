@@ -69,7 +69,7 @@ func (s *RspamdWorker) Handler() http.Handler {
 			return
 		}
 		if s.Token != "" {
-			if !rspamdBearerAuthorized(r.Header.Values("Authorization"), s.Token) {
+			if !rspamdBearerAuthorized(rspamdAuthorizationValues(r.Header), s.Token) {
 				http.Error(w, "unauthorized", 401)
 				return
 			}
