@@ -55,6 +55,7 @@ func Assess(r Result) []Finding {
  if ambiguousAUTH(r.EHLOWarnings) {
   findings = append(findings, Finding{Code:"AUTH_EVIDENCE_UNTRUSTWORTHY",Severity:"warning",Message:"Initial EHLO AUTH evidence is malformed or ambiguous; authentication availability cannot be inferred"})
  }
+ findings = append(findings, credentialExposureFindings(r)...)
  if len(r.AuthMechanisms) > 0 {
   findings = append(findings, Finding{
    Code:"AUTH_ADVERTISED_BEFORE_TLS", Severity:"warning",
