@@ -4,6 +4,8 @@ import (
  "errors"
  "fmt"
  "net/http"
+ "strings"
+ "unicode/utf8"
 )
 
 type rspamdRequestMetadata struct {
@@ -16,16 +18,28 @@ type rspamdRequestMetadata struct {
  ContentEncoding string
 }
 
-// Reject ambiguous duplicate identity fields instead of relying on Header.Get,
-// which silently selects a single value.
-func rspamdSingleHeader(h http.Header, name string, max int) (string, error) {
- values := h.Values(name)
- if len(values) > 1 { return "", fmt.Errorf("duplicate %s header", name) }
- if len(values) == 0 { return "", nil }
- value := values[0]
- if len(value) > max { return "", fmt.Errorf("%s header exceeds %d bytes", name, max) }
+// Validate metadata before it becomes scanner identity or a persisted audit value.
+// Header maps can contain non-canonical keys when constructed by middleware;
+// Header.Values alone would miss them and allow ambiguous duplicate identities.
+func rspamdValidHeaderValue(value string, max int) bool {
+ if len(value) > max || !utf8.ValidString(value) { return false }
  for _, r := range value {
-  if r < 0x20 || r == 0x7f { return "", fmt.Errorf("%s header contains control character", name) }
+  if r < 0x20 || r == 0x7f || (r >= 0x80 && r <= 0x9f) { return false }
+ }
+ return true
+}
+
+func rspamdSingleHeader(h http.Header, name string, max int) (string, error) {
+ var value string
+ count := 0
+ for key, values := range h {
+  if !strings.EqualFold(key, name) { continue }
+  count += len(values)
+  if count > 1 { return "", fmt.Errorf("duplicate %s header", name) }
+  if len(values) == 1 { value = values[0] }
+ }
+ if !rspamdValidHeaderValue(value, max) {
+  return "", fmt.Errorf("%s header contains invalid text or exceeds %d bytes", name, max)
  }
  return value, nil
 }
@@ -46,7 +60,7 @@ func rspamdReadRequestMetadata(h http.Header) (rspamdRequestMetadata, error) {
  m.Recipients = make([]string, 0, len(rcpts)+1)
  for _, recipient := range rcpts {
   if len(recipient) == 0 || len(recipient) > 512 { return m, errors.New("invalid Rcpt header length") }
-  for _, r := range recipient { if r < 0x20 || r == 0x7f { return m, errors.New("Rcpt header contains control character") } }
+  if !rspamdValidHeaderValue(recipient, 512) { return m, errors.New("Rcpt header contains invalid text") }
   identity, err := rspamdMailboxIdentity(recipient, false)
   if err != nil { return m, fmt.Errorf("invalid Rcpt header: %w", err) }
   m.Recipients = append(m.Recipients, identity)
