@@ -27,6 +27,10 @@ type counts struct{
  FN int `json:"false_negative"`
  RejectedHam int `json:"rejected_ham"`
  RejectedSpam int `json:"rejected_spam"`
+ QuarantinedHam int `json:"quarantined_ham"`
+ QuarantinedSpam int `json:"quarantined_spam"`
+ SoftRejectedHam int `json:"soft_rejected_ham"`
+ SoftRejectedSpam int `json:"soft_rejected_spam"`
 }
 
 type report struct{
@@ -35,6 +39,9 @@ type report struct{
  RejectFalsePositiveUpper95 float64 `json:"reject_false_positive_upper_95"`
  MaximumRejectFalsePositiveUpper95 float64 `json:"maximum_reject_false_positive_upper_95"`
  RejectGatePassed bool `json:"reject_gate_passed"`
+ DisruptiveFalsePositiveUpper95 float64 `json:"disruptive_false_positive_upper_95"`
+ MaximumDisruptiveFalsePositiveUpper95 float64 `json:"maximum_disruptive_false_positive_upper_95"`
+ DisruptiveGatePassed bool `json:"disruptive_gate_passed"`
  FalsePositiveUpper95 float64 `json:"false_positive_upper_95"`
  Recall float64 `json:"recall"`
  RecallLower95 float64 `json:"recall_lower_95"`
@@ -117,13 +124,13 @@ func readLabelledCorpusWithBudgets(r io.Reader,requireUniqueIDs bool,maxRecords 
    return counts{},nil,0,fmt.Errorf("line %d: unsupported privacy-safe cohort",line)
   }
   addEvaluationOutcome(&c,record.Label,flagged)
-  if record.Action=="reject" {if record.Label=="ham"{c.RejectedHam++}else{c.RejectedSpam++}}
+  addDispositionCounts(&c,record.Label,record.Action)
   if record.Cohort==""{
    unspecified++
   }else{
    x:=cohorts[record.Cohort]
    addEvaluationOutcome(&x,record.Label,flagged)
-   if record.Action=="reject" {if record.Label=="ham"{x.RejectedHam++}else{x.RejectedSpam++}}
+   addDispositionCounts(&x,record.Label,record.Action)
    cohorts[record.Cohort]=x
   }
  }
@@ -164,6 +171,7 @@ func evaluateWithPrecision(c counts,minHam,minSpam int,maxFPR,minRecall,minPreci
  if c.Ham<=0||c.Spam<=0{return r}
  r.FalsePositiveRate=float64(c.FP)/float64(c.Ham)
  r.RejectFalsePositiveUpper95=wilson(c.RejectedHam,c.Ham,true)
+ r.DisruptiveFalsePositiveUpper95=wilson(c.RejectedHam+c.QuarantinedHam+c.SoftRejectedHam,c.Ham,true)
  r.FalsePositiveUpper95=wilson(c.FP,c.Ham,true)
  r.Recall=float64(c.TP)/float64(c.Spam)
  r.RecallLower95=wilson(c.TP,c.Spam,false)
@@ -186,6 +194,7 @@ func run(args []string,output,errorsOut io.Writer)int{
  minSpam:=fs.Int("min-spam",1000,"minimum independently labelled spam messages")
  maxFPR:=fs.Float64("max-fpr-upper",0.01,"maximum Wilson 95% upper bound for false-positive rate")
  minRecall:=fs.Float64("min-recall-lower",0.90,"minimum Wilson 95% lower bound for recall")
+ maxDisruptiveFPR:=fs.Float64("max-disruptive-fpr-upper",1,"maximum Wilson upper bound for rejected, quarantined or temporarily rejected legitimate mail (1 disables)")
  maxRejectFPR:=fs.Float64("max-reject-fpr-upper",1,"maximum Wilson 95% upper bound for outright rejection of legitimate mail (1 disables this additional gate)")
  minPrecision:=fs.Float64("min-precision-lower",0,"minimum Wilson 95% lower bound for precision (0 disables precision gating)")
  requireCohorts:=fs.Bool("require-cohorts",false,"require at least two sufficiently powered independently labelled cohorts")
@@ -197,6 +206,7 @@ func run(args []string,output,errorsOut io.Writer)int{
  minCohortSpam:=fs.Int("min-cohort-spam",100,"minimum spam per cohort when required")
  maxCohortFPR:=fs.Float64("max-cohort-fpr-upper",0.05,"maximum Wilson upper false-positive bound per cohort")
  minCohortRecall:=fs.Float64("min-cohort-recall-lower",0.75,"minimum Wilson lower recall bound per cohort")
+ maxCohortDisruptiveFPR:=fs.Float64("max-cohort-disruptive-fpr-upper",1,"maximum cohort Wilson upper bound for rejected, quarantined or temporarily rejected legitimate mail (requires --require-cohorts)")
  maxCohortRejectFPR:=fs.Float64("max-cohort-reject-fpr-upper",1,"maximum Wilson upper outright ham rejection bound per cohort (requires --require-cohorts; 1 disables)")
  minCohortPrecision:=fs.Float64("min-cohort-precision-lower",0,"minimum Wilson lower precision bound per cohort (0 disables this gate)")
  if err:=fs.Parse(args);err!=nil{return 2}
@@ -211,6 +221,7 @@ func run(args []string,output,errorsOut io.Writer)int{
   var configured []string
   fs.Visit(func(f *flag.Flag){
    if f.Name=="min-cohort-precision-lower" && *minCohortPrecision>0 {configured=append(configured,"--"+f.Name);return}
+   if f.Name=="max-cohort-disruptive-fpr-upper" && *maxCohortDisruptiveFPR<1 {configured=append(configured,"--"+f.Name);return}
    if f.Name=="max-cohort-reject-fpr-upper" && *maxCohortRejectFPR<1 {configured=append(configured,"--"+f.Name);return}
    if cohortThresholds[f.Name]{configured=append(configured,"--"+f.Name)}
   })
@@ -237,7 +248,7 @@ func run(args []string,output,errorsOut io.Writer)int{
    return 2
   }
  }
- if fs.NArg()!=1||*maxRecords<1||*minHam>*maxRecords||*minSpam>*maxRecords||(*minSpam<=*maxRecords&&*minHam>*maxRecords-*minSpam)||*maxInputBytes<1||*maxInputBytes==math.MaxInt64||*minHam<1||*minSpam<1||!finiteProbability(*maxRejectFPR)||*maxRejectFPR<0||*maxRejectFPR>1||!finiteProbability(*maxFPR)||!finiteProbability(*minRecall)||!finiteProbability(*minPrecision)||*minPrecision<0||*minPrecision>1||*maxFPR<0||*maxFPR>1||*minRecall<0||*minRecall>1||*minCohortHam<1||*minCohortSpam<1||!finiteProbability(*maxCohortRejectFPR)||*maxCohortRejectFPR<0||*maxCohortRejectFPR>1||!finiteProbability(*maxCohortFPR)||!finiteProbability(*minCohortRecall)||!finiteProbability(*minCohortPrecision)||*minCohortPrecision<0||*minCohortPrecision>1||*maxCohortFPR<0||*maxCohortFPR>1||*minCohortRecall<0||*minCohortRecall>1{
+ if fs.NArg()!=1||*maxRecords<1||*minHam>*maxRecords||*minSpam>*maxRecords||(*minSpam<=*maxRecords&&*minHam>*maxRecords-*minSpam)||*maxInputBytes<1||*maxInputBytes==math.MaxInt64||*minHam<1||*minSpam<1||!finiteProbability(*maxDisruptiveFPR)||*maxDisruptiveFPR<0||*maxDisruptiveFPR>1||!finiteProbability(*maxCohortDisruptiveFPR)||*maxCohortDisruptiveFPR<0||*maxCohortDisruptiveFPR>1||!finiteProbability(*maxRejectFPR)||*maxRejectFPR<0||*maxRejectFPR>1||!finiteProbability(*maxFPR)||!finiteProbability(*minRecall)||!finiteProbability(*minPrecision)||*minPrecision<0||*minPrecision>1||*maxFPR<0||*maxFPR>1||*minRecall<0||*minRecall>1||*minCohortHam<1||*minCohortSpam<1||!finiteProbability(*maxCohortRejectFPR)||*maxCohortRejectFPR<0||*maxCohortRejectFPR>1||!finiteProbability(*maxCohortFPR)||!finiteProbability(*minCohortRecall)||!finiteProbability(*minCohortPrecision)||*minCohortPrecision<0||*minCohortPrecision>1||*maxCohortFPR<0||*maxCohortFPR>1||*minCohortRecall<0||*minCohortRecall>1{
   fmt.Fprintln(errorsOut,"usage: spamgate-eval [--min-ham=N --min-spam=N --max-fpr-upper=0.01 --min-recall-lower=0.90] labels.jsonl")
   return 2
  }
@@ -267,8 +278,10 @@ func run(args []string,output,errorsOut io.Writer)int{
  result:=evaluateWithPrecision(c,*minHam,*minSpam,*maxFPR,*minRecall,*minPrecision)
  result.MaximumRejectFalsePositiveUpper95=*maxRejectFPR
  result.RejectGatePassed=result.RejectFalsePositiveUpper95<=*maxRejectFPR
- result.GatePassed=result.GatePassed&&result.RejectGatePassed
- result.Cohorts,result.CohortGatePassed=evaluateCohortsWithRejectPrecision(cohorts,unspecified,*minCohortHam,*minCohortSpam,*maxCohortFPR,*minCohortRecall,*minCohortPrecision,*maxCohortRejectFPR)
+ result.MaximumDisruptiveFalsePositiveUpper95=*maxDisruptiveFPR
+ result.DisruptiveGatePassed=result.DisruptiveFalsePositiveUpper95<=*maxDisruptiveFPR
+ result.GatePassed=result.GatePassed&&result.RejectGatePassed&&result.DisruptiveGatePassed
+ result.Cohorts,result.CohortGatePassed=evaluateCohortsWithDisruptivePrecision(cohorts,unspecified,*minCohortHam,*minCohortSpam,*maxCohortFPR,*minCohortRecall,*minCohortPrecision,*maxCohortRejectFPR,*maxCohortDisruptiveFPR)
  result.UnspecifiedCohort=unspecified
  result.CohortGateRequired=*requireCohorts
  if *requireCohorts {result.GatePassed=result.GatePassed&&result.CohortGatePassed}
