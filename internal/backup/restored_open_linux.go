@@ -27,7 +27,7 @@ func openRestoredRegularNoFollow(path string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer syscall.Close(dirfd)
+	defer func() { _ = syscall.Close(dirfd) }()
 	components := strings.Split(strings.TrimPrefix(clean, "/"), "/")
 	for _, component := range components[:len(components)-1] {
 		next, openErr := syscall.Openat(dirfd, component, syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
