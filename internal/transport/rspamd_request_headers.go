@@ -55,8 +55,14 @@ func rspamdReadRequestMetadata(h http.Header) (rspamdRequestMetadata, error) {
  if m.ContentEncoding, err = rspamdSingleHeader(h, "Content-Encoding", 64); err != nil { return m, err }
  deliverTo, err := rspamdSingleHeader(h, "Deliver-To", 512)
  if err != nil { return m, err }
- rcpts := h.Values("Rcpt")
- if len(rcpts) > 100 { return m, errors.New("too many Rcpt headers") }
+ // Collect all case-insensitive Rcpt entries, including noncanonical keys
+ // inserted by middleware; Header.Values only reads the canonical key.
+ rcpts := make([]string, 0, 4)
+ for key, values := range h {
+  if !strings.EqualFold(key, "Rcpt") { continue }
+  if len(values) > 100-len(rcpts) { return m, errors.New("too many Rcpt headers") }
+  rcpts = append(rcpts, values...)
+ }
  m.Recipients = make([]string, 0, len(rcpts)+1)
  for _, recipient := range rcpts {
   if len(recipient) == 0 || len(recipient) > 512 { return m, errors.New("invalid Rcpt header length") }
