@@ -24,6 +24,7 @@ func rspamdAuthorizationValues(h http.Header) []string {
  var values []string
  for key, entries := range h {
   if !strings.EqualFold(key, "Authorization") { continue }
+  if len(entries) == 0 { return []string{"", ""} }
   values = append(values, entries...)
   if len(values) > 1 { return values }
  }
