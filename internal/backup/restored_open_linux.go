@@ -39,7 +39,20 @@ func openRestoredRegularNoFollow(path string) (*os.File, error) {
 	}
 	fd, err := syscall.Openat(dirfd, components[len(components)-1], syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open restored leaf: %w", err)
+	}
+	// Never return a descriptor for a FIFO, socket, device, or directory.
+	// O_NONBLOCK avoids a FIFO read hanging before the type can be checked.
+	// A device may still have open-time side effects, so restore directories
+	// must remain access-controlled and quiescent during verification.
+	var st syscall.Stat_t
+	if err := syscall.Fstat(fd, &st); err != nil {
+		_ = syscall.Close(fd)
+		return nil, fmt.Errorf("stat restored leaf: %w", err)
+	}
+	if st.Mode&syscall.S_IFMT != syscall.S_IFREG {
+		_ = syscall.Close(fd)
+		return nil, fmt.Errorf("restored leaf is not a regular file")
 	}
 	return os.NewFile(uintptr(fd), path), nil
 }
