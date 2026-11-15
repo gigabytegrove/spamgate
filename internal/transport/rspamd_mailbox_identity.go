@@ -26,7 +26,6 @@ func rspamdMailboxIdentity(value string, allowNull bool) (string, error) {
  if strings.TrimSpace(value) != value { return "", errors.New("whitespace inside SMTP path wrapper") }
  // A mailbox must contain a nonempty local part and domain. This is a
  // conservative structural check, not a complete RFC 5321 parser.
- at := strings.LastIndexByte(value, '@')
- if at <= 0 || at == len(value)-1 { return "", errors.New("mailbox identity requires local part and domain") }
+ if err := rspamdValidateMailboxStructure(value); err != nil { return "", err }
  return value, nil
 }
