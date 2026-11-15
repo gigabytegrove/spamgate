@@ -85,6 +85,12 @@ func verifyRestoredTree(manifest Manifest, root string) error {
    f.Close()
    return fmt.Errorf("restored file changed during open: %q", rel)
   }
+  // Validate the opened descriptor, not only the pre-open pathname. A link
+  // introduced between Lstat and Open must not evade the isolation check.
+  if err := rejectRestoredHardlink(opened, rel); err != nil {
+   f.Close()
+   return err
+  }
   h := sha256.New()
   n, readErr := io.Copy(h, io.LimitReader(f, entry.Bytes+1))
   finished, statErr := f.Stat()
@@ -92,6 +98,7 @@ func verifyRestoredTree(manifest Manifest, root string) error {
   if readErr != nil { return readErr }
   if statErr != nil { return statErr }
   if closeErr != nil { return closeErr }
+  if err := rejectRestoredHardlink(finished, rel); err != nil { return err }
   if !os.SameFile(info, finished) || info.Size() != finished.Size() || !info.ModTime().Equal(finished.ModTime()) {
    return fmt.Errorf("restored file changed during verification: %q", rel)
   }
