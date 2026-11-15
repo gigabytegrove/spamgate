@@ -63,7 +63,10 @@ func Assess(r Result) []Finding {
    Message:"SMTP AUTH is advertised before STARTTLS; verify the server refuses unencrypted credential submission",
   })
  }
- if !r.StartTLSAdvertised {
+ if containsSMTPWarning(r.EHLOWarnings, "MALFORMED_STARTTLS_ADVERTISEMENT") || containsSMTPWarning(r.EHLOWarnings, "DUPLICATE_STARTTLS_EXTENSION") {
+  findings = append(findings, Finding{Code:"STARTTLS_EVIDENCE_UNTRUSTWORTHY",Severity:"warning",Message:"Initial EHLO contains malformed or duplicate STARTTLS evidence; the diagnostic cannot establish a trustworthy STARTTLS advertisement"})
+ }
+ if !r.StartTLSAdvertised && !containsSMTPWarning(r.EHLOWarnings, "MALFORMED_STARTTLS_ADVERTISEMENT") && !containsSMTPWarning(r.EHLOWarnings, "DUPLICATE_STARTTLS_EXTENSION") {
   findings = append(findings, Finding{
    Code:"STARTTLS_NOT_ADVERTISED", Severity:"warning",
    Message:"Server did not advertise STARTTLS in its initial EHLO response",
