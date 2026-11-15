@@ -20,3 +20,19 @@ and Milter ports 38470/38472.
 This does not establish a race-free proof against privileged concurrent
 filesystem mutation, nor end-to-end host backup/restore qualification. Restore
 and verification remain offline operations; operators must stop all writers.
+
+
+## Descriptor revalidation (2026-11-15 follow-up)
+
+The verifier now checks the Linux inode link count three times for persistent
+files: on the initial pathname Lstat, on the opened file descriptor before
+hashing, and on the same descriptor after hashing. This closes the previously
+unexamined windows in which a hard link was introduced between pathname
+inspection and opening, or during the file read. Tests exercise both boundaries.
+
+These checks do not make verification atomic against a privileged adversary
+who can mutate directories or create/remove hard links between checks. The
+verification operation remains strictly offline and must be run against a
+quiescent data directory with trusted ownership. Runtime lock files continue
+to receive their initial link-count check, but are exempt from archive hashing.
+No live Postfix/Dovecot disposition, delivery, or production restore was tested.
