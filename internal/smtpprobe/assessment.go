@@ -48,6 +48,7 @@ func Assess(r Result) []Finding {
    Message:fmt.Sprintf("SMTP server greeting returned %d rather than 220; no successful SMTP session was established",r.BannerCode),
   })
  }
+ if r.BannerCode != 0 && r.BannerCode != 220 { return findings }
  if r.EHLOCode != 250 {
   if r.EHLOCode != 0 { findings = append(findings, Finding{Code:"EHLO_NOT_ACCEPTED",Severity:"warning",Message:"SMTP server did not accept initial EHLO; capabilities and authentication policy could not be assessed"}) }
   return findings
@@ -56,7 +57,7 @@ func Assess(r Result) []Finding {
   findings = append(findings, Finding{Code:"AUTH_EVIDENCE_UNTRUSTWORTHY",Severity:"warning",Message:"Initial EHLO AUTH evidence is malformed or ambiguous; authentication availability cannot be inferred"})
  }
  findings = append(findings, credentialExposureFindings(r)...)
- if len(r.AuthMechanisms) > 0 {
+ if len(r.AuthMechanisms) > 0 && !ambiguousAUTH(r.EHLOWarnings) {
   findings = append(findings, Finding{
    Code:"AUTH_ADVERTISED_BEFORE_TLS", Severity:"warning",
    Message:"SMTP AUTH is advertised before STARTTLS; verify the server refuses unencrypted credential submission",
