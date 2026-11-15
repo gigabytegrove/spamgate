@@ -31,6 +31,7 @@ type Result struct {
  TLSVersion string `json:"tls_version,omitempty"`
  TLSCertificate *CertificateInfo `json:"tls_certificate,omitempty"`
  Findings []Finding `json:"findings"`
+ FailureStage string `json:"failure_stage,omitempty"`
  EHLOWarnings []string `json:"ehlo_warnings"`
  PostTLSEHLOWarnings []string `json:"post_tls_ehlo_warnings"`
  AuthMechanisms []string `json:"auth_mechanisms"`
@@ -90,7 +91,12 @@ func invalidHostname(name string) bool {
 }
 func Probe(ctx context.Context,opt Options)(result Result,err error){
  result=Result{AuthMechanisms:[]string{},PostTLSAuthMechanisms:[]string{},Findings:[]Finding{},EHLOWarnings:[]string{},PostTLSEHLOWarnings:[]string{}}
- defer func(){result.Findings=Assess(result)}()
+ stage := "configuration"
+ defer func(){
+  if err != nil { result.FailureStage = stage }
+  result.Findings=Assess(result)
+  if err != nil { result.Findings=append(result.Findings, failureFinding(stage)) }
+ }()
  if opt.Timeout<=0||opt.Timeout>60*time.Second{return result,errors.New("timeout must be between 1ns and 60s")}
  if ctx==nil{return result,errors.New("nil context")}
  if err:=ctx.Err();err!=nil{return result,err}
@@ -99,6 +105,7 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  host,_,err:=net.SplitHostPort(opt.Address);if err!=nil{return result,fmt.Errorf("invalid address: %w",err)}
  if opt.ServerName==""{opt.ServerName=host}
  if err:=validateTLSName(opt.ServerName);err!=nil{return result,err}
+ stage = "connection"
  probeCtx,cancel:=context.WithTimeout(ctx,opt.Timeout);defer cancel()
  dialer:=net.Dialer{}
  conn,err:=dialer.DialContext(probeCtx,"tcp",opt.Address);if err!=nil{return result,err};defer conn.Close()
@@ -108,8 +115,10 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  deadline,_:=probeCtx.Deadline()
  if err:=conn.SetDeadline(deadline);err!=nil{return result,err}
  reader:=bufio.NewReader(conn);writer:=bufio.NewWriter(conn)
+ stage = "greeting"
  code,_,err:=readReply(reader);if err!=nil{return result,err};result.BannerCode=code
  if code!=220{return result,fmt.Errorf("SMTP banner returned %d, expected 220",code)}
+ stage = "ehlo"
  if err:=send(writer,"EHLO "+opt.HelloName);err!=nil{return result,err}
  code,lines,err:=readReply(reader);if err!=nil{return result,err};result.EHLOCode=code
  if code!=250{return result,fmt.Errorf("EHLO returned %d, expected 250",code)}
@@ -120,15 +129,18 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
   if opt.RequireTLS{return result,errors.New("STARTTLS not advertised; refusing downgrade")}
   return result,nil
  }
+ stage = "starttls"
  if err:=send(writer,"STARTTLS");err!=nil{return result,err}
  code,_,err=readReply(reader);if err!=nil{return result,err}
  result.StartTLSReplyCode=code
  if code!=220{return result,fmt.Errorf("STARTTLS returned %d, expected 220",code)}
+ stage = "tls_handshake"
  tlsConn:=tls.Client(conn,&tls.Config{ServerName:opt.ServerName,MinVersion:tls.VersionTLS12})
  if err:=tlsConn.HandshakeContext(probeCtx);err!=nil{return result,fmt.Errorf("TLS verification failed: %w",err)}
  state:=tlsConn.ConnectionState();result.StartTLSVerified=true;result.TLSVersion=tls.VersionName(state.Version)
  if len(state.PeerCertificates)>0 {result.TLSCertificate=certificateInfo(state.PeerCertificates[0],time.Now())}
  reader=bufio.NewReader(tlsConn);writer=bufio.NewWriter(tlsConn)
+ stage = "post_tls_ehlo"
  if err:=send(writer,"EHLO "+opt.HelloName);err!=nil{return result,err}
  code,lines,err=readReply(reader);if err!=nil{return result,err}
  result.PostTLSEHLOCode=code
