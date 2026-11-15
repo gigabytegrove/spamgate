@@ -73,12 +73,25 @@ func verifyRestoredTree(manifest Manifest, root string) error {
   }
   if !info.Mode().IsRegular() { return fmt.Errorf("restored tree contains a non-regular file: %q", rel) }
   if err := rejectRestoredHardlink(info, rel); err != nil { return err }
-  if runtimeLockPath(rel) { return nil }
+  if runtimeLockPath(rel) {
+   // Runtime locks are excluded from manifest bytes, but their inode must
+   // still be opened without following a late symlink and checked for races.
+   lockFile, openErr := openRestoredRegularNoFollow(path)
+   if openErr != nil { return fmt.Errorf("restored runtime lock changed during open %q: %w", rel, openErr) }
+   opened, statErr := lockFile.Stat()
+   closeErr := lockFile.Close()
+   if statErr != nil { return statErr }
+   if closeErr != nil { return closeErr }
+   if !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
+    return fmt.Errorf("restored runtime lock changed during open: %q", rel)
+   }
+   return rejectRestoredHardlink(opened, rel)
+  }
   entry, exists := want[rel]
   if !exists || !safeName(rel) || seen[rel] { return fmt.Errorf("unexpected restored file: %q", rel) }
   seen[rel] = true
   if info.Size() != entry.Bytes { return fmt.Errorf("restored file size mismatch: %q", rel) }
-  f, err := os.Open(path)
+  f, err := openRestoredRegularNoFollow(path)
   if err != nil { return err }
   opened, err := f.Stat()
   if err != nil || !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
