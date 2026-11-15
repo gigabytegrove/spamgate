@@ -126,7 +126,7 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  result.SizeAdvertised,result.SizeLimitKnown,result.SizeLimitBytes,result.SizeWarning=sizeEvidence(lines)
  result.StartTLSAdvertised,result.AuthMechanisms=capabilities(lines)
  if !result.StartTLSAdvertised{
-  if opt.RequireTLS{return result,errors.New("STARTTLS not advertised; refusing downgrade")}
+  if opt.RequireTLS{stage = "tls_policy"; return result,errors.New("STARTTLS not advertised; refusing downgrade")}
   return result,nil
  }
  stage = "starttls"
