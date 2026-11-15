@@ -31,7 +31,7 @@ func rspamdValidateMailboxStructure(value string) error {
  if quoted || escaped || separator <= 0 || separator >= len(value)-1 { return errors.New("invalid mailbox separator or quoted local part") }
  local, domain := value[:separator], value[separator+1:]
  if len(local) > 64 { return errors.New("local part exceeds 64 bytes") }
- if strings.HasPrefix(local, """) {
+ if strings.HasPrefix(local, "\\"") {
   if len(local) < 2 || local[len(local)-1] != '"' { return errors.New("invalid quoted local part") }
   for i := 1; i < len(local)-1; i++ {
    if local[i] == '\\' {
