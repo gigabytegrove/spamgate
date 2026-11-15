@@ -30,6 +30,9 @@ type cohortResult struct{
  Precision float64 `json:"precision"`
  PrecisionLower95 float64 `json:"precision_lower_95"`
  MinimumPrecisionLower95 float64 `json:"minimum_precision_lower_95"`
+ RejectFalsePositiveUpper95 float64 `json:"reject_false_positive_upper_95"`
+ MaximumRejectFalsePositiveUpper95 float64 `json:"maximum_reject_false_positive_upper_95"`
+ RejectGatePassed bool `json:"reject_gate_passed"`
  GatePassed bool `json:"gate_passed"`
 }
 
@@ -42,6 +45,12 @@ func evaluateCohorts(cohorts map[string]counts,unspecified,minHam,minSpam int,ma
 }
 
 func evaluateCohortsWithPrecision(cohorts map[string]counts,unspecified,minHam,minSpam int,maxFPR,minRecall,minPrecision float64)([]cohortResult,bool){
+ return evaluateCohortsWithRejectPrecision(cohorts,unspecified,minHam,minSpam,maxFPR,minRecall,minPrecision,1)
+}
+
+// Evaluate outright ham rejection independently in each cohort. A global
+// rejection bound can conceal unsafe rejection of a minority mail path.
+func evaluateCohortsWithRejectPrecision(cohorts map[string]counts,unspecified,minHam,minSpam int,maxFPR,minRecall,minPrecision,maxRejectFPR float64)([]cohortResult,bool){
  keys:=make([]string,0,len(cohorts))
  for name:=range cohorts{keys=append(keys,name)}
  sort.Strings(keys)
@@ -49,12 +58,16 @@ func evaluateCohortsWithPrecision(cohorts map[string]counts,unspecified,minHam,m
  passed:=unspecified==0&&len(keys)>=2
  for _,name:=range keys{
   r:=evaluateWithPrecision(cohorts[name],minHam,minSpam,maxFPR,minRecall,minPrecision)
+  rejectUpper:=wilson(cohorts[name].RejectedHam,cohorts[name].Ham,true)
+  rejectPassed:=cohorts[name].Ham>0&&rejectUpper<=maxRejectFPR
   results=append(results,cohortResult{
    Name:name,Counts:r.Counts,FalsePositiveUpper95:r.FalsePositiveUpper95,
    RecallLower95:r.RecallLower95,Precision:r.Precision,
-   PrecisionLower95:r.PrecisionLower95,MinimumPrecisionLower95:minPrecision,GatePassed:r.GatePassed,
+   PrecisionLower95:r.PrecisionLower95,MinimumPrecisionLower95:minPrecision,
+   RejectFalsePositiveUpper95:rejectUpper,MaximumRejectFalsePositiveUpper95:maxRejectFPR,
+   RejectGatePassed:rejectPassed,GatePassed:r.GatePassed&&rejectPassed,
   })
-  if !r.GatePassed{passed=false}
+  if !r.GatePassed||!rejectPassed{passed=false}
  }
  return results,passed
 }
