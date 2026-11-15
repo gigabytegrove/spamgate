@@ -10,7 +10,7 @@ import (
 )
 
 func TestFailureFindingNeverLeaksRemoteDetails(t *testing.T) {
-	for _, stage := range []string{"configuration", "connection", "greeting", "ehlo", "starttls", "tls_handshake", "post_tls_ehlo", "unknown"} {
+	for _, stage := range []string{"configuration", "connection", "greeting", "ehlo", "tls_policy", "starttls", "tls_handshake", "post_tls_ehlo", "unknown"} {
 		f := failureFinding(stage)
 		if f.Code == "" || f.Severity != "warning" || f.Message == "" {
 			t.Fatalf("incomplete finding for %q: %+v", stage, f)
@@ -42,5 +42,17 @@ func TestProbeGreetingFailureHasStructuredEvidence(t *testing.T) {
 	}
 	if findingPresent(r.Findings, "CLEARTEXT_CREDENTIAL_AUTH_ADVERTISED") {
 		t.Fatal("must not infer AUTH policy from failed greeting")
+	}
+}
+
+func TestProbeTLSRequiredRefusesDowngradeWithEvidence(t *testing.T) {
+	addr, _ := server(t, "250 HELP\r\n")
+	r, err := Probe(context.Background(), Options{Address: addr, Timeout: time.Second, RequireTLS: true})
+	if err == nil { t.Fatal("expected TLS-required refusal") }
+	if r.FailureStage != "tls_policy" || !findingPresent(r.Findings, "SMTP_TLS_REQUIRED_UNAVAILABLE") {
+		t.Fatalf("missing downgrade refusal evidence: %+v", r)
+	}
+	if !findingPresent(r.Findings, "STARTTLS_NOT_ADVERTISED") {
+		t.Fatalf("missing observed STARTTLS absence: %+v", r)
 	}
 }
