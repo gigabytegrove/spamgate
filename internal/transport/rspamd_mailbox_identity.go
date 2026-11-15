@@ -5,10 +5,9 @@ import (
  "strings"
 )
 
-// Remove only a complete SMTP path wrapper. Broad trimming silently converts
-// malformed nested wrappers into seemingly valid identities.
+// rspamdMailboxIdentity validates the exact envelope identity supplied by the
+// MTA. It does not silently trim or rewrite the SMTP path.
 func rspamdMailboxIdentity(value string, allowNull bool) (string, error) {
- value = strings.TrimSpace(value)
  if value == "" {
   if allowNull { return "", nil }
   return "", errors.New("empty recipient identity")
@@ -20,12 +19,10 @@ func rspamdMailboxIdentity(value string, allowNull bool) (string, error) {
   }
   value = value[1:len(value)-1]
  }
- if value == "" || strings.ContainsAny(value, "<>\r\n\x00,") {
+ if value == "" || strings.ContainsAny(value, "<>\r\n\x00") {
   return "", errors.New("malformed mailbox identity")
  }
- if strings.TrimSpace(value) != value { return "", errors.New("whitespace inside SMTP path wrapper") }
- // A mailbox must contain a nonempty local part and domain. This is a
- // conservative structural check, not a complete RFC 5321 parser.
+ if strings.TrimSpace(value) != value { return "", errors.New("whitespace around mailbox identity") }
  if err := rspamdValidateMailboxStructure(value); err != nil { return "", err }
  return value, nil
 }
