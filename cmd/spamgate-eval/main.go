@@ -15,6 +15,7 @@ import (
  "io"
  "math"
  "os"
+ "sort"
  "strings"
 )
 
@@ -198,6 +199,7 @@ func run(args []string,output,errorsOut io.Writer)int{
  maxRejectFPR:=fs.Float64("max-reject-fpr-upper",1,"maximum Wilson 95% upper bound for outright rejection of legitimate mail (1 disables this additional gate)")
  minPrecision:=fs.Float64("min-precision-lower",0,"minimum Wilson 95% lower bound for precision (0 disables precision gating)")
  requireCohorts:=fs.Bool("require-cohorts",false,"require at least two sufficiently powered independently labelled cohorts")
+ qualificationMode:=fs.Bool("qualification-mode",false,"require integrity-bound, disjoint, sufficiently powered cohorts and active safety thresholds")
  requireUniqueIDs:=fs.Bool("require-unique-ids",false,"require distinct SHA-256 message IDs to prevent repeated samples from inflating confidence")
  maxRecords:=fs.Int("max-records",1000000,"maximum labelled records accepted (memory and CPU safety limit)")
  expectedDigest:=fs.String("corpus-sha256","","expected lowercase SHA-256 of the complete corpus file (optional integrity gate)")
@@ -245,6 +247,37 @@ func run(args []string,output,errorsOut io.Writer)int{
   if two:=*minCohortSpam*2;two>neededSpam {neededSpam=two}
   if neededHam>*maxRecords || neededSpam>*maxRecords-neededHam {
    fmt.Fprintln(errorsOut,"combined global and two disjoint cohorts ham/spam minimums exceed --max-records")
+   return 2
+  }
+ }
+ // Qualification mode is intentionally stricter than exploratory evaluation.
+ // A passing report cannot rely on repeated, unstratified, or unpinned examples.
+ // Thresholds must be explicitly selected rather than silently using defaults.
+ if *qualificationMode {
+  if !*requireUniqueIDs || !*requireCohorts || *expectedDigest=="" {
+   fmt.Fprintln(errorsOut,"--qualification-mode requires --require-unique-ids, --require-cohorts and --corpus-sha256")
+   return 2
+  }
+  required:=map[string]bool{
+   "max-fpr-upper":false,"min-recall-lower":false,
+   "min-precision-lower":false,"max-reject-fpr-upper":false,
+   "max-disruptive-fpr-upper":false,
+   "max-cohort-fpr-upper":false,"min-cohort-recall-lower":false,
+   "min-cohort-precision-lower":false,"max-cohort-reject-fpr-upper":false,
+   "max-cohort-disruptive-fpr-upper":false,
+  }
+  fs.Visit(func(f *flag.Flag){if _,ok:=required[f.Name];ok{required[f.Name]=true}})
+  var missing []string
+  for name,set:=range required {if !set {missing=append(missing,"--"+name)}}
+  sort.Strings(missing)
+  if len(missing)>0 {
+   fmt.Fprintf(errorsOut,"--qualification-mode requires explicit thresholds: %s\n",strings.Join(missing,", "))
+   return 2
+  }
+  if *minPrecision<=0 || *minCohortPrecision<=0 ||
+   *maxRejectFPR>=1 || *maxDisruptiveFPR>=1 ||
+   *maxCohortRejectFPR>=1 || *maxCohortDisruptiveFPR>=1 {
+   fmt.Fprintln(errorsOut,"--qualification-mode requires active precision, rejection and disruptive-disposition safety gates")
    return 2
   }
  }
