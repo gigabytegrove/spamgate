@@ -4,17 +4,22 @@ import (
  "errors"
  "net"
  "strings"
+ "unicode"
  "unicode/utf8"
 )
 
-// rspamdValidateMailboxStructure validates an SMTP mailbox without rewriting it.
-// SMTPUTF8 local parts are retained; ASCII DNS labels and address literals are
-// validated independently. This is intentionally not a full SMTP path parser.
+// rspamdValidateMailboxStructure checks an SMTP mailbox without normalizing
+// the identity. It deliberately does not implement route-address syntax.
 func rspamdValidateMailboxStructure(value string) error {
  if !utf8.ValidString(value) { return errors.New("invalid mailbox encoding") }
  if len(value) == 0 || len(value) > 320 { return errors.New("invalid mailbox length") }
  for _, r := range value {
-  if r < 32 || (r >= 127 && r <= 159) { return errors.New("mailbox contains control character") }
+  // SMTPUTF8 does not permit Unicode separators, format controls, or
+  // bidirectional overrides in an envelope mailbox identity.
+  if unicode.IsControl(r) || unicode.IsSpace(r) || unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r) {
+   // ASCII space is legal only within a quoted local part, checked below.
+   if r != ' ' { return errors.New("mailbox contains control or separator") }
+  }
  }
  separator := -1
  quoted, escaped := false, false
@@ -36,19 +41,26 @@ func rspamdValidateMailboxStructure(value string) error {
   for i := 1; i < len(local)-1; i++ {
    if local[i] == '\\' {
     i++
-    if i >= len(local)-1 || local[i] == '\r' || local[i] == '\n' { return errors.New("invalid quoted escape") }
+    if i >= len(local)-1 { return errors.New("invalid quoted escape") }
    } else if local[i] == '"' { return errors.New("unescaped quote in local part") }
   }
  } else {
   if strings.HasPrefix(local, ".") || strings.HasSuffix(local, ".") || strings.Contains(local, "..") { return errors.New("invalid local dot placement") }
+  const asciiAtext = "!#$%&'*+-/=?^_`{|}~"
   for _, r := range local {
-   if r == '"' || r == '\\' || r == ' ' || r == '\t' || r == '(' || r == ')' || r == '[' || r == ']' || r == ':' || r == ';' || r == '@' { return errors.New("invalid unquoted local part") }
+   if r == '.' || r >= '0' && r <= '9' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r < 128 && strings.ContainsRune(asciiAtext, r) { continue }
+   if r >= 128 && !unicode.IsControl(r) && !unicode.IsSpace(r) && !unicode.Is(unicode.Cf, r) && !unicode.Is(unicode.Zl, r) && !unicode.Is(unicode.Zp, r) { continue }
+   return errors.New("invalid unquoted local part")
   }
  }
  if strings.HasPrefix(domain, "[") {
   if len(domain) < 3 || !strings.HasSuffix(domain, "]") { return errors.New("invalid address literal") }
   literal := domain[1:len(domain)-1]
-  if strings.HasPrefix(strings.ToLower(literal), "ipv6:") { literal = literal[5:]; if net.ParseIP(literal) == nil || !strings.Contains(literal, ":") { return errors.New("invalid IPv6 address literal") }; return nil }
+  if strings.HasPrefix(strings.ToLower(literal), "ipv6:") {
+   literal = literal[5:]
+   if net.ParseIP(literal) == nil || !strings.Contains(literal, ":") { return errors.New("invalid IPv6 address literal") }
+   return nil
+  }
   ip := net.ParseIP(literal)
   if ip == nil || ip.To4() == nil { return errors.New("invalid IPv4 address literal") }
   return nil
