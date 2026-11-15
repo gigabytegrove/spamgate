@@ -311,6 +311,19 @@ func run(args []string,output,errorsOut io.Writer)int{
  if err:=verifyEvaluationCorpusPathUnchanged(name,initialInfo);err!=nil {fmt.Fprintln(errorsOut,"corpus changed during evaluation:",err);return 2}
  result:=evaluateWithPrecision(c,*minHam,*minSpam,*maxFPR,*minRecall,*minPrecision)
  result.Qualification=qualificationEvidenceForRun(*qualificationMode,*requireUniqueIDs,*requireCohorts,*expectedDigest,c.Ham+c.Spam,*maxInputBytes,*maxRecords)
+ result.Qualification.Thresholds=&qualificationThresholds{
+  MinimumHam:*minHam,MinimumSpam:*minSpam,
+  MaximumFalsePositiveUpper95:*maxFPR,MinimumRecallLower95:*minRecall,
+  MinimumPrecisionLower95:*minPrecision,
+  MaximumRejectFalsePositiveUpper95:*maxRejectFPR,
+  MaximumDisruptiveFalsePositiveUpper95:*maxDisruptiveFPR,
+  MinimumCohortHam:*minCohortHam,MinimumCohortSpam:*minCohortSpam,
+  MaximumCohortFalsePositiveUpper95:*maxCohortFPR,
+  MinimumCohortRecallLower95:*minCohortRecall,
+  MinimumCohortPrecisionLower95:*minCohortPrecision,
+  MaximumCohortRejectFalsePositiveUpper95:*maxCohortRejectFPR,
+  MaximumCohortDisruptiveFalsePositiveUpper95:*maxCohortDisruptiveFPR,
+ }
  result.MaximumRejectFalsePositiveUpper95=*maxRejectFPR
  result.RejectGatePassed=result.RejectFalsePositiveUpper95<=*maxRejectFPR
  result.MaximumDisruptiveFalsePositiveUpper95=*maxDisruptiveFPR
