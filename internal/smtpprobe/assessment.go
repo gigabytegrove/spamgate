@@ -152,11 +152,18 @@ func Assess(r Result) []Finding {
   }
   }
  }
- if r.TLSCertificate != nil && r.TLSCertificate.DaysUntilExpiry <= 14 {
-  findings = append(findings, Finding{
-   Code:"TLS_CERTIFICATE_EXPIRING", Severity:"warning",
-   Message:fmt.Sprintf("Verified SMTP TLS certificate expires in %d day(s)",r.TLSCertificate.DaysUntilExpiry),
-  })
+ if r.TLSCertificate != nil {
+  if r.TLSCertificate.DaysUntilExpiry < 0 {
+   findings = append(findings, Finding{
+    Code:"TLS_CERTIFICATE_EXPIRED", Severity:"warning",
+    Message:"Verified SMTP TLS certificate evidence indicates an expired leaf certificate; inspect diagnostic time and trust configuration",
+   })
+  } else if r.TLSCertificate.DaysUntilExpiry <= 14 {
+   findings = append(findings, Finding{
+    Code:"TLS_CERTIFICATE_EXPIRING", Severity:"warning",
+    Message:fmt.Sprintf("Verified SMTP TLS certificate expires in %d day(s)",r.TLSCertificate.DaysUntilExpiry),
+   })
+  }
  }
  return findings
 }
