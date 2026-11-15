@@ -21,7 +21,7 @@ func TestRspamdAuthorizationCasefoldValues(t *testing.T) {
   {"valid plus invalid", http.Header{"Authorization": {"Bearer " + secret}, "authorization": {"Bearer wrong"}}, false},
   {"invalid plus valid", http.Header{"authorization": {"Bearer wrong"}, "AUTHORIZATION": {"Bearer " + secret}}, false},
   {"empty alias plus valid", http.Header{"Authorization": {"Bearer " + secret}, "authorization": {""}}, false},
-  {"zero-value alias plus valid", http.Header{"Authorization": {"Bearer " + secret}, "authorization": {}}, true},
+  {"zero-value alias plus valid", http.Header{"Authorization": {"Bearer " + secret}, "authorization": {}}, false},
   {"missing", http.Header{}, false},
  }
  for _, tc := range cases {
