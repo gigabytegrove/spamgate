@@ -25,11 +25,16 @@ type counts struct{
  FP int `json:"false_positive"`
  TN int `json:"true_negative"`
  FN int `json:"false_negative"`
+ RejectedHam int `json:"rejected_ham"`
+ RejectedSpam int `json:"rejected_spam"`
 }
 
 type report struct{
  Counts counts `json:"counts"`
  FalsePositiveRate float64 `json:"false_positive_rate"`
+ RejectFalsePositiveUpper95 float64 `json:"reject_false_positive_upper_95"`
+ MaximumRejectFalsePositiveUpper95 float64 `json:"maximum_reject_false_positive_upper_95"`
+ RejectGatePassed bool `json:"reject_gate_passed"`
  FalsePositiveUpper95 float64 `json:"false_positive_upper_95"`
  Recall float64 `json:"recall"`
  RecallLower95 float64 `json:"recall_lower_95"`
@@ -112,11 +117,13 @@ func readLabelledCorpusWithBudgets(r io.Reader,requireUniqueIDs bool,maxRecords 
    return counts{},nil,0,fmt.Errorf("line %d: unsupported privacy-safe cohort",line)
   }
   addEvaluationOutcome(&c,record.Label,flagged)
+  if record.Action=="reject" {if record.Label=="ham"{c.RejectedHam++}else{c.RejectedSpam++}}
   if record.Cohort==""{
    unspecified++
   }else{
    x:=cohorts[record.Cohort]
    addEvaluationOutcome(&x,record.Label,flagged)
+   if record.Action=="reject" {if record.Label=="ham"{x.RejectedHam++}else{x.RejectedSpam++}}
    cohorts[record.Cohort]=x
   }
  }
@@ -156,6 +163,7 @@ func evaluateWithPrecision(c counts,minHam,minSpam int,maxFPR,minRecall,minPreci
  }
  if c.Ham<=0||c.Spam<=0{return r}
  r.FalsePositiveRate=float64(c.FP)/float64(c.Ham)
+ r.RejectFalsePositiveUpper95=wilson(c.RejectedHam,c.Ham,true)
  r.FalsePositiveUpper95=wilson(c.FP,c.Ham,true)
  r.Recall=float64(c.TP)/float64(c.Spam)
  r.RecallLower95=wilson(c.TP,c.Spam,false)
@@ -178,6 +186,7 @@ func run(args []string,output,errorsOut io.Writer)int{
  minSpam:=fs.Int("min-spam",1000,"minimum independently labelled spam messages")
  maxFPR:=fs.Float64("max-fpr-upper",0.01,"maximum Wilson 95% upper bound for false-positive rate")
  minRecall:=fs.Float64("min-recall-lower",0.90,"minimum Wilson 95% lower bound for recall")
+ maxRejectFPR:=fs.Float64("max-reject-fpr-upper",1,"maximum Wilson 95% upper bound for outright rejection of legitimate mail (1 disables this additional gate)")
  minPrecision:=fs.Float64("min-precision-lower",0,"minimum Wilson 95% lower bound for precision (0 disables precision gating)")
  requireCohorts:=fs.Bool("require-cohorts",false,"require at least two sufficiently powered independently labelled cohorts")
  requireUniqueIDs:=fs.Bool("require-unique-ids",false,"require distinct SHA-256 message IDs to prevent repeated samples from inflating confidence")
@@ -226,7 +235,7 @@ func run(args []string,output,errorsOut io.Writer)int{
    return 2
   }
  }
- if fs.NArg()!=1||*maxRecords<1||*minHam>*maxRecords||*minSpam>*maxRecords||(*minSpam<=*maxRecords&&*minHam>*maxRecords-*minSpam)||*maxInputBytes<1||*maxInputBytes==math.MaxInt64||*minHam<1||*minSpam<1||!finiteProbability(*maxFPR)||!finiteProbability(*minRecall)||!finiteProbability(*minPrecision)||*minPrecision<0||*minPrecision>1||*maxFPR<0||*maxFPR>1||*minRecall<0||*minRecall>1||*minCohortHam<1||*minCohortSpam<1||!finiteProbability(*maxCohortFPR)||!finiteProbability(*minCohortRecall)||!finiteProbability(*minCohortPrecision)||*minCohortPrecision<0||*minCohortPrecision>1||*maxCohortFPR<0||*maxCohortFPR>1||*minCohortRecall<0||*minCohortRecall>1{
+ if fs.NArg()!=1||*maxRecords<1||*minHam>*maxRecords||*minSpam>*maxRecords||(*minSpam<=*maxRecords&&*minHam>*maxRecords-*minSpam)||*maxInputBytes<1||*maxInputBytes==math.MaxInt64||*minHam<1||*minSpam<1||!finiteProbability(*maxRejectFPR)||*maxRejectFPR<0||*maxRejectFPR>1||!finiteProbability(*maxFPR)||!finiteProbability(*minRecall)||!finiteProbability(*minPrecision)||*minPrecision<0||*minPrecision>1||*maxFPR<0||*maxFPR>1||*minRecall<0||*minRecall>1||*minCohortHam<1||*minCohortSpam<1||!finiteProbability(*maxCohortFPR)||!finiteProbability(*minCohortRecall)||!finiteProbability(*minCohortPrecision)||*minCohortPrecision<0||*minCohortPrecision>1||*maxCohortFPR<0||*maxCohortFPR>1||*minCohortRecall<0||*minCohortRecall>1{
   fmt.Fprintln(errorsOut,"usage: spamgate-eval [--min-ham=N --min-spam=N --max-fpr-upper=0.01 --min-recall-lower=0.90] labels.jsonl")
   return 2
  }
@@ -254,6 +263,9 @@ func run(args []string,output,errorsOut io.Writer)int{
  if err:=verifyEvaluationCorpusUnchanged(file,initialInfo);err!=nil {fmt.Fprintln(errorsOut,"corpus changed during evaluation:",err);return 2}
  if err:=verifyEvaluationCorpusPathUnchanged(name,initialInfo);err!=nil {fmt.Fprintln(errorsOut,"corpus changed during evaluation:",err);return 2}
  result:=evaluateWithPrecision(c,*minHam,*minSpam,*maxFPR,*minRecall,*minPrecision)
+ result.MaximumRejectFalsePositiveUpper95=*maxRejectFPR
+ result.RejectGatePassed=result.RejectFalsePositiveUpper95<=*maxRejectFPR
+ result.GatePassed=result.GatePassed&&result.RejectGatePassed
  result.Cohorts,result.CohortGatePassed=evaluateCohortsWithPrecision(cohorts,unspecified,*minCohortHam,*minCohortSpam,*maxCohortFPR,*minCohortRecall,*minCohortPrecision)
  result.UnspecifiedCohort=unspecified
  result.CohortGateRequired=*requireCohorts
