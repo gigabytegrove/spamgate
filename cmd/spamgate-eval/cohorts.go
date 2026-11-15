@@ -33,6 +33,9 @@ type cohortResult struct{
  RejectFalsePositiveUpper95 float64 `json:"reject_false_positive_upper_95"`
  MaximumRejectFalsePositiveUpper95 float64 `json:"maximum_reject_false_positive_upper_95"`
  RejectGatePassed bool `json:"reject_gate_passed"`
+ DisruptiveFalsePositiveUpper95 float64 `json:"disruptive_false_positive_upper_95"`
+ MaximumDisruptiveFalsePositiveUpper95 float64 `json:"maximum_disruptive_false_positive_upper_95"`
+ DisruptiveGatePassed bool `json:"disruptive_gate_passed"`
  GatePassed bool `json:"gate_passed"`
 }
 
@@ -51,6 +54,10 @@ func evaluateCohortsWithPrecision(cohorts map[string]counts,unspecified,minHam,m
 // Evaluate outright ham rejection independently in each cohort. A global
 // rejection bound can conceal unsafe rejection of a minority mail path.
 func evaluateCohortsWithRejectPrecision(cohorts map[string]counts,unspecified,minHam,minSpam int,maxFPR,minRecall,minPrecision,maxRejectFPR float64)([]cohortResult,bool){
+ return evaluateCohortsWithDisruptivePrecision(cohorts,unspecified,minHam,minSpam,maxFPR,minRecall,minPrecision,maxRejectFPR,1)
+}
+
+func evaluateCohortsWithDisruptivePrecision(cohorts map[string]counts,unspecified,minHam,minSpam int,maxFPR,minRecall,minPrecision,maxRejectFPR,maxDisruptiveFPR float64)([]cohortResult,bool){
  keys:=make([]string,0,len(cohorts))
  for name:=range cohorts{keys=append(keys,name)}
  sort.Strings(keys)
@@ -60,14 +67,18 @@ func evaluateCohortsWithRejectPrecision(cohorts map[string]counts,unspecified,mi
   r:=evaluateWithPrecision(cohorts[name],minHam,minSpam,maxFPR,minRecall,minPrecision)
   rejectUpper:=wilson(cohorts[name].RejectedHam,cohorts[name].Ham,true)
   rejectPassed:=cohorts[name].Ham>0&&rejectUpper<=maxRejectFPR
+  disruptiveUpper:=wilson(cohorts[name].RejectedHam+cohorts[name].QuarantinedHam+cohorts[name].SoftRejectedHam,cohorts[name].Ham,true)
+  disruptivePassed:=cohorts[name].Ham>0&&disruptiveUpper<=maxDisruptiveFPR
   results=append(results,cohortResult{
    Name:name,Counts:r.Counts,FalsePositiveUpper95:r.FalsePositiveUpper95,
    RecallLower95:r.RecallLower95,Precision:r.Precision,
    PrecisionLower95:r.PrecisionLower95,MinimumPrecisionLower95:minPrecision,
    RejectFalsePositiveUpper95:rejectUpper,MaximumRejectFalsePositiveUpper95:maxRejectFPR,
-   RejectGatePassed:rejectPassed,GatePassed:r.GatePassed&&rejectPassed,
+   RejectGatePassed:rejectPassed,DisruptiveFalsePositiveUpper95:disruptiveUpper,
+   MaximumDisruptiveFalsePositiveUpper95:maxDisruptiveFPR,DisruptiveGatePassed:disruptivePassed,
+   GatePassed:r.GatePassed&&rejectPassed&&disruptivePassed,
   })
-  if !r.GatePassed||!rejectPassed{passed=false}
+  if !r.GatePassed||!rejectPassed||!disruptivePassed{passed=false}
  }
  return results,passed
 }
