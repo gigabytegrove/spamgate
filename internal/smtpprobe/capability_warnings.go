@@ -33,13 +33,18 @@ func capabilityWarnings(lines []string) []string {
   }
   if canonical == "" { continue }
   if seen[canonical] {
+   if canonical == "STARTTLS" { add("DUPLICATE_STARTTLS_EXTENSION") }
    add("DUPLICATE_EXTENSION")
    if canonical == "AUTH" { add("DUPLICATE_AUTH_EXTENSION") }
   }
   seen[canonical] = true
   switch canonical {
   case "STARTTLS", "CHUNKING", "BINARYMIME", "8BITMIME", "SMTPUTF8", "PIPELINING":
-   if len(fields) != 1 { add("UNEXPECTED_EXTENSION_PARAMETERS"); continue }
+   if len(fields) != 1 {
+    add("UNEXPECTED_EXTENSION_PARAMETERS")
+    if canonical == "STARTTLS" { add("MALFORMED_STARTTLS_ADVERTISEMENT") }
+    continue
+   }
    if canonical == "CHUNKING" { chunking = true }
    if canonical == "BINARYMIME" { binaryMIME = true }
   case "AUTH":
