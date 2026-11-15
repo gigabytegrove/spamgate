@@ -32,6 +32,10 @@ func VerifyRestored(archive, destination string) (Manifest, error) {
  defer unlock()
  if err := verifyRestoredTree(manifest, root); err != nil { return Manifest{}, err }
  if err := checkLock(); err != nil { return Manifest{}, err }
+ // The path used to locate the restored tree must still identify the same
+ // directory after verification. An offline restore is not safe if another
+ // process replaces or renames the destination while bytes are inspected.
+ if err := verifyRestoredRootIdentity(root, info); err != nil { return Manifest{}, err }
  return manifest, nil
 }
 
