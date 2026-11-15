@@ -9,6 +9,9 @@ func TestRspamdMailboxIdentity(t *testing.T) {
  cases := []struct {name, value string; allowNull bool; want string; bad bool}{
   {"bracketed", "<user@example.test>", false, "user@example.test", false},
   {"bare", "user@example.test", false, "user@example.test", false},
+  {"missing at sign", "not-an-address", false, "", true},
+  {"missing local part", "@example.test", false, "", true},
+  {"missing domain", "user@", false, "", true},
   {"null sender", "<>", true, "", false},
   {"empty sender", "", true, "", false},
   {"empty recipient", "", false, "", true},
