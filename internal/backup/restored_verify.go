@@ -72,6 +72,7 @@ func verifyRestoredTree(manifest Manifest, root string) error {
    return nil
   }
   if !info.Mode().IsRegular() { return fmt.Errorf("restored tree contains a non-regular file: %q", rel) }
+  if err := rejectRestoredHardlink(info, rel); err != nil { return err }
   if runtimeLockPath(rel) { return nil }
   entry, exists := want[rel]
   if !exists || !safeName(rel) || seen[rel] { return fmt.Errorf("unexpected restored file: %q", rel) }
