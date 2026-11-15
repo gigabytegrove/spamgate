@@ -13,6 +13,8 @@ func failureFinding(stage string) Finding {
 		return Finding{Code: "SMTP_GREETING_FAILED", Severity: "warning", Message: "SMTP diagnostic did not complete an accepted greeting; check listener, protocol framing and timeout"}
 	case "ehlo":
 		return Finding{Code: "SMTP_EHLO_FAILED", Severity: "warning", Message: "SMTP diagnostic did not complete the initial EHLO exchange; check SMTP protocol and server logs"}
+	case "tls_policy":
+        return Finding{Code: "SMTP_TLS_REQUIRED_UNAVAILABLE", Severity: "warning", Message: "SMTP server did not advertise STARTTLS and the diagnostic refused a plaintext downgrade"}
 	case "starttls":
 		return Finding{Code: "SMTP_STARTTLS_FAILED", Severity: "warning", Message: "SMTP diagnostic could not complete STARTTLS negotiation; check server TLS policy and logs"}
 	case "tls_handshake":
