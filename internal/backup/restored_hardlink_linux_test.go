@@ -38,3 +38,41 @@ func TestVerifyRestoredAcceptsSingleLinkFiles(t *testing.T) {
   t.Fatalf("ordinary restored files rejected: %v", err)
  }
 }
+
+func TestOpenedDescriptorDetectsHardlinkAddedAfterInitialStat(t *testing.T) {
+ dir := t.TempDir()
+ path := filepath.Join(dir, "message")
+ if err := os.WriteFile(path, []byte("payload"), 0600); err != nil { t.Fatal(err) }
+ before, err := os.Lstat(path)
+ if err != nil { t.Fatal(err) }
+ if err := rejectRestoredHardlink(before, "message"); err != nil { t.Fatal(err) }
+ f, err := os.Open(path)
+ if err != nil { t.Fatal(err) }
+ defer f.Close()
+ alias := filepath.Join(dir, "alias")
+ if err := os.Link(path, alias); err != nil { t.Skipf("hard links unsupported: %v", err) }
+ opened, err := f.Stat()
+ if err != nil { t.Fatal(err) }
+ if err := rejectRestoredHardlink(opened, "message"); err == nil || !strings.Contains(err.Error(), "hard-linked file") {
+  t.Fatalf("opened descriptor must reject newly linked inode, got %v", err)
+ }
+}
+
+func TestOpenedDescriptorDetectsHardlinkAfterRead(t *testing.T) {
+ dir := t.TempDir()
+ path := filepath.Join(dir, "message")
+ if err := os.WriteFile(path, []byte("payload"), 0600); err != nil { t.Fatal(err) }
+ f, err := os.Open(path)
+ if err != nil { t.Fatal(err) }
+ defer f.Close()
+ opened, err := f.Stat()
+ if err != nil { t.Fatal(err) }
+ if err := rejectRestoredHardlink(opened, "message"); err != nil { t.Fatal(err) }
+ alias := filepath.Join(dir, "alias")
+ if err := os.Link(path, alias); err != nil { t.Skipf("hard links unsupported: %v", err) }
+ finished, err := f.Stat()
+ if err != nil { t.Fatal(err) }
+ if err := rejectRestoredHardlink(finished, "message"); err == nil || !strings.Contains(err.Error(), "hard-linked file") {
+  t.Fatalf("completed descriptor must reject newly linked inode, got %v", err)
+ }
+}
