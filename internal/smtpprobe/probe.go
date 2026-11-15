@@ -49,8 +49,16 @@ type CertificateInfo struct {
 }
 func certificateInfo(cert *x509.Certificate, now time.Time) *CertificateInfo {
  if cert == nil { return nil }
- days := int(cert.NotAfter.Sub(now).Hours()/24)
- if cert.NotAfter.Before(now) { days = -1 }
+ remaining := cert.NotAfter.Sub(now)
+ days := 0
+ if remaining < 0 {
+  days = -1
+ } else if remaining > 0 {
+  // Round up so a certificate with less than 24 hours remaining is not
+  // reported as already at zero days, and avoid early expiry claims.
+  days = int(remaining / (24*time.Hour))
+  if remaining % (24*time.Hour) != 0 { days++ }
+ }
  return &CertificateInfo{
   Subject: cert.Subject.String(), Issuer: cert.Issuer.String(),
   DNSNames: append([]string{},cert.DNSNames...),
