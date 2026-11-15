@@ -58,6 +58,7 @@ type report struct{
  CohortGatePassed bool `json:"cohort_gate_passed"`
  UnspecifiedCohort int `json:"unspecified_cohort"`
  CohortGateRequired bool `json:"cohort_gate_required"`
+ Qualification qualificationEvidence `json:"qualification"`
  Limitation string `json:"limitation"`
 }
 
@@ -309,6 +310,7 @@ func run(args []string,output,errorsOut io.Writer)int{
  if err:=verifyEvaluationCorpusUnchanged(file,initialInfo);err!=nil {fmt.Fprintln(errorsOut,"corpus changed during evaluation:",err);return 2}
  if err:=verifyEvaluationCorpusPathUnchanged(name,initialInfo);err!=nil {fmt.Fprintln(errorsOut,"corpus changed during evaluation:",err);return 2}
  result:=evaluateWithPrecision(c,*minHam,*minSpam,*maxFPR,*minRecall,*minPrecision)
+ result.Qualification=qualificationEvidenceForRun(*qualificationMode,*requireUniqueIDs,*requireCohorts,*expectedDigest,c.Ham+c.Spam,*maxInputBytes,*maxRecords)
  result.MaximumRejectFalsePositiveUpper95=*maxRejectFPR
  result.RejectGatePassed=result.RejectFalsePositiveUpper95<=*maxRejectFPR
  result.MaximumDisruptiveFalsePositiveUpper95=*maxDisruptiveFPR
