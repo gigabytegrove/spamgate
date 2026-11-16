@@ -17,6 +17,8 @@ func run(args []string,in io.Reader,out io.Writer) error {
  flags.SetOutput(io.Discard)
  threshold:=flags.Float64("threshold",5,"score at or above this value is classified as spam")
  maxFP:=flags.Float64("max-fp-upper",-1,"optional one-sided Wilson false-positive upper bound, 0..1")
+ minRecall:=flags.Float64("min-recall",-1,"optional one-sided Wilson recall lower bound, 0..1")
+ minSpam:=flags.Int("min-spam",100,"minimum spam samples per tenant when recall gating")
  minClean:=flags.Int("min-clean",100,"minimum clean samples per tenant when gating")
  zScore:=flags.Float64("z-score",1.6448536269514722,"one-sided confidence z score when gating")
  if err:=flags.Parse(args);err!=nil{return err}
@@ -32,10 +34,21 @@ func run(args []string,in io.Reader,out io.Writer) error {
  }
  report,err:=qualification.Evaluate(samples,*threshold);if err!=nil{return err}
  enc:=json.NewEncoder(out);enc.SetIndent("","  ")
- if *maxFP>=0 {
+ if *maxFP>=0 || *minRecall>=0 {
+  result:=struct{Evaluation qualification.Report `json:"evaluation"`; Gates *qualification.GateReport `json:"gates,omitempty"`; RecallGates *qualification.RecallGateReport `json:"recall_gates,omitempty"`}{Evaluation:report}
+  passed:=true
+  if *maxFP>=0 {
   gates,err:=qualification.AssessGates(report,qualification.GateConfig{MaxFalsePositiveRate:*maxFP,MinCleanSamples:*minClean,ZScore:*zScore});if err!=nil{return err}
-  if err:=enc.Encode(struct{Evaluation qualification.Report `json:"evaluation"`;Gates qualification.GateReport `json:"gates"`}{report,gates});err!=nil{return err}
-  if !gates.Passed{return errors.New("classifier qualification gates failed")}
+  result.Gates=&gates
+  if !gates.Passed {passed=false}
+  }
+  if *minRecall>=0 {
+   recall,err:=qualification.AssessRecallGates(report,qualification.RecallGateConfig{MinRecall:*minRecall,MinSpamSamples:*minSpam,ZScore:*zScore});if err!=nil{return err}
+   result.RecallGates=&recall
+   if !recall.Passed {passed=false}
+  }
+  if err:=enc.Encode(result);err!=nil{return err}
+  if !passed{return errors.New("classifier qualification gates failed")}
   return nil
  }
  return enc.Encode(report)
