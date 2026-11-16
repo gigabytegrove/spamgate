@@ -250,7 +250,8 @@ func (s *Server) postfixReleaseMessage(w http.ResponseWriter, r *http.Request) {
 	// postsuper execution. An unavailable lock fails closed.
 	unlock, lockErr := acquirePostfixHoldReleaseLock(r.Context(), s.Store.DataDir())
 	if lockErr != nil {
-		fail(w, http.StatusServiceUnavailable, "Cannot obtain exclusive Postfix hold release lock; no queue was changed: "+lockErr.Error())
+		s.log.Error("Postfix hold release lock unavailable", "queue_id", req.QueueID, "error", lockErr)
+		fail(w, http.StatusServiceUnavailable, "Cannot obtain exclusive Postfix hold release lock; no queue was changed")
 		return
 	}
 	defer unlock()
