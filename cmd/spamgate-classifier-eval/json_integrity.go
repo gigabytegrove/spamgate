@@ -6,6 +6,8 @@ import (
  "errors"
  "fmt"
  "io"
+ "math"
+ "strings"
 )
 
 // rejectDuplicateJSONKeys validates the entire JSON token stream, including
@@ -52,6 +54,7 @@ func validateCorpusSchema(payload []byte) error {
  var records []json.RawMessage
  if err:=json.Unmarshal(payload,&records);err!=nil{return fmt.Errorf("corpus must be an array of samples: %w",err)}
  if records==nil{return errors.New("corpus must be a non-null array")}
+ seenIDs:=make(map[string]int,len(records))
  for i,record:=range records {
   var fields map[string]json.RawMessage
   if err:=json.Unmarshal(record,&fields);err!=nil{return fmt.Errorf("sample %d must be an object: %w",i,err)}
@@ -71,9 +74,15 @@ func validateCorpusSchema(payload []byte) error {
   if err:=json.Unmarshal(fields["spam"],&spam);err!=nil{return fmt.Errorf("sample %d spam must be boolean: %w",i,err)}
   var score float64
   if err:=json.Unmarshal(fields["score"],&score);err!=nil{return fmt.Errorf("sample %d score must be numeric: %w",i,err)}
+  if math.IsNaN(score)||math.IsInf(score,0){return fmt.Errorf("sample %d score must be finite",i)}
   for _,key:=range []string{"id","tenant"} {
    var value string
    if err:=json.Unmarshal(fields[key],&value);err!=nil{return fmt.Errorf("sample %d %s must be string: %w",i,key,err)}
+   if strings.TrimSpace(value)=="" {return fmt.Errorf("sample %d %s must not be empty",i,key)}
+   if key=="id" {
+    if previous,exists:=seenIDs[value];exists{return fmt.Errorf("sample %d duplicate sample id %q (first seen at sample %d)",i,value,previous)}
+    seenIDs[value]=i
+   }
   }
  }
  return nil
