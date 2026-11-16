@@ -56,6 +56,12 @@ func validateCorpusSchema(payload []byte) error {
   var fields map[string]json.RawMessage
   if err:=json.Unmarshal(record,&fields);err!=nil{return fmt.Errorf("sample %d must be an object: %w",i,err)}
   if fields==nil{return fmt.Errorf("sample %d must be a non-null object",i)}
+  // Decoder.DisallowUnknownFields still accepts case-insensitive struct-field
+  // aliases. Reject them here so a second spelling cannot overwrite evidence.
+  allowed:=map[string]bool{"id":true,"tenant":true,"spam":true,"score":true}
+  for key:=range fields {
+   if !allowed[key] {return fmt.Errorf("sample %d unexpected field %q",i,key)}
+  }
   for _,key:=range []string{"id","tenant","spam","score"} {
    raw,ok:=fields[key]
    if !ok{return fmt.Errorf("sample %d missing required field %q",i,key)}
