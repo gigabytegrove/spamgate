@@ -10,6 +10,7 @@ import (
 // information, internal hostnames, authentication identifiers and addresses of
 // recipients other than the user's mailbox. No MIME body is ever returned.
 func (s *Server) messageHeaders(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if _, ok := s.authorized(w, r, true, false); !ok {
 		return
 	}
