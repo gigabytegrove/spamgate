@@ -24,7 +24,7 @@ jobs:
       - name: Install patched Go 1.27.3
         uses: actions/setup-go@v7
         with:
-          go-version: '1.27.3'
+          go-version-file: go.mod
           cache: false
       - name: Test, inspect and package native builds
         shell: bash
