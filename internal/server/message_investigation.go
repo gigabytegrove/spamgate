@@ -56,7 +56,8 @@ func (s *Server) messageInvestigation(w http.ResponseWriter, r *http.Request) {
 	} else if errors.Is(err, os.ErrNotExist) {
 		result.HeaderSnapshotDetail = "No retained inbound header snapshot (older scans may predate header capture)."
 	} else {
-		result.HeaderSnapshotDetail = "Header snapshot could not be inspected: " + err.Error()
+		s.log.Error("investigation header snapshot read failed", "scan_id", m.ID, "error", err)
+		result.HeaderSnapshotDetail = "Header snapshot could not be inspected; check server logs."
 	}
 	if m.MTAAction != "" {
 		add("Milter disposition", "requested", m.MTAAction+"; "+m.MTAActionNote, m.Timestamp)
@@ -74,7 +75,8 @@ func (s *Server) messageInvestigation(w http.ResponseWriter, r *http.Request) {
 		if os.Getenv("SPAMGATE_POSTFIX_HOLD_INVENTORY") == "true" {
 			holds, err := s.postfixInventory(r.Context())
 			if err != nil {
-				add("Postfix hold queue", "unknown", "Cannot read current queue inventory: "+err.Error(), time.Time{})
+				s.log.Error("investigation Postfix queue inventory failed", "scan_id", m.ID, "error", err)
+				add("Postfix hold queue", "unknown", "Cannot read current queue inventory; check server logs.", time.Time{})
 				result.Actions = append(result.Actions, "Check that postqueue -j is available and readable by the SpamGate service.")
 			} else {
 				queueIDPresent := 0
@@ -110,7 +112,8 @@ func (s *Server) messageInvestigation(w http.ResponseWriter, r *http.Request) {
 		} else {
 			events, truncated, err := readDeliveryEvidence(path, m.MTAQueueID)
 			if err != nil {
-				add("Postfix log", "failed", "Unable to read configured logfile: "+err.Error(), time.Time{})
+				s.log.Error("investigation Postfix log read failed", "scan_id", m.ID, "error", err)
+				add("Postfix log", "failed", "Unable to read configured logfile; check server logs.", time.Time{})
 			} else {
 				result.PostfixLogEvents = events
 				result.PostfixLogTruncated = truncated
