@@ -16,6 +16,9 @@ func run(args []string,in io.Reader,out io.Writer) error {
  flags:=flag.NewFlagSet("spamgate-classifier-eval",flag.ContinueOnError)
  flags.SetOutput(io.Discard)
  threshold:=flags.Float64("threshold",5,"score at or above this value is classified as spam")
+ maxFP:=flags.Float64("max-fp-upper",-1,"optional one-sided Wilson false-positive upper bound, 0..1")
+ minClean:=flags.Int("min-clean",100,"minimum clean samples per tenant when gating")
+ zScore:=flags.Float64("z-score",1.6448536269514722,"one-sided confidence z score when gating")
  if err:=flags.Parse(args);err!=nil{return err}
  if flags.NArg()!=0{return errors.New("unexpected positional arguments")}
  dec:=json.NewDecoder(io.LimitReader(in,32<<20))
@@ -29,6 +32,12 @@ func run(args []string,in io.Reader,out io.Writer) error {
  }
  report,err:=qualification.Evaluate(samples,*threshold);if err!=nil{return err}
  enc:=json.NewEncoder(out);enc.SetIndent("","  ")
+ if *maxFP>=0 {
+  gates,err:=qualification.AssessGates(report,qualification.GateConfig{MaxFalsePositiveRate:*maxFP,MinCleanSamples:*minClean,ZScore:*zScore});if err!=nil{return err}
+  if err:=enc.Encode(struct{Evaluation qualification.Report `json:"evaluation"`;Gates qualification.GateReport `json:"gates"`}{report,gates});err!=nil{return err}
+  if !gates.Passed{return errors.New("classifier qualification gates failed")}
+  return nil
+ }
  return enc.Encode(report)
 }
 func main(){
