@@ -87,6 +87,19 @@ func parsePostfixHold(payload []byte) ([]PostfixHeld, error) {
 		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
 			return nil, fmt.Errorf("invalid Postfix queue JSON: %w", err)
 		}
+		// A queue ID must identify exactly one entry across the entire Postfix
+		// inventory, not merely within HOLD. An active/deferred entry sharing
+		// an ID with a HOLD entry invalidates the evidence for privileged release.
+		// Non-HOLD entries need not have the full HOLD envelope fields.
+		if record.QueueID != "" {
+			if !validPostfixEvidenceID(record.QueueID) {
+				return nil, errors.New("invalid Postfix queue identifier")
+			}
+			if _, duplicate := seenQueueIDs[record.QueueID]; duplicate {
+				return nil, errors.New("duplicate Postfix queue identifier across queues")
+			}
+			seenQueueIDs[record.QueueID] = struct{}{}
+		}
 		if record.QueueName != "hold" {
 			continue
 		}
@@ -117,12 +130,6 @@ func parsePostfixHold(payload []byte) ([]PostfixHeld, error) {
 		if !validPostfixEvidenceID(record.QueueID) {
 			return nil, errors.New("invalid Postfix queue identifier")
 		}
-		// Duplicate IDs make inventory unsuitable as release authorization
-		// evidence even if the records otherwise agree. Never choose one.
-		if _, duplicate := seenQueueIDs[record.QueueID]; duplicate {
-			return nil, errors.New("duplicate Postfix HOLD queue identifier")
-		}
-		seenQueueIDs[record.QueueID] = struct{}{}
 		item := PostfixHeld{QueueID: record.QueueID, Sender: record.Sender, ArrivalTime: record.ArrivalTime, MessageSize: record.MessageSize, RecipientCount: len(record.Recipients), RecipientsTruncated: len(record.Recipients) > 50}
 		for _, r := range record.Recipients {
 			if len(item.Recipients) < 50 {
