@@ -8,11 +8,13 @@ import (
  "io"
  "math"
  "strings"
+ "unicode/utf8"
 )
 
 // rejectDuplicateJSONKeys validates the entire JSON token stream, including
 // nested objects and escaped-key aliases, before typed corpus decoding.
 func rejectDuplicateJSONKeys(payload []byte) error {
+ if !utf8.Valid(payload){return errors.New("corpus contains invalid UTF-8")}
  dec:=json.NewDecoder(bytes.NewReader(payload))
  if err:=scanJSONValue(dec,0);err!=nil{return err}
  if _,err:=dec.Token();err==io.EOF{return nil}else if err!=nil{return fmt.Errorf("trailing JSON: %w",err)}
