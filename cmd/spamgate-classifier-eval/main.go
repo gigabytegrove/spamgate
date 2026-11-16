@@ -36,6 +36,7 @@ func run(args []string,in io.Reader,out io.Writer) error {
  if err!=nil{return fmt.Errorf("read corpus: %w",err)}
  if len(payload)>maxCorpusBytes{return fmt.Errorf("corpus exceeds %d byte limit",maxCorpusBytes)}
  if err:=rejectDuplicateJSONKeys(payload);err!=nil{return fmt.Errorf("corpus integrity: %w",err)}
+ if err:=validateCorpusSchema(payload);err!=nil{return fmt.Errorf("corpus schema: %w",err)}
  dec:=json.NewDecoder(bytes.NewReader(payload))
  dec.DisallowUnknownFields()
  var samples []qualification.Sample
