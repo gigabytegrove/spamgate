@@ -8,7 +8,7 @@ import (
 func TestCorpusIdentityIntegrity(t *testing.T) {
  cases:=[]struct{name,payload,want string}{
   {"duplicate across tenants",`[{"id":"same","tenant":"a","spam":false,"score":0},{"id":"same","tenant":"b","spam":true,"score":7}]`,"duplicate sample id"},
-  {"duplicate escaped id",`[{"id":"A","tenant":"a","spam":false,"score":0},{"id":"\\u0041","tenant":"a","spam":true,"score":7}]`,"duplicate sample id"},
+  {"duplicate escaped id",`[{"id":"A","tenant":"a","spam":false,"score":0},{"id":"\u0041","tenant":"a","spam":true,"score":7}]`,"duplicate sample id"},
   {"empty id",`[{"id":"","tenant":"a","spam":false,"score":0}]`,"id must not be empty"},
   {"whitespace id",`[{"id":"  ","tenant":"a","spam":false,"score":0}]`,"id must not be empty"},
   {"empty tenant",`[{"id":"a","tenant":"","spam":false,"score":0}]`,"tenant must not be empty"},
