@@ -7,6 +7,7 @@ import (
 )
 
 func (s *Server) deliveryQueue(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if _, ok := s.authorized(w, r, true, false); !ok {
 		return
 	}
@@ -22,6 +23,7 @@ func (s *Server) deliveryQueue(w http.ResponseWriter, r *http.Request) {
 	jsonReply(w, 200, summary)
 }
 func (s *Server) retryDelivery(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	identity, ok := s.authorized(w, r, true, true)
  if !ok {
 		return
@@ -41,6 +43,7 @@ func (s *Server) retryDelivery(w http.ResponseWriter, r *http.Request) {
 	jsonReply(w, 200, map[string]bool{"scheduled": true})
 }
 func (s *Server) discardDelivery(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	identity, ok := s.authorized(w, r, true, true)
 	if !ok {
 		return
