@@ -137,6 +137,7 @@ func (s *Server) postfixInventory(ctx context.Context) ([]PostfixHeld, error) {
 }
 
 func (s *Server) postfixHoldQueue(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if _, ok := s.authorized(w, r, true, false); !ok {
 		return
 	}
@@ -223,6 +224,7 @@ func runPostfixRelease(ctx context.Context, queueID string) (string, error) {
 // previously observed SpamGate HOLD request and a matching Postfix queue
 // inventory entry. It does not release uncorrelated messages from the host.
 func (s *Server) postfixReleaseMessage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	actor, ok := s.authorized(w, r, true, true)
 	if !ok {
 		return
@@ -274,7 +276,8 @@ func (s *Server) postfixReleaseMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	held, err := s.postfixInventory(r.Context())
 	if err != nil {
-		fail(w, 503, "Cannot verify Postfix hold inventory; nothing was released: "+err.Error())
+		s.log.Error("Postfix hold inventory verification failed before release", "queue_id", req.QueueID, "error", err)
+		fail(w, 503, "Cannot verify Postfix hold inventory; nothing was released")
 		return
 	}
 	matched := false
