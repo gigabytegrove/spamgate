@@ -16,6 +16,7 @@ func run(args []string,in io.Reader,out io.Writer) error {
  flags:=flag.NewFlagSet("spamgate-classifier-eval",flag.ContinueOnError)
  flags.SetOutput(io.Discard)
  auditCorpus:=flags.Bool("audit-corpus",false,"include deterministic per-tenant corpus composition audit")
+ boundaryMargin:=flags.Float64("audit-boundary-margin",-1,"optional nonnegative score distance for per-tenant threshold-boundary audit")
  threshold:=flags.Float64("threshold",5,"score at or above this value is classified as spam")
  maxFP:=flags.Float64("max-fp-upper",-1,"optional one-sided Wilson false-positive upper bound, 0..1")
  minPrecision:=flags.Float64("min-precision",-1,"optional one-sided Wilson precision lower bound, 0..1")
@@ -37,9 +38,10 @@ func run(args []string,in io.Reader,out io.Writer) error {
  }
  report,err:=qualification.Evaluate(samples,*threshold);if err!=nil{return err}
  enc:=json.NewEncoder(out);enc.SetIndent("","  ")
- if *maxFP>=0 || *minRecall>=0 || *minPrecision>=0 || *auditCorpus {
-  result:=struct{Evaluation qualification.Report `json:"evaluation"`; Gates *qualification.GateReport `json:"gates,omitempty"`; RecallGates *qualification.RecallGateReport `json:"recall_gates,omitempty"`; PrecisionGates *qualification.PrecisionGateReport `json:"precision_gates,omitempty"`; CorpusAudit *qualification.CorpusAudit `json:"corpus_audit,omitempty"`}{Evaluation:report}
+ if *maxFP>=0 || *minRecall>=0 || *minPrecision>=0 || *auditCorpus || *boundaryMargin>=0 {
+  result:=struct{Evaluation qualification.Report `json:"evaluation"`; Gates *qualification.GateReport `json:"gates,omitempty"`; RecallGates *qualification.RecallGateReport `json:"recall_gates,omitempty"`; PrecisionGates *qualification.PrecisionGateReport `json:"precision_gates,omitempty"`; CorpusAudit *qualification.CorpusAudit `json:"corpus_audit,omitempty"`; BoundaryAudit *qualification.BoundaryAudit `json:"boundary_audit,omitempty"`}{Evaluation:report}
   if *auditCorpus { audit,err:=qualification.AuditCorpus(samples);if err!=nil{return err};result.CorpusAudit=&audit }
+  if *boundaryMargin>=0 { audit,err:=qualification.AuditBoundary(samples,*threshold,*boundaryMargin);if err!=nil{return err};result.BoundaryAudit=&audit }
   passed:=true
   if *maxFP>=0 {
   gates,err:=qualification.AssessGates(report,qualification.GateConfig{MaxFalsePositiveRate:*maxFP,MinCleanSamples:*minClean,ZScore:*zScore});if err!=nil{return err}
