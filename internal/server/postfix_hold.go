@@ -315,7 +315,7 @@ func (s *Server) postfixReleaseMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err = cmd(r.Context(), req.QueueID)
 	if err != nil {
-		m.Findings = append(m.Findings, core.Finding{Symbol: "POSTFIX_HOLD_RELEASE_COMMAND_FAILED", Source: "postfix/postsuper", Detail: err.Error()})
+		m.Findings = append(m.Findings, core.Finding{Symbol: "POSTFIX_HOLD_RELEASE_COMMAND_FAILED", Source: "postfix/postsuper", Detail: postfixReleaseFailureAuditDetail()})
 		_ = s.Store.Save(m)
 		s.log.Error("Postfix hold release command failed", "queue_id", req.QueueID, "actor", actor.Name, "error", err)
 		fail(w, 503, "Postfix release command failed; inspect the queue and logs before any manual retry")
@@ -339,4 +339,11 @@ func absDuration(d time.Duration) time.Duration {
 		return -d
 	}
 	return d
+}
+
+// postfixReleaseFailureAuditDetail is persisted in the message record and may
+// be displayed by the browser API. Never persist privileged helper stderr,
+// executable paths, host configuration, or internal error text here.
+func postfixReleaseFailureAuditDetail() string {
+	return "Postfix hold release command failed; inspect privileged server logs and live queue state before manual intervention"
 }
