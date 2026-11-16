@@ -23,7 +23,7 @@ func TestCorpusDuplicateKeysFailClosed(t *testing.T){
 }
 
 func TestCorpusDuplicateKeysEscapedEquivalence(t *testing.T){
- corpus:=`[{"id":"a","tenant":"t","spam":false,"score":1,"sp\\u0061m":true}]`
+ corpus:=`[{"id":"a","tenant":"t","spam":false,"score":1,"sp\u0061m":true}]`
  var out bytes.Buffer
  if err:=run(nil,strings.NewReader(corpus),&out);err==nil{t.Fatal("escaped duplicate key accepted")}
 }
