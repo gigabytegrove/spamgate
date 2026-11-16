@@ -9,6 +9,7 @@ import (
  "math"
  "strings"
  "unicode/utf8"
+ "unicode"
 )
 
 // rejectDuplicateJSONKeys validates the entire JSON token stream, including
@@ -81,6 +82,8 @@ func validateCorpusSchema(payload []byte) error {
    var value string
    if err:=json.Unmarshal(fields[key],&value);err!=nil{return fmt.Errorf("sample %d %s must be string: %w",i,key,err)}
    if strings.TrimSpace(value)=="" {return fmt.Errorf("sample %d %s must not be empty",i,key)}
+   if value!=strings.TrimSpace(value) {return fmt.Errorf("sample %d %s must not have surrounding whitespace",i,key)}
+   for _,r:=range value {if unicode.IsControl(r)||unicode.Is(unicode.Cf,r) {return fmt.Errorf("sample %d %s contains a control or format character",i,key)}}
    if key=="id" {
     if previous,exists:=seenIDs[value];exists{return fmt.Errorf("sample %d duplicate sample id %q (first seen at sample %d)",i,value,previous)}
     seenIDs[value]=i
