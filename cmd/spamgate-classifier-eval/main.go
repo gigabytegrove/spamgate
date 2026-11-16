@@ -31,6 +31,7 @@ func run(args []string,in io.Reader,out io.Writer) error {
  zScore:=flags.Float64("z-score",1.6448536269514722,"one-sided confidence z score when gating")
  if err:=flags.Parse(args);err!=nil{return err}
  if flags.NArg()!=0{return errors.New("unexpected positional arguments")}
+ if err:=validateTenantInventoryOption(flags,*expectedTenants);err!=nil{return err}
  // Reject malformed or disabled acceptance settings before reading any corpus.
  if err:=validateOptions(flags,*threshold,*boundaryMargin,*maxFP,*minRecall,*minPrecision,*minClean,*minSpam,*minPredicted,*zScore);err!=nil{return err}
  const maxCorpusBytes = 32 << 20
@@ -147,6 +148,21 @@ func checkTenantSampleMinimums(samples []qualification.Sample, spec string, minC
   if c.clean<minClean || c.spam<minSpam {
    return fmt.Errorf("tenant %q insufficient labeled corpus: clean=%d (minimum %d), spam=%d (minimum %d)",name,c.clean,minClean,c.spam,minSpam)
   }
+ }
+ return nil
+}
+
+
+// validateTenantInventoryOption distinguishes an omitted optional inventory
+// from an explicitly empty one. An empty value must not disable tenant gates.
+func validateTenantInventoryOption(flags *flag.FlagSet, spec string) error {
+ supplied:=false
+ flags.Visit(func(f *flag.Flag){if f.Name=="expected-tenants"{supplied=true}})
+ if !supplied{return nil}
+ if strings.TrimSpace(spec)=="" {return errors.New("expected-tenants must not be empty when supplied")}
+ for _,part:=range strings.Split(spec,",") {
+  if strings.TrimSpace(part)=="" {return errors.New("expected-tenants contains an empty tenant")}
+  if part!=strings.TrimSpace(part) {return errors.New("expected-tenants entries must not contain surrounding whitespace")}
  }
  return nil
 }
