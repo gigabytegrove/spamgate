@@ -75,7 +75,7 @@ func Assess(r Result) []Finding {
  findings = append(findings, capabilityEvidenceFindings(r, false)...)
  // A refusal is different from a missing STARTTLS extension or a failed
  // certificate verification. Only an observed SMTP reply supports this finding.
- if r.StartTLSAdvertised && r.StartTLSReplyCode != 0 && r.StartTLSReplyCode != 220 {
+ if r.StartTLSAdvertised && !untrustworthySTARTTLS(r.EHLOWarnings) && r.StartTLSReplyCode != 0 && r.StartTLSReplyCode != 220 {
   findings = append(findings, Finding{
    Code:"STARTTLS_COMMAND_REJECTED", Severity:"warning",
    Message:fmt.Sprintf("SMTP server advertised STARTTLS but rejected the command with reply %d; TLS authentication and submission were not tested",r.StartTLSReplyCode),
@@ -104,7 +104,10 @@ func Assess(r Result) []Finding {
    findings = append(findings, Finding{Code:"SIZE_LIMIT_CHANGED_AFTER_TLS",Severity:"info",Message:"Advertised SMTP SIZE limit differs after verified STARTTLS; inspect configured message-size policy"})
   }
   findings = append(findings, capabilityEvidenceFindings(r, true)...)
-  if r.PostTLSStartTLSAdvertised {
+  if untrustworthySTARTTLS(r.PostTLSEHLOWarnings) {
+   findings = append(findings, Finding{Code:"POST_TLS_STARTTLS_EVIDENCE_UNTRUSTWORTHY",Severity:"warning",Message:"Post-TLS EHLO contains malformed or duplicate STARTTLS evidence; the diagnostic cannot establish a trustworthy post-TLS advertisement"})
+  }
+  if r.PostTLSStartTLSAdvertised && !untrustworthySTARTTLS(r.PostTLSEHLOWarnings) {
    findings = append(findings, Finding{
     Code:"STARTTLS_ADVERTISED_AFTER_TLS", Severity:"warning",
     Message:"Server still advertises STARTTLS after a verified TLS handshake; inspect RFC 3207 capability handling",
