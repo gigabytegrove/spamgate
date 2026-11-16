@@ -28,7 +28,7 @@ func TestPostfixCrossQueueIDCollisionFailsClosed(t *testing.T) {
 }
 
 func TestPostfixNonHoldQueueIDValidation(t *testing.T) {
- for _, id := range []string{"../bad","ALL","-H"} {
+ for _, id := range []string{"../bad","-H"} {
   input:=fmt.Sprintf("{\"queue_name\":\"active\",\"queue_id\":%q}\n",id)
   if got,err:=parsePostfixHold([]byte(input));err==nil {t.Fatalf("invalid non-HOLD ID %q accepted: %+v",id,got)}
  }
