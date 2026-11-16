@@ -25,7 +25,7 @@ jobs:
       - name: Install patched Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.27.3'
+          go-version-file: go.mod
           cache: false
       - name: Install Node for UI regression
         uses: actions/setup-node@v4
