@@ -49,6 +49,7 @@ func run(args []string,in io.Reader,out io.Writer) error {
   return fmt.Errorf("trailing input: %w",err)
  }
  if err:=checkTenantCoverage(samples,*expectedTenants);err!=nil{return err}
+ if err:=checkTenantSampleMinimums(samples,*expectedTenants,*minClean,*minSpam,flags);err!=nil{return err}
  report,err:=qualification.Evaluate(samples,*threshold);if err!=nil{return err}
  enc:=json.NewEncoder(out);enc.SetIndent("","  ")
  if *maxFP>=0 || *minRecall>=0 || *minPrecision>=0 || *auditCorpus || *boundaryMargin>=0 {
@@ -119,5 +120,33 @@ func checkTenantCoverage(samples []qualification.Sample, spec string) error {
  for name:=range actual {if !expected[name] {extra=append(extra,name)}}
  sort.Strings(missing);sort.Strings(extra)
  if len(missing)>0||len(extra)>0 {return fmt.Errorf("tenant coverage mismatch: missing=%q unexpected=%q",missing,extra)}
+ return nil
+}
+
+// checkTenantSampleMinimums prevents a nominally present tenant from passing
+// qualification with too few labeled clean or spam messages. It is activated
+// only for explicit expected-tenant qualification with at least one classifier
+// gate; exploratory evaluations retain their existing behavior.
+func checkTenantSampleMinimums(samples []qualification.Sample, spec string, minClean, minSpam int, flags *flag.FlagSet) error {
+ if spec=="" {return nil}
+ enabled:=false
+ flags.Visit(func(f *flag.Flag){if f.Name=="max-fp-upper"||f.Name=="min-recall"||f.Name=="min-precision"{enabled=true}})
+ if !enabled{return nil}
+ type counts struct{clean,spam int}
+ byTenant:=map[string]counts{}
+ for _,sample:=range samples {
+  c:=byTenant[sample.Tenant]
+  if sample.Spam {c.spam++} else {c.clean++}
+  byTenant[sample.Tenant]=c
+ }
+ names:=make([]string,0,len(byTenant))
+ for name:=range byTenant {names=append(names,name)}
+ sort.Strings(names)
+ for _,name:=range names {
+  c:=byTenant[name]
+  if c.clean<minClean || c.spam<minSpam {
+   return fmt.Errorf("tenant %q insufficient labeled corpus: clean=%d (minimum %d), spam=%d (minimum %d)",name,c.clean,minClean,c.spam,minSpam)
+  }
+ }
  return nil
 }
