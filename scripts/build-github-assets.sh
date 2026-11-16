@@ -15,12 +15,12 @@ command -v sha256sum >/dev/null || { echo 'sha256sum required' >&2; exit 1; }
 # Go 1.21+ supports secure, checksum-database-verified toolchain downloads via
 # GOTOOLCHAIN. In particular, dockeradm currently has go1.26.8: do not build
 # security-sensitive releases using that older standard library.
-required_go="go1.27.3"
+required_go="go1.27.4"
 patched_go() {
   local version="$1"
   [[ "$version" =~ ^go([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || return 1
   local major="${BASH_REMATCH[1]}" minor="${BASH_REMATCH[2]}" patch="${BASH_REMATCH[3]}"
-  (( major > 1 || (major == 1 && (minor > 27 || (minor == 27 && patch >= 3))) ))
+  (( major > 1 || (major == 1 && (minor > 27 || (minor == 27 && patch >= 4))) ))
 }
 
 GOVERSION="$(go env GOVERSION)" || { echo 'Unable to query Go toolchain' >&2; exit 1; }
