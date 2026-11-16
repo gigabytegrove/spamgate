@@ -16,3 +16,10 @@ func trustworthyStartTLS(lines []string) bool {
  }
  return count == 1
 }
+
+ // untrustworthySTARTTLS distinguishes malformed/duplicate advertisements
+ // from a definitive absence or successful command refusal.
+func untrustworthySTARTTLS(warnings []string) bool {
+ return containsSMTPWarning(warnings, "MALFORMED_STARTTLS_ADVERTISEMENT") ||
+  containsSMTPWarning(warnings, "DUPLICATE_STARTTLS_EXTENSION")
+}
