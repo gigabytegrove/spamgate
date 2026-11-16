@@ -8,12 +8,12 @@ import (
 func TestCorpusIdentityRejectsInvisibleAndNoncanonicalNames(t *testing.T) {
  cases:=[]struct{name,payload,want string}{
   {"id leading space",`[{"id":" a","tenant":"alpha","spam":false,"score":0}]`,"surrounding whitespace"},
-  {"id trailing tab",`[{"id":"a\\t","tenant":"alpha","spam":false,"score":0}]`,"surrounding whitespace"},
+  {"id trailing tab",`[{"id":"a\t","tenant":"alpha","spam":false,"score":0}]`,"surrounding whitespace"},
   {"tenant trailing space",`[{"id":"a","tenant":"alpha ","spam":false,"score":0}]`,"surrounding whitespace"},
-  {"embedded newline",`[{"id":"a\\nb","tenant":"alpha","spam":false,"score":0}]`,"control or format"},
-  {"embedded null",`[{"id":"a\\u0000b","tenant":"alpha","spam":false,"score":0}]`,"control or format"},
-  {"zero width joiner",`[{"id":"a\\u200db","tenant":"alpha","spam":false,"score":0}]`,"control or format"},
-  {"tenant bidi override",`[{"id":"a","tenant":"a\\u202eb","spam":false,"score":0}]`,"control or format"},
+  {"embedded newline",`[{"id":"a\nb","tenant":"alpha","spam":false,"score":0}]`,"control or format"},
+  {"embedded null",`[{"id":"a\u0000b","tenant":"alpha","spam":false,"score":0}]`,"control or format"},
+  {"zero width joiner",`[{"id":"a\u200db","tenant":"alpha","spam":false,"score":0}]`,"control or format"},
+  {"tenant bidi override",`[{"id":"a","tenant":"a\u202eb","spam":false,"score":0}]`,"control or format"},
   {"ordinary unicode",`[{"id":"é-1","tenant":"équipe","spam":false,"score":0}]`,""},
   {"interior space",`[{"id":"sample 1","tenant":"tenant one","spam":false,"score":0}]`,""},
  }
@@ -28,7 +28,7 @@ func TestCorpusIdentityRejectsInvisibleAndNoncanonicalNames(t *testing.T) {
 
 func TestCorpusInvisibleIdentityFailsWithoutReport(t *testing.T){
  var out strings.Builder
- err:=run(nil,strings.NewReader(`[{"id":"a\\u200db","tenant":"alpha","spam":false,"score":0}]`),&out)
+ err:=run(nil,strings.NewReader(`[{"id":"a\u200db","tenant":"alpha","spam":false,"score":0}]`),&out)
  if err==nil||!strings.Contains(err.Error(),"control or format"){t.Fatalf("expected rejection: %v",err)}
  if out.Len()!=0 {t.Fatalf("invalid evidence produced report: %q",out.String())}
 }
