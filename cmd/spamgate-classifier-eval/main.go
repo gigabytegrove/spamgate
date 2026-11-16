@@ -11,12 +11,14 @@ import (
  "io"
  "os"
  "strings"
+ "sort"
 
  "github.com/gigabytegrove/spamgate/internal/qualification"
 )
 func run(args []string,in io.Reader,out io.Writer) error {
  flags:=flag.NewFlagSet("spamgate-classifier-eval",flag.ContinueOnError)
  flags.SetOutput(io.Discard)
+ expectedTenants:=flags.String("expected-tenants","","required comma-separated tenant inventory")
  auditCorpus:=flags.Bool("audit-corpus",false,"include deterministic per-tenant corpus composition audit")
  boundaryMargin:=flags.Float64("audit-boundary-margin",-1,"optional nonnegative score distance for per-tenant threshold-boundary audit")
  threshold:=flags.Float64("threshold",5,"score at or above this value is classified as spam")
@@ -46,6 +48,7 @@ func run(args []string,in io.Reader,out io.Writer) error {
   if err==nil{return errors.New("trailing JSON content")}
   return fmt.Errorf("trailing input: %w",err)
  }
+ if err:=checkTenantCoverage(samples,*expectedTenants);err!=nil{return err}
  report,err:=qualification.Evaluate(samples,*threshold);if err!=nil{return err}
  enc:=json.NewEncoder(out);enc.SetIndent("","  ")
  if *maxFP>=0 || *minRecall>=0 || *minPrecision>=0 || *auditCorpus || *boundaryMargin>=0 {
@@ -103,4 +106,18 @@ func main(){
   fmt.Fprintln(os.Stderr,"classifier evaluation:",strings.TrimSpace(err.Error()))
   os.Exit(1)
  }
+}
+
+func checkTenantCoverage(samples []qualification.Sample, spec string) error {
+ if spec=="" {return nil}
+ expected:=map[string]bool{}
+ for _,part:=range strings.Split(spec,",") {name:=strings.TrimSpace(part);if name=="" {return errors.New("empty expected tenant")};if expected[name] {return fmt.Errorf("duplicate expected tenant %q",name)};expected[name]=true}
+ actual:=map[string]bool{}
+ for _,sample:=range samples {actual[sample.Tenant]=true}
+ missing,extra:=[]string{},[]string{}
+ for name:=range expected {if !actual[name] {missing=append(missing,name)}}
+ for name:=range actual {if !expected[name] {extra=append(extra,name)}}
+ sort.Strings(missing);sort.Strings(extra)
+ if len(missing)>0||len(extra)>0 {return fmt.Errorf("tenant coverage mismatch: missing=%q unexpected=%q",missing,extra)}
+ return nil
 }
