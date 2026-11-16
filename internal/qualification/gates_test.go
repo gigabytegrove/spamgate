@@ -14,7 +14,7 @@ func TestWilsonUpperConservative(t *testing.T){
 func TestTenantGateCannotBeMasked(t *testing.T){
  samples:=make([]Sample,0,202)
  for i:=0;i<200;i++{samples=append(samples,Sample{ID:fmtID("a",i),Tenant:"large",Score:0})}
- samples=append(samples,Sample{ID:"small-1",Tenant:"small",Score:0},{ID:"small-2",Tenant:"small",Score:10})
+ samples=append(samples,Sample{ID:"small-1",Tenant:"small",Score:0},Sample{ID:"small-2",Tenant:"small",Score:10})
  r,err:=Evaluate(samples,5);if err!=nil{t.Fatal(err)}
  g,err:=AssessGates(r,GateConfig{MaxFalsePositiveRate:.1,MinCleanSamples:2,ZScore:1.645});if err!=nil{t.Fatal(err)}
  if g.Passed||!g.Overall.Passed||g.Tenants[0].Tenant!="large"||g.Tenants[1].Tenant!="small"||g.Tenants[1].Passed{t.Fatalf("incorrect tenant gate %+v",g)}
