@@ -62,6 +62,7 @@ func parsePostfixHold(payload []byte) ([]PostfixHeld, error) {
 	scanner := bufio.NewScanner(bytes.NewReader(payload))
 	scanner.Buffer(make([]byte, 4096), 256<<10)
 	held := make([]PostfixHeld, 0)
+	seenQueueIDs := make(map[string]struct{})
 	for scanner.Scan() {
 		if len(bytes.TrimSpace(scanner.Bytes())) == 0 {
 			continue
@@ -116,6 +117,12 @@ func parsePostfixHold(payload []byte) ([]PostfixHeld, error) {
 		if !validPostfixEvidenceID(record.QueueID) {
 			return nil, errors.New("invalid Postfix queue identifier")
 		}
+		// Duplicate IDs make inventory unsuitable as release authorization
+		// evidence even if the records otherwise agree. Never choose one.
+		if _, duplicate := seenQueueIDs[record.QueueID]; duplicate {
+			return nil, errors.New("duplicate Postfix HOLD queue identifier")
+		}
+		seenQueueIDs[record.QueueID] = struct{}{}
 		item := PostfixHeld{QueueID: record.QueueID, Sender: record.Sender, ArrivalTime: record.ArrivalTime, MessageSize: record.MessageSize, RecipientCount: len(record.Recipients), RecipientsTruncated: len(record.Recipients) > 50}
 		for _, r := range record.Recipients {
 			if len(item.Recipients) < 50 {
