@@ -332,6 +332,10 @@ func (s *Server) postfixReleaseMessage(w http.ResponseWriter, r *http.Request) {
 		cmd = runPostfixRelease
 	}
 	_, err = cmd(r.Context(), req.QueueID)
+	// Apply the same completion contract to injected release executors as to
+	// the native subprocess. A canceled HTTP request must never turn a
+	// completed queue mutation into a confirmed API success.
+	err = classifyPostfixReleaseCompletion(r.Context(), err)
 	if err != nil {
 		// The intent was persisted before execution. Retain it as a durable
 		// retry barrier, even when the helper returns a refusal or the worker
