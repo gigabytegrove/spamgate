@@ -190,9 +190,26 @@ func executePostsuper(ctx context.Context, name string, args []string) error {
  return runPostsuperCommand(ctx, name, args, os.Stdout)
 }
 
+// Distinct process exit codes allow a supervising worker to fail closed.
+// 70 means the queue action may have happened: never blindly retry it.
+// 64 is a preflight/usage refusal, and 1 is an otherwise classified failure.
+const releaseOutcomeUnknownExitCode = 70
+const releasePreflightExitCode = 64
+
+func releaseExitCode(err error) int {
+ if err == nil { return 0 }
+ if errors.Is(err, errReleaseOutcomeUnknown) { return releaseOutcomeUnknownExitCode }
+ return releasePreflightExitCode
+}
+
 func main() {
  if err := runWith(context.Background(), os.Args[1:], os.Geteuid(), executePostsuper); err != nil {
-  fmt.Fprintln(os.Stderr, "SpamGate Postfix release refused:", err)
-  os.Exit(1)
+  if errors.Is(err, errReleaseOutcomeUnknown) {
+   // This stable marker is machine-readable without disclosing queue metadata.
+   fmt.Fprintln(os.Stderr, "SPAMGATE_RELEASE_OUTCOME_UNKNOWN: reconcile Postfix queue state before retry")
+  } else {
+   fmt.Fprintln(os.Stderr, "SpamGate Postfix release refused:", err)
+  }
+  os.Exit(releaseExitCode(err))
  }
 }
