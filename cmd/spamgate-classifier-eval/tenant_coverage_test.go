@@ -10,7 +10,8 @@ func TestTenantCoverageGate(t *testing.T) {
  corpus:=`[{"id":"a","tenant":"alpha","spam":false,"score":0},{"id":"b","tenant":"beta","spam":true,"score":8}]`
  cases:=[]struct{name,spec string;pass bool}{
   {"exact","alpha,beta",true},
-  {"order and whitespace"," beta , alpha ",true},
+  {"reordered","beta,alpha",true},
+  {"surrounding whitespace rejected"," beta , alpha ",false},
   {"omitted tenant","alpha",false},
   {"unknown tenant","alpha,beta,gamma",false},
   {"duplicate","alpha,alpha,beta",false},
