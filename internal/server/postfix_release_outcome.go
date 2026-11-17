@@ -1,6 +1,7 @@
 package server
 
 import (
+    "context"
     "errors"
     "os/exec"
 )
@@ -29,4 +30,17 @@ func classifyPostfixReleaseExecution(err error) error {
     // cannot be distinguished reliably at this boundary without a durable
     // child-start acknowledgement. Fail closed rather than risk a duplicate.
     return errPostfixReleaseOutcomeUnknown
+}
+
+// classifyPostfixReleaseCompletion refuses to report a confirmed release if
+// cancellation races with a successful subprocess exit. Once the process
+// starts, the durable intent must remain the retry barrier.
+func classifyPostfixReleaseCompletion(ctx context.Context, runErr error) error {
+    if runErr != nil {
+        return classifyPostfixReleaseExecution(runErr)
+    }
+    if ctx.Err() != nil {
+        return errPostfixReleaseOutcomeUnknown
+    }
+    return nil
 }
