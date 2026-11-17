@@ -54,6 +54,6 @@ func TestManifestSemanticIntegrityBlocksRestore(t *testing.T) {
 
 func TestManifestSemanticIntegrityAcceptsCanonicalEvidence(t *testing.T) {
  digest:=strings.Repeat("a",64)
- m:=Manifest{Created:time.Date(2026,11,1,0,0,0,0,time.UTC),Entries:[]Entry{{Path:"state.json",SHA256:digest}}}
+ m:=Manifest{Format:1,Product:"SpamGate",Created:time.Date(2026,11,1,0,0,0,0,time.UTC),Entries:[]Entry{{Path:"state.json",SHA256:digest}}}
  if err:=validateManifestSemantics(m);err!=nil{t.Fatal(err)}
 }
