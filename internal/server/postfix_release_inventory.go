@@ -3,6 +3,8 @@ package server
 import (
     "errors"
     "strings"
+    "unicode"
+    "unicode/utf8"
 )
 
 // validPostfixEnvelopeEvidence accepts an empty reverse path only for senders
@@ -10,7 +12,7 @@ import (
 // values cannot be trusted for privileged queue ownership comparisons.
 // Literal backslashes remain valid evidence and are not escape-decoded.
 func validPostfixEnvelopeEvidence(address string, allowEmpty bool) bool {
-    if len(address) > 1024 || strings.TrimSpace(address) != address {
+    if len(address) > 1024 || !utf8.ValidString(address) || strings.TrimSpace(address) != address {
         return false
     }
     if address == "" {
@@ -18,6 +20,14 @@ func validPostfixEnvelopeEvidence(address string, allowEmpty bool) bool {
     }
     for i := 0; i < len(address); i++ {
         if address[i] < 0x20 || address[i] == 0x7f {
+            return false
+        }
+    }
+    // Preserve valid internationalized SMTPUTF8 mailboxes, but refuse Unicode
+    // format/control characters that can disguise envelope identities in UI
+    // and privileged release audit records.
+    for _, r := range address {
+        if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r) {
             return false
         }
     }
