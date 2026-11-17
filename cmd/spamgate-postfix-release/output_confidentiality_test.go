@@ -60,3 +60,31 @@ func TestPostsuperSuccessRedactsSensitiveChildOutput(t *testing.T) {
  if strings.Contains(result.String(),secret)||strings.Contains(result.String(),"ABC123"){t.Fatalf("privileged child output leaked on success: %q",result.String())}
  if result.String()!="Postfix HOLD release command completed\n"{t.Fatalf("unexpected confirmation: %q",result.String())}
 }
+
+type confidentialFailingWriter struct{}
+func (confidentialFailingWriter) Write([]byte) (int,error) {
+ return 0,errors.New("writer failure: recipient@example.invalid /var/spool/postfix/private")
+}
+type confidentialShortWriter struct{}
+func (confidentialShortWriter) Write(p []byte) (int,error) { return len(p)-1,nil }
+
+// The caller-provided writer is not necessarily trusted. Its error can
+// include arbitrary text, including sensitive recipient and spool metadata.
+func TestPostsuperReportingErrorsAreRedacted(t *testing.T) {
+ dir:=t.TempDir()
+ script:=filepath.Join(dir,"postsuper-success-report")
+ if err:=os.WriteFile(script,[]byte("#!/bin/sh\nexit 0\n"),0700);err!=nil{t.Fatal(err)}
+ for _,tc:=range []struct{name string; sink interface{Write([]byte)(int,error)}}{
+  {"error",confidentialFailingWriter{}},
+  {"short-write",confidentialShortWriter{}},
+ }{
+  t.Run(tc.name,func(t *testing.T){
+   err:=runPostsuperCommand(context.Background(),script,[]string{"-H","ABC123"},tc.sink)
+   if err==nil {t.Fatal("reporting failure was accepted")}
+   for _,secret:=range []string{"recipient@example.invalid","/var/spool/postfix/private"} {
+    if strings.Contains(err.Error(),secret){t.Fatalf("writer metadata escaped: %v",err)}
+   }
+   if !strings.Contains(err.Error(),"result reporting failed"){t.Fatalf("wrong error: %v",err)}
+  })
+ }
+}
