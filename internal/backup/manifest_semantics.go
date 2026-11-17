@@ -21,6 +21,7 @@ func validateManifestSemantics(m Manifest) error {
  }
  var total int64
  previous := ""
+ seen := make(map[string]struct{}, len(m.Entries))
  for i, entry := range m.Entries {
   if !safeName(entry.Path) || strings.TrimSpace(entry.Path) != entry.Path {
    return fmt.Errorf("noncanonical backup path %q", entry.Path)
@@ -28,16 +29,17 @@ func validateManifestSemantics(m Manifest) error {
   if i > 0 && entry.Path <= previous {
    return fmt.Errorf("backup manifest paths are not strictly ordered: %q", entry.Path)
   }
-  // Sorted entries make ancestor collisions detectable without a second map.
+  // A complete ancestor set detects collisions even when sibling filenames intervene.
   // A file named "mail" cannot coexist with "mail/message.eml".
   for ancestor := entry.Path; ; {
    slash := strings.LastIndexByte(ancestor, '/')
    if slash < 0 { break }
    ancestor = ancestor[:slash]
-   if ancestor == previous {
+   if _, exists := seen[ancestor]; exists {
     return fmt.Errorf("backup manifest file/directory collision: %q and %q", ancestor, entry.Path)
    }
   }
+  seen[entry.Path] = struct{}{}
   previous = entry.Path
   if entry.Bytes < 0 || entry.Bytes > maxBytes-total {
    return fmt.Errorf("backup manifest size exceeds limit for %q", entry.Path)
