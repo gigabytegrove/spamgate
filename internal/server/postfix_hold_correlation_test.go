@@ -112,7 +112,16 @@ func TestPostfixHoldInventoryNeverLabelsUnrelatedQueueAsSpamGateScan(t *testing.
     if got := inspect(); got != "" { t.Fatalf("reused queue ID labelled as scan: %q", got) }
     held[0].ArrivalTime = scan.Timestamp.Unix()
     held = append(held, held[0])
-    if got := inspect(); got != "" { t.Fatalf("ambiguous duplicate queue ID labelled as scan: %q", got) }
+    req := httptest.NewRequest(http.MethodGet, "/api/v1/postfix/hold-queue", nil)
+    req.AddCookie(&http.Cookie{Name: "spamgate_session", Value: "hold-admin"})
+    response := httptest.NewRecorder()
+    srv.Router().ServeHTTP(response, req)
+    if response.Code != http.StatusServiceUnavailable {
+        t.Fatalf("duplicate queue ID inventory must fail closed: HTTP %d body=%s", response.Code, response.Body.String())
+    }
+    if strings.Contains(response.Body.String(), scan.ID) {
+        t.Fatal("ambiguous inventory disclosed scan correlation")
+    }
 }
 
 func TestPostfixHoldReleaseRefusesPartialRecipientOwnership(t *testing.T) {
