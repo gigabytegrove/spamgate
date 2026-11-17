@@ -7,14 +7,32 @@ import (
  "time"
 )
 
-// validateManifestSemantics checks invariants that JSON decoding alone does not
-// establish. A forged archive must not supply impossible creation evidence or
-// noncanonical digests that different consumers could interpret differently.
+// validateManifestSemantics validates the complete version-one evidence
+// contract before any archive entry is trusted or restored.
 func validateManifestSemantics(m Manifest) error {
+ if m.Format != 1 || m.Product != "SpamGate" {
+  return errors.New("unsupported backup manifest format or product")
+ }
  if m.Created.IsZero() || m.Created.Year() < 2000 || m.Created.After(time.Now().UTC().Add(24*time.Hour)) {
   return errors.New("backup manifest creation time is missing or implausible")
  }
- for _, entry := range m.Entries {
+ if len(m.Entries) == 0 || len(m.Entries) > maxFiles {
+  return errors.New("backup manifest file count is outside supported bounds")
+ }
+ var total int64
+ previous := ""
+ for i, entry := range m.Entries {
+  if !safeName(entry.Path) || strings.TrimSpace(entry.Path) != entry.Path {
+   return fmt.Errorf("noncanonical backup path %q", entry.Path)
+  }
+  if i > 0 && entry.Path <= previous {
+   return fmt.Errorf("backup manifest paths are not strictly ordered: %q", entry.Path)
+  }
+  previous = entry.Path
+  if entry.Bytes < 0 || entry.Bytes > maxBytes-total {
+   return fmt.Errorf("backup manifest size exceeds limit for %q", entry.Path)
+  }
+  total += entry.Bytes
   if len(entry.SHA256) != 64 {
    return fmt.Errorf("invalid SHA-256 length for %q", entry.Path)
   }
@@ -22,9 +40,6 @@ func validateManifestSemantics(m Manifest) error {
    if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
     return fmt.Errorf("noncanonical SHA-256 digest for %q", entry.Path)
    }
-  }
-  if strings.TrimSpace(entry.Path) != entry.Path {
-   return fmt.Errorf("noncanonical backup path %q", entry.Path)
   }
  }
  return nil
