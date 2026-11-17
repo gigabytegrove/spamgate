@@ -23,6 +23,7 @@ func run(args []string,in io.Reader,out io.Writer) error {
  boundaryMargin:=flags.Float64("audit-boundary-margin",-1,"optional nonnegative score distance for per-tenant threshold-boundary audit")
  stabilityMargin:=flags.Float64("stability-margin",-1,"optional nonnegative threshold perturbation for per-tenant sensitivity audit")
  maxStabilityFlips:=flags.Float64("max-stability-flips",-1,"optional maximum per-tenant fraction of decisions flipped under threshold perturbation, 0..1; requires stability-margin")
+ minStabilitySamples:=flags.Int("min-stability-samples",0,"minimum samples per tenant for threshold-stability qualification; requires max-stability-flips")
  threshold:=flags.Float64("threshold",5,"score at or above this value is classified as spam")
  maxFP:=flags.Float64("max-fp-upper",-1,"optional one-sided Wilson false-positive upper bound, 0..1")
  minPrecision:=flags.Float64("min-precision",-1,"optional one-sided Wilson precision lower bound, 0..1")
@@ -37,6 +38,7 @@ func run(args []string,in io.Reader,out io.Writer) error {
  // Reject malformed or disabled acceptance settings before reading any corpus.
  if err:=validateOptions(flags,*threshold,*boundaryMargin,*maxFP,*minRecall,*minPrecision,*minClean,*minSpam,*minPredicted,*zScore);err!=nil{return err}
  if err:=validateStabilityOptions(flags,*stabilityMargin,*maxStabilityFlips);err!=nil{return err}
+ if err:=validateStabilityMinimumOption(flags,*minStabilitySamples,*maxStabilityFlips);err!=nil{return err}
  const maxCorpusBytes = 32 << 20
  payload,err:=io.ReadAll(io.LimitReader(in,maxCorpusBytes+1))
  if err!=nil{return fmt.Errorf("read corpus: %w",err)}
@@ -65,7 +67,13 @@ func run(args []string,in io.Reader,out io.Writer) error {
    audit,err:=qualification.AuditThresholdStability(samples,*threshold,*stabilityMargin,*maxStabilityFlips)
    if err!=nil{return err}
    result.StabilityAudit=&audit
-   if !audit.Passed{passed=false}
+   if *maxStabilityFlips>=0 && *minStabilitySamples>0 {
+    for i:=range result.StabilityAudit.Tenants {
+     tenant:=&result.StabilityAudit.Tenants[i]
+     if tenant.Total<*minStabilitySamples {tenant.Passed=false;result.StabilityAudit.Passed=false}
+    }
+   }
+   if !result.StabilityAudit.Passed{passed=false}
   }
   if *maxFP>=0 {
   gates,err:=qualification.AssessGates(report,qualification.GateConfig{MaxFalsePositiveRate:*maxFP,MinCleanSamples:*minClean,ZScore:*zScore});if err!=nil{return err}
@@ -188,5 +196,17 @@ func validateStabilityOptions(flags *flag.FlagSet, margin,maxFlips float64) erro
   if math.IsNaN(maxFlips)||math.IsInf(maxFlips,0)||maxFlips<0||maxFlips>1{return errors.New("max-stability-flips must be between 0 and 1")}
   if !supplied["stability-margin"]{return errors.New("max-stability-flips requires stability-margin")}
  }
+ return nil
+}
+
+// validateStabilityMinimumOption prevents statistically meaningless per-tenant
+// stability gates from silently accepting tiny corpora. An explicit zero is
+// rejected rather than disabling a requested minimum.
+func validateStabilityMinimumOption(flags *flag.FlagSet, minimum int, maxFlips float64) error {
+ supplied:=false
+ flags.Visit(func(f *flag.Flag){if f.Name=="min-stability-samples"{supplied=true}})
+ if !supplied{return nil}
+ if minimum<1{return errors.New("min-stability-samples must be positive")}
+ if maxFlips<0{return errors.New("min-stability-samples requires max-stability-flips")}
  return nil
 }
