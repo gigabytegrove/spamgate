@@ -33,8 +33,8 @@ func TestValidatePostfixReleaseInventory(t *testing.T) {
         {"empty recipient", func(v *PostfixHeld) { v.Recipients[0] = "" }},
         {"whitespace recipient", func(v *PostfixHeld) { v.Recipients[0] = "  " }},
         {"padded recipient", func(v *PostfixHeld) { v.Recipients[0] = " one@example.test " }},
-        {"newline recipient", func(v *PostfixHeld) { v.Recipients[0] = "one@example.test\\nBcc:evil@example.test" }},
-        {"NUL recipient", func(v *PostfixHeld) { v.Recipients[0] = "one@example.test\\x00" }},
+        {"newline recipient", func(v *PostfixHeld) { v.Recipients[0] = "one@example.test\nBcc:evil@example.test" }},
+        {"NUL recipient", func(v *PostfixHeld) { v.Recipients[0] = "one@example.test\x00" }},
         {"overlong recipient evidence", func(v *PostfixHeld) { v.Recipients = make([]string, 51); for i := range v.Recipients { v.Recipients[i] = "one@example.test" }; v.RecipientCount = 51 }},
     }
     for _, tc := range cases {
