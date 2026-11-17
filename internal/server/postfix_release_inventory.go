@@ -9,6 +9,9 @@ import (
 // either the native postqueue reader or an injected provider. A queue ID is
 // only usable as authorization evidence if it occurs exactly once globally.
 func validatePostfixReleaseInventory(items []PostfixHeld) error {
+    if len(items) > 1000 {
+        return errors.New("Postfix HOLD inventory exceeds safe entry limit")
+    }
     seen := make(map[string]struct{}, len(items))
     for _, item := range items {
         if !validPostfixEvidenceID(item.QueueID) || strings.EqualFold(item.QueueID, "ALL") {
@@ -19,11 +22,11 @@ func validatePostfixReleaseInventory(items []PostfixHeld) error {
         }
         seen[item.QueueID] = struct{}{}
         if item.ArrivalTime <= 0 || item.MessageSize < 0 || item.RecipientCount < 1 ||
-            item.RecipientsTruncated || item.RecipientCount != len(item.Recipients) {
+            item.RecipientsTruncated || item.RecipientCount > 50 || item.RecipientCount != len(item.Recipients) {
             return errors.New("incomplete Postfix queue ownership inventory")
         }
         for _, address := range item.Recipients {
-            if strings.TrimSpace(address) == "" {
+            if strings.TrimSpace(address) != address || address == "" || strings.ContainsAny(address, "\\r\\n\\x00") {
                 return errors.New("missing Postfix queue recipient")
             }
         }
