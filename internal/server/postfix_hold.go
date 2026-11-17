@@ -56,7 +56,13 @@ func readPostfixHold(ctx context.Context) ([]PostfixHeld, error) {
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("postqueue -j failed: %w", err)
 	}
-	items, err := parsePostfixHold(output.Bytes())
+	return parseValidatedPostfixHold(output.Bytes())
+}
+
+// parseValidatedPostfixHold is the common native queue evidence boundary.
+// Parsing success alone is insufficient for privileged queue correlation.
+func parseValidatedPostfixHold(payload []byte) ([]PostfixHeld, error) {
+	items, err := parsePostfixHold(payload)
 	if err != nil {
 		return nil, err
 	}
