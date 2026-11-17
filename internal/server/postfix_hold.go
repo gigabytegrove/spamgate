@@ -164,6 +164,13 @@ func (s *Server) postfixHoldQueue(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, "Postfix hold inventory unavailable. Check that postqueue -j is supported and the SpamGate process has permission; no queue was changed.")
 		return
 	}
+	// A provider can be injected for tests or alternative local inventory sources.
+	// Never expose or correlate ambiguous ownership evidence in the read-only API.
+	if err := validatePostfixReleaseInventory(messages); err != nil {
+		s.log.Error("Postfix hold inventory rejected", "error", err)
+		fail(w, 503, "Postfix hold inventory is ambiguous or incomplete; no queue was changed")
+		return
+	}
 	// Do not mutate an inventory provider's backing slice: a cached result
 	// could otherwise retain an earlier scan correlation after the queue
 	// changes. Always recompute labels from independent evidence.
