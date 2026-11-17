@@ -21,6 +21,8 @@ func run(args []string,in io.Reader,out io.Writer) error {
  expectedTenants:=flags.String("expected-tenants","","required comma-separated tenant inventory")
  auditCorpus:=flags.Bool("audit-corpus",false,"include deterministic per-tenant corpus composition audit")
  boundaryMargin:=flags.Float64("audit-boundary-margin",-1,"optional nonnegative score distance for per-tenant threshold-boundary audit")
+ stabilityMargin:=flags.Float64("stability-margin",-1,"optional nonnegative threshold perturbation for per-tenant sensitivity audit")
+ maxStabilityFlips:=flags.Float64("max-stability-flips",-1,"optional maximum per-tenant fraction of decisions flipped under threshold perturbation, 0..1; requires stability-margin")
  threshold:=flags.Float64("threshold",5,"score at or above this value is classified as spam")
  maxFP:=flags.Float64("max-fp-upper",-1,"optional one-sided Wilson false-positive upper bound, 0..1")
  minPrecision:=flags.Float64("min-precision",-1,"optional one-sided Wilson precision lower bound, 0..1")
@@ -34,6 +36,7 @@ func run(args []string,in io.Reader,out io.Writer) error {
  if err:=validateTenantInventoryOption(flags,*expectedTenants);err!=nil{return err}
  // Reject malformed or disabled acceptance settings before reading any corpus.
  if err:=validateOptions(flags,*threshold,*boundaryMargin,*maxFP,*minRecall,*minPrecision,*minClean,*minSpam,*minPredicted,*zScore);err!=nil{return err}
+ if err:=validateStabilityOptions(flags,*stabilityMargin,*maxStabilityFlips);err!=nil{return err}
  const maxCorpusBytes = 32 << 20
  payload,err:=io.ReadAll(io.LimitReader(in,maxCorpusBytes+1))
  if err!=nil{return fmt.Errorf("read corpus: %w",err)}
@@ -53,11 +56,17 @@ func run(args []string,in io.Reader,out io.Writer) error {
  if err:=checkTenantSampleMinimums(samples,*expectedTenants,*minClean,*minSpam,flags);err!=nil{return err}
  report,err:=qualification.Evaluate(samples,*threshold);if err!=nil{return err}
  enc:=json.NewEncoder(out);enc.SetIndent("","  ")
- if *maxFP>=0 || *minRecall>=0 || *minPrecision>=0 || *auditCorpus || *boundaryMargin>=0 {
-  result:=struct{Evaluation qualification.Report `json:"evaluation"`; Gates *qualification.GateReport `json:"gates,omitempty"`; RecallGates *qualification.RecallGateReport `json:"recall_gates,omitempty"`; PrecisionGates *qualification.PrecisionGateReport `json:"precision_gates,omitempty"`; CorpusAudit *qualification.CorpusAudit `json:"corpus_audit,omitempty"`; BoundaryAudit *qualification.BoundaryAudit `json:"boundary_audit,omitempty"`}{Evaluation:report}
+ if *maxFP>=0 || *minRecall>=0 || *minPrecision>=0 || *auditCorpus || *boundaryMargin>=0 || *stabilityMargin>=0 {
+  result:=struct{Evaluation qualification.Report `json:"evaluation"`; Gates *qualification.GateReport `json:"gates,omitempty"`; RecallGates *qualification.RecallGateReport `json:"recall_gates,omitempty"`; PrecisionGates *qualification.PrecisionGateReport `json:"precision_gates,omitempty"`; CorpusAudit *qualification.CorpusAudit `json:"corpus_audit,omitempty"`; BoundaryAudit *qualification.BoundaryAudit `json:"boundary_audit,omitempty"`; StabilityAudit *qualification.StabilityAudit `json:"stability_audit,omitempty"`}{Evaluation:report}
   if *auditCorpus { audit,err:=qualification.AuditCorpus(samples);if err!=nil{return err};result.CorpusAudit=&audit }
   if *boundaryMargin>=0 { audit,err:=qualification.AuditBoundary(samples,*threshold,*boundaryMargin);if err!=nil{return err};result.BoundaryAudit=&audit }
   passed:=true
+  if *stabilityMargin>=0 {
+   audit,err:=qualification.AuditThresholdStability(samples,*threshold,*stabilityMargin,*maxStabilityFlips)
+   if err!=nil{return err}
+   result.StabilityAudit=&audit
+   if !audit.Passed{passed=false}
+  }
   if *maxFP>=0 {
   gates,err:=qualification.AssessGates(report,qualification.GateConfig{MaxFalsePositiveRate:*maxFP,MinCleanSamples:*minClean,ZScore:*zScore});if err!=nil{return err}
   result.Gates=&gates
@@ -163,6 +172,21 @@ func validateTenantInventoryOption(flags *flag.FlagSet, spec string) error {
  for _,part:=range strings.Split(spec,",") {
   if strings.TrimSpace(part)=="" {return errors.New("expected-tenants contains an empty tenant")}
   if part!=strings.TrimSpace(part) {return errors.New("expected-tenants entries must not contain surrounding whitespace")}
+ }
+ return nil
+}
+
+// validateStabilityOptions makes a sensitivity gate impossible to silently
+// disable through negative sentinels, omitted margins or non-finite values.
+func validateStabilityOptions(flags *flag.FlagSet, margin,maxFlips float64) error {
+ supplied:=map[string]bool{}
+ flags.Visit(func(f *flag.Flag){supplied[f.Name]=true})
+ if supplied["stability-margin"] {
+  if math.IsNaN(margin)||math.IsInf(margin,0)||margin<0{return errors.New("stability-margin must be finite and nonnegative")}
+ }
+ if supplied["max-stability-flips"] {
+  if math.IsNaN(maxFlips)||math.IsInf(maxFlips,0)||maxFlips<0||maxFlips>1{return errors.New("max-stability-flips must be between 0 and 1")}
+  if !supplied["stability-margin"]{return errors.New("max-stability-flips requires stability-margin")}
  }
  return nil
 }
