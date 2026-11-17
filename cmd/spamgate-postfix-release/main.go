@@ -177,8 +177,8 @@ func runPostsuperCommand(ctx context.Context, name string, args []string, stdout
  // queue identifiers, and filesystem paths. Report only a fixed confirmation.
  report := "Postfix HOLD release command completed\n"
  n, err := io.WriteString(stdoutSink, report)
- if err != nil { return fmt.Errorf("postsuper -H result reporting failed: %w", err) }
- if n != len(report) { return fmt.Errorf("postsuper -H result reporting failed: %w", io.ErrShortWrite) }
+ if err != nil { return errors.New("postsuper -H result reporting failed") }
+ if n != len(report) { return errors.New("postsuper -H result reporting failed: short write") }
  return nil
 }
 
