@@ -109,6 +109,9 @@ func TestPostfixEnvelopeUnicodeIdentitySafety(t *testing.T) {
         {"unicode line separator", "user\u2028@example.test", false},
         {"unicode paragraph separator", "user\u2029@example.test", false},
         {"C1 control", "user\u0085@example.test", false},
+        {"unicode no-break space", "user\u00a0@example.test", false},
+        {"unicode ideographic space", "user\u3000@example.test", false},
+        {"unicode narrow no-break space", "user\u202f@example.test", false},
         {"normal plus addressing", "user+tag@example.test", true},
     }
     for _, tc := range cases {
