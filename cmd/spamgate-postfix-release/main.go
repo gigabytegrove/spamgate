@@ -163,15 +163,15 @@ func runPostsuperCommand(ctx context.Context, name string, args []string, stdout
  budget.mu.Lock()
  exceeded := budget.exceeded
  budget.mu.Unlock()
- if exceeded { return fmt.Errorf("postsuper -H output limit exceeded: %w", errOutputLimit) }
+ if exceeded { return errors.Join(errReleaseOutcomeUnknown, fmt.Errorf("postsuper -H output limit exceeded: %w", errOutputLimit)) }
  if ctx.Err() != nil { return errors.Join(errReleaseOutcomeUnknown, fmt.Errorf("postsuper -H interrupted: %w", ctx.Err())) }
  if err != nil {
-  if errors.Is(err, errOutputLimit) { return fmt.Errorf("postsuper -H output limit exceeded: %w", errOutputLimit) }
+  if errors.Is(err, errOutputLimit) { return errors.Join(errReleaseOutcomeUnknown, fmt.Errorf("postsuper -H output limit exceeded: %w", errOutputLimit)) }
   // Postfix stderr can contain queue metadata, envelope addresses and local
   // paths. Do not return it to callers: the helper's stderr is surfaced by
   // the unprivileged worker and potentially by browser/API diagnostics.
   // Preserve the typed subprocess error for operator-side exit status only.
-  return fmt.Errorf("postsuper -H failed: %w", err)
+  return errors.Join(errReleaseOutcomeUnknown, fmt.Errorf("postsuper -H failed: %w", err))
  }
  // Cancellation can arrive after Wait returns but before reporting. Never
  // present a canceled operation as confirmed successful.
