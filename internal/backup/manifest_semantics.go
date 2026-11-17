@@ -5,6 +5,8 @@ import (
  "fmt"
  "strings"
  "time"
+ "unicode"
+ "unicode/utf8"
 )
 
 // validateManifestSemantics validates the complete version-one evidence
@@ -23,7 +25,7 @@ func validateManifestSemantics(m Manifest) error {
  previous := ""
  seen := make(map[string]struct{}, len(m.Entries))
  for i, entry := range m.Entries {
-  if !safeName(entry.Path) || strings.TrimSpace(entry.Path) != entry.Path {
+  if !safeName(entry.Path) || !canonicalBackupPath(entry.Path) {
    return fmt.Errorf("noncanonical backup path %q", entry.Path)
   }
   if i > 0 && entry.Path <= previous {
@@ -55,4 +57,17 @@ func validateManifestSemantics(m Manifest) error {
   }
  }
  return nil
+}
+
+// canonicalBackupPath prevents invisible or platform-dependent filenames from
+// entering a portable disaster-recovery manifest. This check is intentionally
+// stricter than the filesystem-level safeName guard.
+func canonicalBackupPath(name string) bool {
+ if !utf8.ValidString(name) || strings.TrimSpace(name) != name { return false }
+ for _, r := range name {
+  if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || unicode.IsSpace(r) {
+   return false
+  }
+ }
+ return true
 }
