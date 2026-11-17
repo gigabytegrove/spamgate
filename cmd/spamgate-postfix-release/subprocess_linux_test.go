@@ -82,8 +82,11 @@ func TestPostsuperSubprocessFailureCannotInjectLogLines(t *testing.T) {
  var out bytes.Buffer
  err := runPostsuperCommand(context.Background(), path, nil, &out)
  if err == nil { t.Fatal("nonzero postsuper exit accepted") }
- if strings.Contains(err.Error(), "\n") || strings.Contains(err.Error(), "\x1b") {
-  t.Fatalf("unsafe subprocess diagnostic: %q", err.Error())
+ if !errors.Is(err, errReleaseOutcomeUnknown) {
+  t.Fatalf("post-execution failure must require reconciliation: %v", err)
+ }
+ if strings.Contains(err.Error(), "FAKE SUCCESS") || strings.Contains(err.Error(), "\x1b") || strings.Contains(err.Error(), "queue missing") {
+  t.Fatalf("untrusted subprocess diagnostic escaped: %q", err.Error())
  }
  if out.Len() != 0 { t.Fatal("failed subprocess produced success output") }
 }
