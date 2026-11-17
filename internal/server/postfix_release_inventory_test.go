@@ -92,3 +92,43 @@ func TestPostfixEnvelopeEvidenceDSNAndBackslash(t *testing.T) {
         }
     }
 }
+
+func TestPostfixEnvelopeUnicodeIdentitySafety(t *testing.T) {
+    cases := []struct {
+        name string
+        address string
+        want bool
+    }{
+        {"SMTPUTF8 local part", "müller@example.test", true},
+        {"internationalized domain", "user@例子.test", true},
+        {"invalid UTF8", "user@example.test\xff", false},
+        {"bidirectional override", "user\u202e@example.test", false},
+        {"zero width joiner", "user\u200d@example.test", false},
+        {"zero width nonjoiner", "user\u200c@example.test", false},
+        {"zero width space", "user\u200b@example.test", false},
+        {"unicode line separator", "user\u2028@example.test", false},
+        {"unicode paragraph separator", "user\u2029@example.test", false},
+        {"C1 control", "user\u0085@example.test", false},
+        {"normal plus addressing", "user+tag@example.test", true},
+    }
+    for _, tc := range cases {
+        t.Run(tc.name, func(t *testing.T) {
+            if got := validPostfixEnvelopeEvidence(tc.address, false); got != tc.want {
+                t.Fatalf("got %v, want %v for %q", got, tc.want, tc.address)
+            }
+            item := PostfixHeld{
+                QueueID: "ABC123", Sender: "sender@example.test",
+                Recipients: []string{tc.address}, RecipientCount: 1,
+                ArrivalTime: 1700000000, MessageSize: 42,
+            }
+            if err := validatePostfixReleaseInventory([]PostfixHeld{item}); (err == nil) != tc.want {
+                t.Fatalf("inventory validation mismatch: %v", err)
+            }
+            item.Recipients[0] = "recipient@example.test"
+            item.Sender = tc.address
+            if err := validatePostfixReleaseInventory([]PostfixHeld{item}); (err == nil) != tc.want {
+                t.Fatalf("sender validation mismatch: %v", err)
+            }
+        })
+    }
+}
