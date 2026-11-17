@@ -299,6 +299,11 @@ func (s *Server) postfixReleaseMessage(w http.ResponseWriter, r *http.Request) {
 		fail(w, 503, "Cannot verify Postfix hold inventory; nothing was released")
 		return
 	}
+	if err := validatePostfixReleaseInventory(held); err != nil {
+		s.log.Error("Postfix release inventory rejected", "error", err)
+		fail(w, 409, "Postfix queue inventory is ambiguous or incomplete; nothing was released")
+		return
+	}
 	matched := false
 	for _, held := range held {
 		if held.QueueID != req.QueueID {
