@@ -63,7 +63,7 @@ func validateManifestSemantics(m Manifest) error {
 // entering a portable disaster-recovery manifest. This check is intentionally
 // stricter than the filesystem-level safeName guard.
 func canonicalBackupPath(name string) bool {
- if !utf8.ValidString(name) || strings.TrimSpace(name) != name { return false }
+ if !utf8.ValidString(name) || strings.TrimSpace(name) != name || !portableBackupPath(name) { return false }
  for _, r := range name {
   if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || unicode.IsSpace(r) {
    return false
