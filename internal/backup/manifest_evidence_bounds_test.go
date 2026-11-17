@@ -33,7 +33,12 @@ func TestManifestEvidenceBoundsAndCanonicalOrder(t *testing.T) {
   {"file directory collision", func(m *Manifest) { m.Entries[0].Path = "mail"; m.Entries[1].Path = "mail/message.eml" }},
   {"file directory collision with intervening sibling", func(m *Manifest) { m.Entries = []Entry{{Path:"mail", SHA256:digest}, {Path:"mail-other", SHA256:digest}, {Path:"mail/message.eml", SHA256:digest}} }},
   {"reserved manifest", func(m *Manifest) { m.Entries[0].Path = manifestPath }},
-  {"control character", func(m *Manifest) { m.Entries[0].Path = "a\n.txt" }},
+  {"control character", func(m *Manifest) { m.Entries[0].Path = "a\\n.txt" }},
+  {"invalid UTF8", func(m *Manifest) { m.Entries[0].Path = "a" + string([]byte{0xff}) }},
+  {"bidi override", func(m *Manifest) { m.Entries[0].Path = "a\\u202eb.txt" }},
+  {"zero width joiner", func(m *Manifest) { m.Entries[0].Path = "a\\u200db.txt" }},
+  {"nonbreaking space", func(m *Manifest) { m.Entries[0].Path = "a\\u00a0b.txt" }},
+  {"ideographic space", func(m *Manifest) { m.Entries[0].Path = "a\\u3000b.txt" }},
  }
  for _, tc := range cases {
   t.Run(tc.name, func(t *testing.T) {
