@@ -28,6 +28,16 @@ func validateManifestSemantics(m Manifest) error {
   if i > 0 && entry.Path <= previous {
    return fmt.Errorf("backup manifest paths are not strictly ordered: %q", entry.Path)
   }
+  // Sorted entries make ancestor collisions detectable without a second map.
+  // A file named "mail" cannot coexist with "mail/message.eml".
+  for ancestor := entry.Path; ; {
+   slash := strings.LastIndexByte(ancestor, '/')
+   if slash < 0 { break }
+   ancestor = ancestor[:slash]
+   if ancestor == previous {
+    return fmt.Errorf("backup manifest file/directory collision: %q and %q", ancestor, entry.Path)
+   }
+  }
   previous = entry.Path
   if entry.Bytes < 0 || entry.Bytes > maxBytes-total {
    return fmt.Errorf("backup manifest size exceeds limit for %q", entry.Path)
