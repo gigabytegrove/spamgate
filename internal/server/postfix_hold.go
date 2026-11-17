@@ -73,6 +73,18 @@ func parseValidatedPostfixHold(payload []byte) ([]PostfixHeld, error) {
 	}
 	return items, nil
 }
+// A misspelled or unexpected queue name must not be silently treated as a
+// non-HOLD entry: that could conceal a held message during authorization.
+// These are the queue classes reported by supported Postfix postqueue -j.
+func validPostfixQueueName(name string) bool {
+    switch name {
+    case "maildrop", "incoming", "active", "deferred", "hold":
+        return true
+    default:
+        return false
+    }
+}
+
 func parsePostfixHold(payload []byte) ([]PostfixHeld, error) {
 	scanner := bufio.NewScanner(bytes.NewReader(payload))
 	scanner.Buffer(make([]byte, 4096), 256<<10)
@@ -110,7 +122,7 @@ func parsePostfixHold(payload []byte) ([]PostfixHeld, error) {
 		// A missing ID or queue name on a non-HOLD entry cannot be ignored:
 		// it might conceal a conflicting queue identity and authorize release
 		// of the wrong original. Refuse the entire snapshot instead.
-		if record.QueueName == "" || !validPostfixEvidenceID(record.QueueID) || strings.EqualFold(record.QueueID, "ALL") {
+		if !validPostfixQueueName(record.QueueName) || !validPostfixEvidenceID(record.QueueID) || strings.EqualFold(record.QueueID, "ALL") {
 			return nil, errors.New("incomplete Postfix queue identity evidence")
 		}
 		if _, duplicate := seenQueueIDs[record.QueueID]; duplicate {
