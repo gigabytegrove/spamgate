@@ -106,15 +106,17 @@ func parsePostfixHold(payload []byte) ([]PostfixHeld, error) {
 		// inventory, not merely within HOLD. An active/deferred entry sharing
 		// an ID with a HOLD entry invalidates the evidence for privileged release.
 		// Non-HOLD entries need not have the full HOLD envelope fields.
-		if record.QueueID != "" {
-			if !validPostfixEvidenceID(record.QueueID) {
-				return nil, errors.New("invalid Postfix queue identifier")
-			}
-			if _, duplicate := seenQueueIDs[record.QueueID]; duplicate {
-				return nil, errors.New("duplicate Postfix queue identifier across queues")
-			}
-			seenQueueIDs[record.QueueID] = struct{}{}
+		// Every JSON line is a queue entry, including active and deferred.
+		// A missing ID or queue name on a non-HOLD entry cannot be ignored:
+		// it might conceal a conflicting queue identity and authorize release
+		// of the wrong original. Refuse the entire snapshot instead.
+		if record.QueueName == "" || !validPostfixEvidenceID(record.QueueID) || strings.EqualFold(record.QueueID, "ALL") {
+			return nil, errors.New("incomplete Postfix queue identity evidence")
 		}
+		if _, duplicate := seenQueueIDs[record.QueueID]; duplicate {
+			return nil, errors.New("duplicate Postfix queue identifier across queues")
+		}
+		seenQueueIDs[record.QueueID] = struct{}{}
 		if record.QueueName != "hold" {
 			continue
 		}
