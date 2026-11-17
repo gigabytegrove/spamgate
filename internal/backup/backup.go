@@ -40,7 +40,7 @@ type Manifest struct {
 }
 
 func safeName(path string) bool {
-	return path != "" && path != manifestPath && !strings.HasPrefix(path, "/") && !strings.Contains(path, "\\") && path == filepath.ToSlash(filepath.Clean(path)) &&
+	return canonicalBackupPath(path) && path != "" && path != manifestPath && !strings.HasPrefix(path, "/") && !strings.Contains(path, "\\") && path == filepath.ToSlash(filepath.Clean(path)) &&
 		path != "." && path != ".." && !strings.HasPrefix(path, "../") && !strings.Contains(path, "/../") && strings.IndexFunc(path, func(r rune) bool { return r < 0x20 || r == 0x7f }) == -1
 }
 
