@@ -227,11 +227,15 @@ func runPostfixRelease(ctx context.Context, queueID string) (string, error) {
 	cmd.Stdout = &output
 	cmd.Stderr = &errOutput
 	if err := cmd.Run(); err != nil {
-		// Privileged stderr may include host paths or configuration details.
-		// Preserve only the execution failure class for the caller.
-		return "", fmt.Errorf("postsuper release failed: %w", err)
+		// A launched Postfix command can change queue state even when its
+		// process exits unsuccessfully. Exit 70 is the narrow helper's explicit
+		// indeterminate contract; all other post-launch failures must also
+		// fail closed. Never forward child output or private host paths.
+		return "", classifyPostfixReleaseExecution(err)
 	}
-	return strings.TrimSpace(output.String() + " " + errOutput.String()), nil
+	// Successful privileged output is not an API contract. In particular,
+	// stderr can include envelope addresses and local filesystem paths.
+	return "Postfix HOLD release command completed", nil
 }
 
 // POST /api/v1/messages/{id}/postfix-release is deliberately bound to a
@@ -329,10 +333,19 @@ func (s *Server) postfixReleaseMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err = cmd(r.Context(), req.QueueID)
 	if err != nil {
-		m.Findings = append(m.Findings, core.Finding{Symbol: "POSTFIX_HOLD_RELEASE_COMMAND_FAILED", Source: "postfix/postsuper", Detail: postfixReleaseFailureAuditDetail()})
-		_ = s.Store.Save(m)
-		s.log.Error("Postfix hold release command failed", "queue_id", req.QueueID, "actor", actor.Name, "error", err)
-		fail(w, 503, "Postfix release command failed; inspect the queue and logs before any manual retry")
+		// The intent was persisted before execution. Retain it as a durable
+		// retry barrier, even when the helper returns a refusal or the worker
+		// cannot determine whether Postfix acted.
+		symbol := "POSTFIX_HOLD_RELEASE_COMMAND_FAILED"
+		if errors.Is(err, errPostfixReleaseOutcomeUnknown) {
+			symbol = "POSTFIX_HOLD_RELEASE_OUTCOME_UNKNOWN"
+		}
+		m.Findings = append(m.Findings, core.Finding{Symbol: symbol, Source: "postfix/postsuper", Detail: postfixReleaseFailureAuditDetail()})
+		if saveErr := s.Store.Save(m); saveErr != nil {
+			s.log.Error("Postfix release outcome audit persistence failed", "queue_id", req.QueueID, "error", saveErr)
+		}
+		s.log.Error("Postfix hold release requires reconciliation", "queue_id", req.QueueID, "actor", actor.Name, "error_class", symbol)
+		fail(w, 503, "Postfix release outcome requires queue reconciliation; automatic retry is prohibited")
 		return
 	}
 	m.MTAActionState = "release_submitted"
