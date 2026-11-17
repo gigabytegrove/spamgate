@@ -26,7 +26,7 @@ func validatePostfixReleaseInventory(items []PostfixHeld) error {
             return errors.New("incomplete Postfix queue ownership inventory")
         }
         for _, address := range item.Recipients {
-            if strings.TrimSpace(address) != address || address == "" || strings.ContainsAny(address, "\\r\\n\\x00") {
+            if strings.TrimSpace(address) != address || address == "" || strings.ContainsAny(address, "\r\n\x00") {
                 return errors.New("missing Postfix queue recipient")
             }
         }
