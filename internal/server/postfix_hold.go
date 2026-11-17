@@ -226,12 +226,12 @@ func runPostfixRelease(ctx context.Context, queueID string) (string, error) {
 	errOutput.max = 8 << 10
 	cmd.Stdout = &output
 	cmd.Stderr = &errOutput
-	if err := cmd.Run(); err != nil {
+	if err := classifyPostfixReleaseCompletion(ctx, cmd.Run()); err != nil {
 		// A launched Postfix command can change queue state even when its
 		// process exits unsuccessfully. Exit 70 is the narrow helper's explicit
 		// indeterminate contract; all other post-launch failures must also
 		// fail closed. Never forward child output or private host paths.
-		return "", classifyPostfixReleaseExecution(err)
+		return "", err
 	}
 	// Successful privileged output is not an API contract. In particular,
 	// stderr can include envelope addresses and local filesystem paths.
