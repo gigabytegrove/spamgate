@@ -37,7 +37,7 @@ func TestPostsuperSuccessPreservesBoundedSanitizedReport(t *testing.T) {
  if err:=os.WriteFile(script,[]byte("#!/bin/sh\nprintf 'released\\n'\n"),0700);err!=nil{t.Fatal(err)}
  var result bytes.Buffer
  if err:=runPostsuperCommand(context.Background(),script,[]string{"-H","ABC123"},&result);err!=nil{t.Fatal(err)}
- if result.String()!="released\n"{t.Fatalf("unexpected success report: %q",result.String())}
+ if result.String()!="Postfix HOLD release command completed\n"{t.Fatalf("unexpected success report: %q",result.String())}
 }
 
 func TestPostsuperRejectsNilSinkBeforeExecution(t *testing.T) {
@@ -48,4 +48,15 @@ func TestPostsuperRejectsNilSinkBeforeExecution(t *testing.T) {
  err:=runPostsuperCommand(context.Background(),script,nil,nil)
  if err==nil{t.Fatal("nil result sink accepted")}
  if _,statErr:=os.Stat(marker);!errors.Is(statErr,os.ErrNotExist){t.Fatalf("command executed before sink validation: %v",statErr)}
+}
+
+func TestPostsuperSuccessRedactsSensitiveChildOutput(t *testing.T) {
+ dir:=t.TempDir()
+ script:=filepath.Join(dir,"postsuper-sensitive-success")
+ secret:="recipient@example.invalid /var/spool/postfix/private ABC123"
+ if err:=os.WriteFile(script,[]byte("#!/bin/sh\nprintf '%s\\n' '"+secret+"'\nprintf '%s\\n' '"+secret+"' >&2\n"),0700);err!=nil{t.Fatal(err)}
+ var result bytes.Buffer
+ if err:=runPostsuperCommand(context.Background(),script,[]string{"-H","ABC123"},&result);err!=nil{t.Fatal(err)}
+ if strings.Contains(result.String(),secret)||strings.Contains(result.String(),"ABC123"){t.Fatalf("privileged child output leaked on success: %q",result.String())}
+ if result.String()!="Postfix HOLD release command completed\n"{t.Fatalf("unexpected confirmation: %q",result.String())}
 }
