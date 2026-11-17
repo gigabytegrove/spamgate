@@ -163,9 +163,11 @@ func runPostsuperCommand(ctx context.Context, name string, args []string, stdout
  if ctx.Err() != nil { return fmt.Errorf("postsuper -H interrupted: %w", ctx.Err()) }
  if err != nil {
   if errors.Is(err, errOutputLimit) { return fmt.Errorf("postsuper -H output limit exceeded: %w", errOutputLimit) }
-  // Never expose arbitrary command output on failure. The bounded diagnostic
-  // remains available, but it must not be treated as successful release.
-  return fmt.Errorf("postsuper -H failed: %w: %s", err, safePostfixDiagnostic(stderr.data))
+  // Postfix stderr can contain queue metadata, envelope addresses and local
+  // paths. Do not return it to callers: the helper's stderr is surfaced by
+  // the unprivileged worker and potentially by browser/API diagnostics.
+  // Preserve the typed subprocess error for operator-side exit status only.
+  return fmt.Errorf("postsuper -H failed: %w", err)
  }
  // Cancellation can arrive after Wait returns but before reporting. Never
  // present a canceled operation as confirmed successful.
