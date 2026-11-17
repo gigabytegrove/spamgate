@@ -33,6 +33,10 @@ func validQueueID(id string) bool {
 
 var errOutputLimit = errors.New("Postfix command output exceeds safe limit")
 
+// errReleaseOutcomeUnknown means the privileged command may already have
+// changed queue state. Callers must reconcile with Postfix before retrying.
+var errReleaseOutcomeUnknown = errors.New("Postfix HOLD release outcome requires reconciliation")
+
 // outputBudget is shared by stdout and stderr; each write reserves bytes atomically.
 type outputBudget struct {
  mu sync.Mutex
@@ -160,7 +164,7 @@ func runPostsuperCommand(ctx context.Context, name string, args []string, stdout
  exceeded := budget.exceeded
  budget.mu.Unlock()
  if exceeded { return fmt.Errorf("postsuper -H output limit exceeded: %w", errOutputLimit) }
- if ctx.Err() != nil { return fmt.Errorf("postsuper -H interrupted: %w", ctx.Err()) }
+ if ctx.Err() != nil { return errors.Join(errReleaseOutcomeUnknown, fmt.Errorf("postsuper -H interrupted: %w", ctx.Err())) }
  if err != nil {
   if errors.Is(err, errOutputLimit) { return fmt.Errorf("postsuper -H output limit exceeded: %w", errOutputLimit) }
   // Postfix stderr can contain queue metadata, envelope addresses and local
@@ -171,14 +175,14 @@ func runPostsuperCommand(ctx context.Context, name string, args []string, stdout
  }
  // Cancellation can arrive after Wait returns but before reporting. Never
  // present a canceled operation as confirmed successful.
- if err := ctx.Err(); err != nil { return fmt.Errorf("postsuper -H interrupted before reporting: %w", err) }
+ if err := ctx.Err(); err != nil { return errors.Join(errReleaseOutcomeUnknown, fmt.Errorf("postsuper -H interrupted before reporting: %w", err)) }
  // Neither stdout nor stderr from a privileged Postfix command is safe to
  // forward into the worker/API. Even successful commands can print addresses,
  // queue identifiers, and filesystem paths. Report only a fixed confirmation.
  report := "Postfix HOLD release command completed\n"
  n, err := io.WriteString(stdoutSink, report)
- if err != nil { return errors.New("postsuper -H result reporting failed") }
- if n != len(report) { return errors.New("postsuper -H result reporting failed: short write") }
+ if err != nil { return fmt.Errorf("%w: postsuper -H result reporting failed", errReleaseOutcomeUnknown) }
+ if n != len(report) { return fmt.Errorf("%w: postsuper -H result reporting failed: short write", errReleaseOutcomeUnknown) }
  return nil
 }
 
