@@ -33,6 +33,7 @@ func TestValidatePostfixReleaseInventory(t *testing.T) {
         {"empty recipient", func(v *PostfixHeld) { v.Recipients[0] = "" }},
         {"whitespace recipient", func(v *PostfixHeld) { v.Recipients[0] = "  " }},
         {"padded recipient", func(v *PostfixHeld) { v.Recipients[0] = " one@example.test " }},
+        {"carriage return recipient", func(v *PostfixHeld) { v.Recipients[0] = "one@example.test\rInjected" }},
         {"newline recipient", func(v *PostfixHeld) { v.Recipients[0] = "one@example.test\nBcc:evil@example.test" }},
         {"NUL recipient", func(v *PostfixHeld) { v.Recipients[0] = "one@example.test\x00" }},
         {"overlong recipient evidence", func(v *PostfixHeld) { v.Recipients = make([]string, 51); for i := range v.Recipients { v.Recipients[i] = "one@example.test" }; v.RecipientCount = 51 }},
@@ -46,6 +47,13 @@ func TestValidatePostfixReleaseInventory(t *testing.T) {
             }
         })
     }
+    t.Run("escaped backslash is not a control byte", func(t *testing.T) {
+        item := clone()
+        item.Recipients[0] = `one\\name@example.test`
+        if err := validatePostfixReleaseInventory([]PostfixHeld{item}); err != nil {
+            t.Fatalf("ordinary backslash must not be confused with CR/LF/NUL: %v", err)
+        }
+    })
     t.Run("inventory over entry limit", func(t *testing.T) {
         items := make([]PostfixHeld, 1001)
         for i := range items { items[i] = clone() }
