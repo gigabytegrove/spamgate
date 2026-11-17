@@ -56,7 +56,16 @@ func readPostfixHold(ctx context.Context) ([]PostfixHeld, error) {
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("postqueue -j failed: %w", err)
 	}
-	return parsePostfixHold(output.Bytes())
+	items, err := parsePostfixHold(output.Bytes())
+	if err != nil {
+		return nil, err
+	}
+	// Apply the same authorization-evidence checks to the native reader as
+	// to injected providers. Never return partial or unsafe queue evidence.
+	if err := validatePostfixReleaseInventory(items); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 func parsePostfixHold(payload []byte) ([]PostfixHeld, error) {
 	scanner := bufio.NewScanner(bytes.NewReader(payload))
