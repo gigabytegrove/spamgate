@@ -35,7 +35,7 @@ func TestReleaseOutcomeUnknownNotAppliedBeforeAction(t *testing.T) {
  var out bytes.Buffer
  err:=runPostsuperCommand(context.Background(),path,[]string{"-H","A123"},&out)
  if err==nil {t.Fatal("expected failure")}
- if errors.Is(err,errReleaseOutcomeUnknown) {t.Fatalf("definite child failure marked indeterminate: %v",err)}
+ if !errors.Is(err,errReleaseOutcomeUnknown) {t.Fatalf("child may have changed queue state before failure: %v",err)}
  ctx,cancel:=context.WithCancel(context.Background());cancel()
  err=runPostsuperCommand(ctx,path,[]string{"-H","A123"},&out)
  if !errors.Is(err,context.Canceled) || errors.Is(err,errReleaseOutcomeUnknown) {t.Fatalf("pre-execution cancellation misclassified: %v",err)}
