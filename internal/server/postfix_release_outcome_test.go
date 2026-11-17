@@ -1,6 +1,7 @@
 package server
 
 import (
+    "context"
     "errors"
     "fmt"
     "os"
@@ -45,4 +46,27 @@ func failedPostfixProcessState(t *testing.T, code int) *os.ProcessState {
         t.Fatal("expected subprocess failure")
     }
     return cmd.ProcessState
+}
+
+func TestPostfixReleaseCompletionCancellationRace(t *testing.T) {
+    live, cancelLive := context.WithCancel(context.Background())
+    defer cancelLive()
+    if got := classifyPostfixReleaseCompletion(live, nil); got != nil {
+        t.Fatalf("successful live command must remain successful: %v", got)
+    }
+    canceled, cancel := context.WithCancel(context.Background())
+    cancel()
+    if got := classifyPostfixReleaseCompletion(canceled, nil); !errors.Is(got, errPostfixReleaseOutcomeUnknown) {
+        t.Fatalf("canceled successful child must require reconciliation: %v", got)
+    }
+    private := errors.New("recipient@example.test /private/mail/spool")
+    for _, ctx := range []context.Context{live, canceled} {
+        got := classifyPostfixReleaseCompletion(ctx, private)
+        if !errors.Is(got, errPostfixReleaseOutcomeUnknown) {
+            t.Fatalf("failed command must require reconciliation: %v", got)
+        }
+        if strings.Contains(got.Error(), "recipient@example.test") || strings.Contains(got.Error(), "/private/mail/spool") {
+            t.Fatal("subprocess failure disclosed private metadata")
+        }
+    }
 }
