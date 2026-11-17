@@ -27,7 +27,7 @@ func validPostfixEnvelopeEvidence(address string, allowEmpty bool) bool {
     // format/control characters that can disguise envelope identities in UI
     // and privileged release audit records.
     for _, r := range address {
-        if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r) {
+        if unicode.IsControl(r) || unicode.IsSpace(r) || unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r) {
             return false
         }
     }
