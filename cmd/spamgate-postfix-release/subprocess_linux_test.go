@@ -35,7 +35,7 @@ func TestPostsuperSubprocessExitFailure(t *testing.T) {
  path := helperScript(t, "echo 'queue ID not found' >&2; exit 7")
  var out bytes.Buffer
  err := runPostsuperCommand(context.Background(), path, nil, &out)
- if err == nil || !strings.Contains(err.Error(), "queue ID not found") { t.Fatalf("missing diagnostic: %v", err) }
+ if err == nil || !strings.Contains(err.Error(), "exit status 7") || strings.Contains(err.Error(), "queue ID not found") { t.Fatalf("missing diagnostic: %v", err) }
  if out.Len() != 0 { t.Fatal("failed command produced success output") }
 }
 
@@ -43,7 +43,7 @@ func TestPostsuperSubprocessSuccess(t *testing.T) {
  path := helperScript(t, "echo 'postsuper: Released: 1 message' >&2")
  var out bytes.Buffer
  if err := runPostsuperCommand(context.Background(), path, nil, &out); err != nil { t.Fatal(err) }
- if !strings.Contains(out.String(), "Released: 1 message") { t.Fatalf("missing successful output: %q", out.String()) }
+ if out.String() != "Postfix HOLD release command completed\n" { t.Fatalf("unexpected success confirmation: %q", out.String()) }
 }
 
 func TestPostsuperSubprocessCancellation(t *testing.T) {
@@ -190,7 +190,7 @@ func TestPostsuperSuccessRequiresResultSink(t *testing.T) {
 func TestPostsuperResultSinkFailurePropagates(t *testing.T) {
  path := helperScript(t, "echo 'postsuper: Released: 1 message' >&2")
  err := runPostsuperCommand(context.Background(), path, nil, failingReleaseSink{})
- if !errors.Is(err, os.ErrClosed) || !strings.Contains(err.Error(), "reporting failed") {
+ if err == nil || !strings.Contains(err.Error(), "reporting failed") || errors.Is(err, os.ErrClosed) || strings.Contains(err.Error(), "file already closed") {
   t.Fatalf("result sink failure hidden: %v", err)
  }
 }
@@ -198,7 +198,7 @@ func TestPostsuperResultSinkFailurePropagates(t *testing.T) {
 func TestPostsuperResultSinkIsNotUsedOnChildFailure(t *testing.T) {
  path := helperScript(t, "echo 'not found' >&2; exit 7")
  err := runPostsuperCommand(context.Background(), path, nil, failingReleaseSink{})
- if err == nil || !strings.Contains(err.Error(), "not found") || errors.Is(err, os.ErrClosed) {
+ if err == nil || !strings.Contains(err.Error(), "exit status 7") || strings.Contains(err.Error(), "not found") || errors.Is(err, os.ErrClosed) {
   t.Fatalf("child failure was hidden by sink: %v", err)
  }
 }
@@ -226,7 +226,7 @@ func TestPostsuperShortResultWriteIsFailure(t *testing.T) {
  path := helperScript(t, "echo 'postsuper: Released: 1 message' >&2")
  sink := &shortReleaseSink{}
  err := runPostsuperCommand(context.Background(), path, []string{"-H", "A123"}, sink)
- if !errors.Is(err, os.ErrClosed) && !errors.Is(err, io.ErrShortWrite) {
+ if err == nil || !strings.Contains(err.Error(), "reporting failed") || errors.Is(err, io.ErrShortWrite) || errors.Is(err, os.ErrClosed) {
   t.Fatalf("silent short write accepted: %v", err)
  }
  if sink.writes != 1 { t.Fatalf("unexpected sink writes: %d", sink.writes) }
