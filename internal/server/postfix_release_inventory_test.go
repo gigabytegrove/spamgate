@@ -23,12 +23,12 @@ func TestValidatePostfixReleaseInventory(t *testing.T) {
         name string
         mutate func(*PostfixHeld)
     }{
-        {"sender control byte", func(v *PostfixHeld) { v.Sender = "sender@example.test\\x1b[31m" }},
+        {"sender control byte", func(v *PostfixHeld) { v.Sender = "sender@example.test\x1b[31m" }},
         {"sender padded", func(v *PostfixHeld) { v.Sender = " sender@example.test" }},
         {"sender overlong", func(v *PostfixHeld) { v.Sender = string(make([]byte, 1025)) }},
-        {"recipient tab", func(v *PostfixHeld) { v.Recipients[0] = "one\\t@example.test" }},
-        {"recipient DEL", func(v *PostfixHeld) { v.Recipients[0] = "one\\x7f@example.test" }},
-        {"recipient escape", func(v *PostfixHeld) { v.Recipients[0] = "one\\x1b[31m@example.test" }},
+        {"recipient tab", func(v *PostfixHeld) { v.Recipients[0] = "one\t@example.test" }},
+        {"recipient DEL", func(v *PostfixHeld) { v.Recipients[0] = "one\x7f@example.test" }},
+        {"recipient escape", func(v *PostfixHeld) { v.Recipients[0] = "one\x1b[31m@example.test" }},
         {"recipient overlong", func(v *PostfixHeld) { v.Recipients[0] = string(make([]byte, 1025)) }},
         {"missing ID", func(v *PostfixHeld) { v.QueueID = "" }},
         {"ALL ID", func(v *PostfixHeld) { v.QueueID = "ALL" }},
@@ -84,8 +84,8 @@ func TestPostfixEnvelopeEvidenceDSNAndBackslash(t *testing.T) {
         {"", false, false},
         {`user\\name@example.test`, false, true},
         {"user@example.test", false, true},
-        {"user@example.test\\x01", false, false},
-        {"user@example.test\\x7f", false, false},
+        {"user@example.test\x01", false, false},
+        {"user@example.test\x7f", false, false},
     } {
         if got := validPostfixEnvelopeEvidence(tc.address, tc.allowEmpty); got != tc.valid {
             t.Errorf("address %q allowEmpty=%v: got %v, want %v", tc.address, tc.allowEmpty, got, tc.valid)
