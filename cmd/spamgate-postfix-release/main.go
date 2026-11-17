@@ -172,9 +172,10 @@ func runPostsuperCommand(ctx context.Context, name string, args []string, stdout
  // Cancellation can arrive after Wait returns but before reporting. Never
  // present a canceled operation as confirmed successful.
  if err := ctx.Err(); err != nil { return fmt.Errorf("postsuper -H interrupted before reporting: %w", err) }
- // A nil sink is a programming error, not proof that a privileged hold was released.
- // Refuse success without a destination for the operator-visible result.
- report := safePostfixDiagnostic(append(append([]byte(nil), stdout.data...), append([]byte(" "), stderr.data...)...))+"\n"
+ // Neither stdout nor stderr from a privileged Postfix command is safe to
+ // forward into the worker/API. Even successful commands can print addresses,
+ // queue identifiers, and filesystem paths. Report only a fixed confirmation.
+ report := "Postfix HOLD release command completed\n"
  n, err := io.WriteString(stdoutSink, report)
  if err != nil { return fmt.Errorf("postsuper -H result reporting failed: %w", err) }
  if n != len(report) { return fmt.Errorf("postsuper -H result reporting failed: %w", io.ErrShortWrite) }
