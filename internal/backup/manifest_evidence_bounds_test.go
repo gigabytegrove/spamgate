@@ -30,6 +30,8 @@ func TestManifestEvidenceBoundsAndCanonicalOrder(t *testing.T) {
   {"single oversized", func(m *Manifest) { m.Entries[0].Bytes = maxBytes + 1 }},
   {"traversal", func(m *Manifest) { m.Entries[0].Path = "../escape" }},
   {"absolute path", func(m *Manifest) { m.Entries[0].Path = "/etc/passwd" }},
+  {"file directory collision", func(m *Manifest) { m.Entries[0].Path = "mail"; m.Entries[1].Path = "mail/message.eml" }},
+  {"file directory collision with intervening sibling", func(m *Manifest) { m.Entries = []Entry{{Path:"mail", SHA256:digest}, {Path:"mail-other", SHA256:digest}, {Path:"mail/message.eml", SHA256:digest}} }},
   {"reserved manifest", func(m *Manifest) { m.Entries[0].Path = manifestPath }},
   {"control character", func(m *Manifest) { m.Entries[0].Path = "a\n.txt" }},
  }
