@@ -56,6 +56,11 @@ func validateManifestSemantics(m Manifest) error {
     return fmt.Errorf("backup manifest case-insensitive file/directory collision: %q and %q", prior, entry.Path)
    }
   }
+  for priorIdentity, prior := range folded {
+   if strings.HasPrefix(priorIdentity, identity+"/") {
+    return fmt.Errorf("backup manifest case-insensitive file/directory collision: %q and %q", prior, entry.Path)
+   }
+  }
   folded[identity] = entry.Path
   seen[entry.Path] = struct{}{}
   previous = entry.Path
