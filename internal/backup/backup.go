@@ -235,6 +235,13 @@ func Create(source, archive string) (err error) {
 		return errors.New("data directory contains no files")
 	}
 	sort.Slice(manifest.Entries, func(i, j int) bool { return manifest.Entries[i].Path < manifest.Entries[j].Path })
+	// Reject ambiguous portable recovery identities before writing the manifest.
+	// In particular, Linux permits case-distinct source files that cannot be
+	// safely restored on a case-insensitive target filesystem.
+	if e := validateManifestSemantics(manifest); e != nil {
+		zw.Close()
+		return fmt.Errorf("backup source cannot be restored portably: %w", e)
+	}
 	w, e := zw.Create(manifestPath)
 	if e != nil {
 		zw.Close()
