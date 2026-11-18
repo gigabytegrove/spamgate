@@ -147,7 +147,7 @@ func Create(source, archive string) (err error) {
 		}
 		identity := strings.ToLower(relative)
 		if prior, exists := portablePaths[identity]; exists && prior != relative {
-			return fmt.Errorf("case-insensitive path collision (file/directory or source identity): %q and %q", prior, relative)
+			return fmt.Errorf("case-insensitive path collision / file/directory collision: %q and %q", prior, relative)
 		}
 		portablePaths[identity] = relative
 		// Never archive process-local flock inodes. They are not application
