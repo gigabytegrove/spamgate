@@ -14,6 +14,8 @@ import (
 const maxLine=2048
 const maxLines=64
 type Result struct {
+ ProbeDurationMillis int64 `json:"probe_duration_ms"`
+ TLSHandshakeMillis int64 `json:"tls_handshake_ms,omitempty"`
  BannerCode int `json:"banner_code"`
  EHLOCode int `json:"ehlo_code"`
  StartTLSAdvertised bool `json:"starttls_advertised"`
@@ -100,6 +102,7 @@ func invalidHostname(name string) bool {
 }
 func Probe(ctx context.Context,opt Options)(result Result,err error){
  result=Result{AuthMechanisms:[]string{},PostTLSAuthMechanisms:[]string{},Findings:[]Finding{},EHLOWarnings:[]string{},PostTLSEHLOWarnings:[]string{}}
+ started := time.Now()
  stage := "configuration"
  var probeCtx context.Context
  var cancel context.CancelFunc
@@ -119,6 +122,11 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
     }
    }
   }
+  // Use monotonic elapsed time and round upward so a completed sub-ms probe
+  // is not misrepresented as zero latency. Never expose target identifiers.
+  elapsed := time.Since(started)
+  result.ProbeDurationMillis = int64(elapsed / time.Millisecond)
+  if elapsed % time.Millisecond != 0 { result.ProbeDurationMillis++ }
   if err != nil { result.FailureStage = stage; result.FailureKind = classifyProbeFailure(stage, err) }
   result.Findings=Assess(result)
   if err != nil { result.Findings=append(result.Findings, failureFinding(stage)); if detail := classifiedFailureFinding(result.FailureKind); detail != nil { result.Findings=append(result.Findings, *detail) } }
@@ -165,7 +173,12 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  if code!=220{return result,&SMTPReplyError{Stage:stage,Code:code}}
  stage = "tls_handshake"
  tlsConn:=tls.Client(conn,&tls.Config{ServerName:opt.ServerName,MinVersion:tls.VersionTLS12})
- if err:=tlsConn.HandshakeContext(probeCtx);err!=nil{return result,fmt.Errorf("TLS verification failed: %w",err)}
+ handshakeStarted := time.Now()
+ handshakeErr := tlsConn.HandshakeContext(probeCtx)
+ handshakeElapsed := time.Since(handshakeStarted)
+ result.TLSHandshakeMillis = int64(handshakeElapsed / time.Millisecond)
+ if handshakeElapsed % time.Millisecond != 0 { result.TLSHandshakeMillis++ }
+ if handshakeErr!=nil{return result,fmt.Errorf("TLS verification failed: %w",handshakeErr)}
  state:=tlsConn.ConnectionState();result.StartTLSVerified=true;result.TLSVersion=tls.VersionName(state.Version)
  if len(state.PeerCertificates)>0 {result.TLSCertificate=certificateInfo(state.PeerCertificates[0],time.Now())}
  reader=bufio.NewReader(tlsConn);writer=bufio.NewWriter(tlsConn)
