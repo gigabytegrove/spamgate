@@ -26,7 +26,7 @@ func TestVerifyGoodAndCorruption(t *testing.T){
 }
 func TestRejectUnsafeManifest(t *testing.T){
  _,m:=fixture(t)
- for _,bad:=range []string{"../escape","/etc/passwd","db/../mail.db","db//mail.db","db\\mail.db","C:foo","db/mail.db/child","."}{
+ for _,bad:=range []string{"../escape","/etc/passwd","db/../mail.db","db//mail.db","db\\mail.db","C:foo","."}{
   t.Run(bad,func(t *testing.T){
    copy:=m;copy.Files=append([]Entry(nil),m.Files...);copy.Files[0].Path=bad
    if err:=ValidateManifest(copy);err==nil{t.Fatal("unsafe path accepted")}
@@ -34,7 +34,9 @@ func TestRejectUnsafeManifest(t *testing.T){
  }
  copy:=m;copy.Files=append(copy.Files,copy.Files[0])
  if err:=ValidateManifest(copy);err==nil{t.Fatal("duplicate accepted")}
- copy=m;copy.Files[0].SHA256=strings.Repeat("A",64)
+ copy=m;copy.Files=append([]Entry(nil),m.Files...);copy.Files=append(copy.Files,Entry{Path:"db",Size:1,SHA256:m.Files[0].SHA256})
+ if err:=ValidateManifest(copy);err==nil{t.Fatal("file/directory collision accepted")}
+ copy=m;copy.Files=append([]Entry(nil),m.Files...);copy.Files[0].SHA256=strings.Repeat("A",64)
  if err:=ValidateManifest(copy);err==nil{t.Fatal("uppercase digest accepted")}
 }
 func TestRejectSymlinkAndMissingFiles(t *testing.T){
