@@ -106,7 +106,19 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  defer func(){
   // A blocked socket read may return EOF or a closed-connection error after
   // context cancellation. Preserve the actual cancellation cause for callers.
-  if err != nil && probeCtx != nil && probeCtx.Err() != nil { err = probeCtx.Err() }
+  if err != nil && probeCtx != nil {
+   // The connection deadline and context timer race at the same instant.
+   // net.Conn may return a timeout before context.Err() becomes visible.
+   // This socket deadline is exclusively derived from probeCtx.
+   if cause := probeCtx.Err(); cause != nil {
+    err = cause
+   } else if deadline, ok := probeCtx.Deadline(); ok && !time.Now().Before(deadline) {
+    var netErr net.Error
+    if errors.As(err, &netErr) && netErr.Timeout() {
+     err = context.DeadlineExceeded
+    }
+   }
+  }
   if err != nil { result.FailureStage = stage; result.FailureKind = classifyProbeFailure(stage, err) }
   result.Findings=Assess(result)
   if err != nil { result.Findings=append(result.Findings, failureFinding(stage)); if detail := classifiedFailureFinding(result.FailureKind); detail != nil { result.Findings=append(result.Findings, *detail) } }
