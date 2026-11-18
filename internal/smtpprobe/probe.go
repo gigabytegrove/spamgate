@@ -110,6 +110,9 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
   if err != nil { result.FailureStage = stage; result.FailureKind = classifyProbeFailure(stage, err) }
   result.Findings=Assess(result)
   if err != nil { result.Findings=append(result.Findings, failureFinding(stage)); if detail := classifiedFailureFinding(result.FailureKind); detail != nil { result.Findings=append(result.Findings, *detail) } }
+  // Cancel only after classifying the actual outcome; an earlier deferred
+  // cancel would turn every SMTP rejection into a spurious CANCELED failure.
+  if cancel != nil { cancel() }
  }()
  if opt.Timeout<=0||opt.Timeout>60*time.Second{return result,errors.New("timeout must be between 1ns and 60s")}
  if ctx==nil{return result,errors.New("nil context")}
@@ -120,7 +123,7 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  if opt.ServerName==""{opt.ServerName=host}
  if err:=validateTLSName(opt.ServerName);err!=nil{return result,err}
  stage = "connection"
- probeCtx,cancel=context.WithTimeout(ctx,opt.Timeout);defer cancel()
+ probeCtx,cancel=context.WithTimeout(ctx,opt.Timeout)
  dialer:=net.Dialer{}
  conn,err:=dialer.DialContext(probeCtx,"tcp",opt.Address);if err!=nil{return result,err};defer conn.Close()
  // A canceled context without a deadline must also interrupt stalled reads.
