@@ -112,6 +112,11 @@ func elapsedMillis(start time.Time) int64 {
  if elapsed % time.Millisecond != 0 { ms++ }
  return ms
 }
+// probeTimeoutContext transfers cancellation ownership to Probe's finalizer.
+// The caller must invoke cancel on every exit path.
+func probeTimeoutContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+ return context.WithTimeout(ctx, timeout)
+}
 func Probe(ctx context.Context,opt Options)(result Result,err error){
  result=Result{AuthMechanisms:[]string{},PostTLSAuthMechanisms:[]string{},Findings:[]Finding{},EHLOWarnings:[]string{},PostTLSEHLOWarnings:[]string{}}
  started := time.Now()
@@ -153,7 +158,7 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  if opt.ServerName==""{opt.ServerName=host}
  if err:=validateTLSName(opt.ServerName);err!=nil{return result,err}
  stage = "connection"
- probeCtx,cancel=context.WithTimeout(ctx,opt.Timeout)
+ probeCtx,cancel=probeTimeoutContext(ctx,opt.Timeout)
  dialer:=net.Dialer{}
  conn,err:=dialer.DialContext(probeCtx,"tcp",opt.Address);if err!=nil{return result,err};defer conn.Close()
  // A canceled context without a deadline must also interrupt stalled reads.
