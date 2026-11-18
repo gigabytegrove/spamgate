@@ -40,12 +40,18 @@ func ValidateHoldoutProvenance(tuning, holdout []Sample, tuningRecords, holdoutR
 	}
 	seenFamilies := make(map[string]struct{})
 	seenDigests := make(map[string]struct{})
+	// Reject duplicate evidence within either corpus as well as cross-corpus leakage.
+	// Otherwise repeated copies can artificially narrow confidence intervals.
+	corpusFamilies := make(map[string]struct{})
+	corpusDigests := make(map[string]struct{})
 	latest := time.Time{}
 	earliest := time.Time{}
 	validate := func(samples []Sample, records []ProvenanceRecord, isTuning bool) error {
 		if len(samples) != len(records) {
 			return errors.New("provenance count must match sample count")
 		}
+		clear(corpusFamilies)
+		clear(corpusDigests)
 		byID := make(map[string]Sample, len(samples))
 		for _, sample := range samples {
 			byID[sample.ID] = sample
@@ -66,6 +72,14 @@ func ValidateHoldoutProvenance(tuning, holdout []Sample, tuningRecords, holdoutR
 			if !validSHA256(record.ContentSHA256) {
 				return fmt.Errorf("invalid SHA-256 for %q", record.SampleID)
 			}
+			if _, exists := corpusFamilies[record.FamilyID]; exists {
+				return fmt.Errorf("repeated message family within corpus: %q", record.SampleID)
+			}
+			if _, exists := corpusDigests[record.ContentSHA256]; exists {
+				return fmt.Errorf("repeated message content within corpus: %q", record.SampleID)
+			}
+			corpusFamilies[record.FamilyID] = struct{}{}
+			corpusDigests[record.ContentSHA256] = struct{}{}
 			if record.ObservedAt.IsZero() {
 				return fmt.Errorf("missing observation time for %q", record.SampleID)
 			}
