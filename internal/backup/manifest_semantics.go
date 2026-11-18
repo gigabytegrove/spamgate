@@ -24,6 +24,9 @@ func validateManifestSemantics(m Manifest) error {
  var total int64
  previous := ""
  seen := make(map[string]struct{}, len(m.Entries))
+ // Windows and case-insensitive recovery targets cannot distinguish paths
+ // that differ only by case. Reject ambiguous identities before extraction.
+ folded := make(map[string]string, len(m.Entries))
  for i, entry := range m.Entries {
   if !safeName(entry.Path) || !canonicalBackupPath(entry.Path) {
    return fmt.Errorf("noncanonical backup path %q", entry.Path)
@@ -41,6 +44,19 @@ func validateManifestSemantics(m Manifest) error {
     return fmt.Errorf("backup manifest file/directory collision: %q and %q", ancestor, entry.Path)
    }
   }
+  identity := strings.ToLower(entry.Path)
+  if prior, exists := folded[identity]; exists {
+   return fmt.Errorf("backup manifest case-insensitive path collision: %q and %q", prior, entry.Path)
+  }
+  for ancestor := identity; ; {
+   slash := strings.LastIndexByte(ancestor, '/')
+   if slash < 0 { break }
+   ancestor = ancestor[:slash]
+   if prior, exists := folded[ancestor]; exists {
+    return fmt.Errorf("backup manifest case-insensitive file/directory collision: %q and %q", prior, entry.Path)
+   }
+  }
+  folded[identity] = entry.Path
   seen[entry.Path] = struct{}{}
   previous = entry.Path
   if entry.Bytes < 0 || entry.Bytes > maxBytes-total {
