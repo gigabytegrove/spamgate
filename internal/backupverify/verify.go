@@ -10,7 +10,6 @@ import (
  "io"
  "os"
  "path"
- "path/filepath"
  "strings"
 )
 
@@ -70,20 +69,14 @@ func Verify(root string,m Manifest)(Report,error) {
  if err!=nil{return report,err}
  if !info.IsDir() || info.Mode()&os.ModeSymlink!=0{return report,errors.New("backup root must be a real directory")}
  for _,e:=range m.Files {
-  current:=root
-  parts:=strings.Split(e.Path,"/")
-  for _,part:=range parts[:len(parts)-1] {
-   current=filepath.Join(current,part)
-   st,err:=os.Lstat(current)
-   if err!=nil{return report,err}
-   if !st.IsDir() || st.Mode()&os.ModeSymlink!=0{return report,fmt.Errorf("unsafe parent %q",e.Path)}
+  f,err:=openVerifiedPath(root,e.Path)
+  if err!=nil{return report,err}
+  st,err:=f.Stat()
+  if err!=nil{f.Close();return report,err}
+  if !st.Mode().IsRegular() || st.Size()!=e.Size {
+   f.Close()
+   return report,fmt.Errorf("type or size mismatch %q",e.Path)
   }
-  target:=filepath.Join(current,parts[len(parts)-1])
-  st,err:=os.Lstat(target)
-  if err!=nil{return report,err}
-  if !st.Mode().IsRegular() || st.Size()!=e.Size {return report,fmt.Errorf("type or size mismatch %q",e.Path)}
-  f,err:=openRegularNoFollow(target)
-  if err!=nil{return report,err}
   h:=sha256.New()
   n,readErr:=io.Copy(h,io.LimitReader(f,e.Size+1))
   closeErr:=f.Close()
