@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -46,6 +47,7 @@ func TestForgedArchiveWithWitnessButNoMarkerRefusedBeforeRestore(t *testing.T) {
 		digest := sha256.Sum256([]byte(body))
 		manifest.Entries = append(manifest.Entries, Entry{Path: name, Bytes: int64(len(body)), SHA256: hex.EncodeToString(digest[:])})
 	}
+	sort.Slice(manifest.Entries, func(i, j int) bool { return manifest.Entries[i].Path < manifest.Entries[j].Path })
 	w, err := zw.Create(manifestPath)
 	if err != nil { t.Fatal(err) }
 	if err := json.NewEncoder(w).Encode(manifest); err != nil { t.Fatal(err) }
