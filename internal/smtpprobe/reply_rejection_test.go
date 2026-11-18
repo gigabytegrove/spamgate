@@ -40,7 +40,7 @@ func TestProbeTemporaryGreetingRejection(t *testing.T) {
   conn,e:=listener.Accept()
   if e!=nil{return}
   defer conn.Close()
-  _,_=conn.Write([]byte("421 4.3.2 Service temporarily unavailable\\r\\n"))
+  _,_=conn.Write([]byte("421 4.3.2 Service temporarily unavailable\r\n"))
  }()
  result,err:=Probe(context.Background(),Options{Address:listener.Addr().String(),Timeout:2*time.Second})
  <-done
