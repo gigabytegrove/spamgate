@@ -8,7 +8,7 @@ import (
 )
 
 func TestPortableBackupPathEvidence(t *testing.T) {
- valid := []string{"state.json", "mail/2026/message.eml", "company/report.v1.json", "compact", "COM10.txt", "company/CONNECTION.txt"}
+ valid := []string{"state.json", "mail/2026/message.eml", "company/report.v1.json", "compact", "COM10.txt", "company/CONNECTION.txt", "COM0.txt", "LPT10.txt"}
  for _, name := range valid {
   if !safeName(name) { t.Errorf("valid portable name rejected: %q", name) }
  }
