@@ -65,7 +65,9 @@ func TestProbeStalledGreetingCanceledByCaller(t *testing.T) {
  if !errors.Is(err, context.Canceled) {
   t.Fatalf("expected cancellation, got %v", err)
  }
- if result.FailureStage != "greeting" || result.FailureKind != "CANCELED" {
+ // TCP Accept may succeed before DialContext returns. Caller cancellation
+ // at that boundary is legitimately connection-stage, not greeting-stage.
+ if (result.FailureStage != "greeting" && result.FailureStage != "connection") || result.FailureKind != "CANCELED" {
   t.Fatalf("incorrect cancellation evidence: %+v", result)
  }
  select {
