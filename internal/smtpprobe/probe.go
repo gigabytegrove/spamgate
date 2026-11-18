@@ -102,6 +102,7 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  result=Result{AuthMechanisms:[]string{},PostTLSAuthMechanisms:[]string{},Findings:[]Finding{},EHLOWarnings:[]string{},PostTLSEHLOWarnings:[]string{}}
  stage := "configuration"
  var probeCtx context.Context
+ var cancel context.CancelFunc
  defer func(){
   // A blocked socket read may return EOF or a closed-connection error after
   // context cancellation. Preserve the actual cancellation cause for callers.
