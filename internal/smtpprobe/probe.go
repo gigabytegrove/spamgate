@@ -32,6 +32,7 @@ type Result struct {
  TLSCertificate *CertificateInfo `json:"tls_certificate,omitempty"`
  Findings []Finding `json:"findings"`
  FailureStage string `json:"failure_stage,omitempty"`
+ FailureKind string `json:"failure_kind,omitempty"`
  EHLOWarnings []string `json:"ehlo_warnings"`
  PostTLSEHLOWarnings []string `json:"post_tls_ehlo_warnings"`
  AuthMechanisms []string `json:"auth_mechanisms"`
@@ -101,9 +102,9 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  result=Result{AuthMechanisms:[]string{},PostTLSAuthMechanisms:[]string{},Findings:[]Finding{},EHLOWarnings:[]string{},PostTLSEHLOWarnings:[]string{}}
  stage := "configuration"
  defer func(){
-  if err != nil { result.FailureStage = stage }
+  if err != nil { result.FailureStage = stage; result.FailureKind = classifyProbeFailure(stage, err) }
   result.Findings=Assess(result)
-  if err != nil { result.Findings=append(result.Findings, failureFinding(stage)) }
+  if err != nil { result.Findings=append(result.Findings, failureFinding(stage)); if detail := classifiedFailureFinding(result.FailureKind); detail != nil { result.Findings=append(result.Findings, *detail) } }
  }()
  if opt.Timeout<=0||opt.Timeout>60*time.Second{return result,errors.New("timeout must be between 1ns and 60s")}
  if ctx==nil{return result,errors.New("nil context")}
