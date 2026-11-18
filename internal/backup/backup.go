@@ -114,6 +114,10 @@ func Create(source, archive string) (err error) {
 	// Recheck copied files at the end, not only immediately after each copy.
 	// Otherwise an earlier file can change while later files are traversed.
 	copiedFiles := map[string]os.FileInfo{}
+	// Include empty directories in the portable identity inventory. A ZIP v1
+	// manifest contains files only, so its manifest checks cannot detect
+	// case-colliding empty directories on a Linux source filesystem.
+	portablePaths := make(map[string]string)
 	walkErr := filepath.WalkDir(source, func(path string, de fs.DirEntry, walkError error) error {
 		if walkError != nil {
 			return walkError
@@ -133,6 +137,17 @@ func Create(source, archive string) (err error) {
 			return e
 		}
 		relative = filepath.ToSlash(relative)
+		// Validate every source pathname, including empty directories, before
+		// runtime-lock filtering. This prevents invisible unarchived paths from
+		// concealing a collision on a case-insensitive recovery target.
+		if !safeName(relative) {
+			return fmt.Errorf("unsafe source path: %q", relative)
+		}
+		identity := strings.ToLower(relative)
+		if prior, exists := portablePaths[identity]; exists && prior != relative {
+			return fmt.Errorf("case-insensitive source path collision: %q and %q", prior, relative)
+		}
+		portablePaths[identity] = relative
 		// Never archive process-local flock inodes. They are not application
 		// state, and restoring root-owned locks can prevent an unprivileged
 		// SpamGate worker from starting or accepting/delivering mail.
