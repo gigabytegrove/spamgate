@@ -28,6 +28,8 @@ func TestBackupManifestCaseInsensitiveIdentity(t *testing.T) {
  }{
   {"same-directory-case", []string{"Mail/a.eml", "mail/a.eml"}, true},
   {"case-folded-ancestor", []string{"Mail", "mail/a.eml"}, true},
+  {"reverse-order-ancestor", []string{"Mail/a.eml", "mail"}, true},
+  {"unicode-case-fold", []string{"Ä/a.eml", "ä/a.eml"}, true},
   {"distinct-paths", []string{"Mail/a.eml", "mail/b.eml"}, false},
   {"distinct-subtrees", []string{"Mail/a.eml", "mail/b.eml", "other/c.eml"}, false},
  }
