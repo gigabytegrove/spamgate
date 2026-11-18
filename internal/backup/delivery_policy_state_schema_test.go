@@ -7,6 +7,7 @@ import (
  "encoding/json"
  "os"
  "path/filepath"
+ "sort"
  "strings"
  "testing"
  "time"
@@ -67,6 +68,7 @@ func writePolicyStateArchive(t *testing.T, archive, state string) {
   hash := sha256.Sum256([]byte(content))
   manifest.Entries = append(manifest.Entries,Entry{Path:path,Bytes:int64(len(content)),SHA256:hex.EncodeToString(hash[:])})
  }
+ sort.Slice(manifest.Entries, func(i, j int) bool { return manifest.Entries[i].Path < manifest.Entries[j].Path })
  w,err := zw.Create(manifestPath); if err != nil {t.Fatal(err)}
  if err := json.NewEncoder(w).Encode(manifest); err != nil {t.Fatal(err)}
  if err := zw.Close(); err != nil {t.Fatal(err)}
