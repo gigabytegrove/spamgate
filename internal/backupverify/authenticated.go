@@ -5,6 +5,7 @@ import (
  "crypto/sha256"
  "encoding/hex"
  "encoding/json"
+ "bytes"
  "errors"
  "fmt"
  "io"
@@ -70,16 +71,23 @@ func VerifyAuthenticated(root string, signed SignedManifest, key []byte) (Report
 
 // DecodeSignedManifest rejects unknown fields, trailing JSON, and oversized
 // input before authenticating. Callers must supply the secret separately.
+const MaxSignedManifestJSONBytes = 16 << 20
+
 func DecodeSignedManifest(r io.Reader) (SignedManifest,error) {
  var signed SignedManifest
- decoder := json.NewDecoder(io.LimitReader(r, 16<<20+1))
+ // Read one byte past the bound so even whitespace-only overages fail.
+ data,err:=io.ReadAll(io.LimitReader(r,MaxSignedManifestJSONBytes+1))
+ if err!=nil{return signed,err}
+ if len(data)>MaxSignedManifestJSONBytes{return signed,errors.New("backup manifest JSON exceeds size limit")}
+ if err:=validateUniqueJSONKeys(data);err!=nil{return signed,err}
+ decoder:=json.NewDecoder(bytes.NewReader(data))
  decoder.DisallowUnknownFields()
- if err := decoder.Decode(&signed); err != nil { return signed,err }
+ if err:=decoder.Decode(&signed);err!=nil{return SignedManifest{},err}
  var extra any
- if err := decoder.Decode(&extra); err != io.EOF {
-  if err == nil { return SignedManifest{},errors.New("trailing backup manifest JSON") }
+ if err:=decoder.Decode(&extra);err!=io.EOF {
+  if err==nil{return SignedManifest{},errors.New("trailing backup manifest JSON")}
   return SignedManifest{},err
  }
- if err := ValidateManifest(signed.Manifest); err != nil { return SignedManifest{},err }
+ if err:=ValidateManifest(signed.Manifest);err!=nil{return SignedManifest{},err}
  return signed,nil
 }
