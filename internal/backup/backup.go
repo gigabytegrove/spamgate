@@ -145,6 +145,12 @@ func Create(source, archive string) (err error) {
 			return nil
 		}
 		if de.IsDir() {
+			// Directory components are absent from the ZIP manifest, but still
+			// determine every descendant's restore path. Refuse unsafe names
+			// even when the directory is empty (and has no file entries).
+			if !safeName(relative) {
+				return fmt.Errorf("unsafe data directory name: %q", relative)
+			}
 			directories[path] = info
 			return nil
 		}
