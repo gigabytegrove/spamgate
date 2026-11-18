@@ -126,11 +126,11 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  reader:=bufio.NewReader(conn);writer:=bufio.NewWriter(conn)
  stage = "greeting"
  code,_,err:=readReply(reader);if err!=nil{return result,err};result.BannerCode=code
- if code!=220{return result,fmt.Errorf("SMTP banner returned %d, expected 220",code)}
+ if code!=220{return result,&SMTPReplyError{Stage:stage,Code:code}}
  stage = "ehlo"
  if err:=send(writer,"EHLO "+opt.HelloName);err!=nil{return result,err}
  code,lines,err:=readReply(reader);if err!=nil{return result,err};result.EHLOCode=code
- if code!=250{return result,fmt.Errorf("EHLO returned %d, expected 250",code)}
+ if code!=250{return result,&SMTPReplyError{Stage:stage,Code:code}}
  result.EHLOWarnings=capabilityWarnings(lines)
  result.SizeAdvertised,result.SizeLimitKnown,result.SizeLimitBytes,result.SizeWarning=sizeEvidence(lines)
  result.StartTLSAdvertised,result.AuthMechanisms=capabilities(lines)
@@ -142,7 +142,7 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  if err:=send(writer,"STARTTLS");err!=nil{return result,err}
  code,_,err=readReply(reader);if err!=nil{return result,err}
  result.StartTLSReplyCode=code
- if code!=220{return result,fmt.Errorf("STARTTLS returned %d, expected 220",code)}
+ if code!=220{return result,&SMTPReplyError{Stage:stage,Code:code}}
  stage = "tls_handshake"
  tlsConn:=tls.Client(conn,&tls.Config{ServerName:opt.ServerName,MinVersion:tls.VersionTLS12})
  if err:=tlsConn.HandshakeContext(probeCtx);err!=nil{return result,fmt.Errorf("TLS verification failed: %w",err)}
@@ -153,7 +153,7 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  if err:=send(writer,"EHLO "+opt.HelloName);err!=nil{return result,err}
  code,lines,err=readReply(reader);if err!=nil{return result,err}
  result.PostTLSEHLOCode=code
- if code!=250{return result,fmt.Errorf("post-TLS EHLO returned %d, expected 250",code)}
+ if code!=250{return result,&SMTPReplyError{Stage:stage,Code:code}}
  result.PostTLSEHLOWarnings=capabilityWarnings(lines)
  result.PostTLSSizeAdvertised,result.PostTLSSizeLimitKnown,result.PostTLSSizeLimitBytes,result.PostTLSSizeWarning=sizeEvidence(lines)
  result.PostTLSStartTLSAdvertised,result.PostTLSAuthMechanisms=capabilities(lines)

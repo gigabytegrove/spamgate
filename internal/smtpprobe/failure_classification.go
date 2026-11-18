@@ -4,6 +4,7 @@ import (
  "context"
  "crypto/x509"
  "errors"
+ "fmt"
  "net"
  "os"
  "syscall"
@@ -17,6 +18,12 @@ func classifyProbeFailure(stage string, err error) string {
  if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) { return "TIMEOUT" }
  var netErr net.Error
  if errors.As(err, &netErr) && netErr.Timeout() { return "TIMEOUT" }
+ var reply *SMTPReplyError
+ if errors.As(err, &reply) {
+  if reply.Code >= 400 && reply.Code < 500 { return "SMTP_TEMPORARY_REJECTION" }
+  if reply.Code >= 500 && reply.Code < 600 { return "SMTP_PERMANENT_REJECTION" }
+  return "SMTP_UNEXPECTED_REPLY"
+ }
  if stage == "connection" {
   var dnsErr *net.DNSError
   if errors.As(err, &dnsErr) { return "DNS_LOOKUP_FAILED" }
@@ -49,6 +56,9 @@ func classifyProbeFailure(stage string, err error) string {
 func classifiedFailureFinding(kind string) *Finding {
  var message string
  switch kind {
+ case "SMTP_TEMPORARY_REJECTION": message = "SMTP peer returned a temporary 4xx response; inspect service availability and retry policy"
+ case "SMTP_PERMANENT_REJECTION": message = "SMTP peer returned a permanent 5xx response; inspect greeting, EHLO and TLS service policy"
+ case "SMTP_UNEXPECTED_REPLY": message = "SMTP peer returned an unexpected response code for the protocol stage"
  case "TIMEOUT": message = "SMTP diagnostic timed out; inspect network latency, listener responsiveness and firewall timeouts"
  case "DNS_LOOKUP_FAILED": message = "SMTP target could not be resolved; inspect resolver availability and DNS records"
  case "CONNECTION_REFUSED": message = "SMTP TCP connection was refused; inspect listener address, service status and firewall policy"
@@ -59,4 +69,12 @@ func classifiedFailureFinding(kind string) *Finding {
  default: return nil
  }
  return &Finding{Code: "SMTP_" + kind, Severity: "warning", Message: message}
+}
+
+// SMTPReplyError contains only a numeric status and a fixed local stage.
+// Peer-supplied text must never enter diagnostics or operator logs.
+type SMTPReplyError struct { Stage string; Code int }
+func (e *SMTPReplyError) Error() string {
+ if e == nil { return "SMTP unexpected response" }
+ return fmt.Sprintf("SMTP %s rejected with status %d", e.Stage, e.Code)
 }
