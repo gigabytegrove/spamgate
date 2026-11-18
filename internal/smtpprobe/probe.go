@@ -165,7 +165,9 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  stage = "greeting"
  greetingStarted := time.Now()
  code,_,err:=readReply(reader);
- result.GreetingDurationMillis = elapsedMillis(greetingStarted)if err!=nil{return result,err};result.BannerCode=code
+ result.GreetingDurationMillis = elapsedMillis(greetingStarted)
+ if err!=nil{return result,err}
+ result.BannerCode=code
  if code!=220{return result,&SMTPReplyError{Stage:stage,Code:code}}
  stage = "ehlo"
  ehloStarted := time.Now()
