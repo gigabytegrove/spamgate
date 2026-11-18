@@ -2,6 +2,13 @@
 
 package backupverify
 
-import "os"
+import (
+ "errors"
+ "os"
+)
 
-func openRegularNoFollow(name string)(*os.File,error){return os.Open(name)}
+// Non-Linux platforms cannot provide the required descriptor-relative
+// no-follow guarantees. Fail closed instead of claiming safe verification.
+func openVerifiedPath(root, relative string) (*os.File, error) {
+ return nil, errors.New("secure backup verification requires Linux")
+}
