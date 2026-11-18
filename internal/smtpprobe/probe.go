@@ -101,7 +101,11 @@ func invalidHostname(name string) bool {
 func Probe(ctx context.Context,opt Options)(result Result,err error){
  result=Result{AuthMechanisms:[]string{},PostTLSAuthMechanisms:[]string{},Findings:[]Finding{},EHLOWarnings:[]string{},PostTLSEHLOWarnings:[]string{}}
  stage := "configuration"
+ var probeCtx context.Context
  defer func(){
+  // A blocked socket read may return EOF or a closed-connection error after
+  // context cancellation. Preserve the actual cancellation cause for callers.
+  if err != nil && probeCtx != nil && probeCtx.Err() != nil { err = probeCtx.Err() }
   if err != nil { result.FailureStage = stage; result.FailureKind = classifyProbeFailure(stage, err) }
   result.Findings=Assess(result)
   if err != nil { result.Findings=append(result.Findings, failureFinding(stage)); if detail := classifiedFailureFinding(result.FailureKind); detail != nil { result.Findings=append(result.Findings, *detail) } }
@@ -115,7 +119,7 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  if opt.ServerName==""{opt.ServerName=host}
  if err:=validateTLSName(opt.ServerName);err!=nil{return result,err}
  stage = "connection"
- probeCtx,cancel:=context.WithTimeout(ctx,opt.Timeout);defer cancel()
+ probeCtx,cancel=context.WithTimeout(ctx,opt.Timeout);defer cancel()
  dialer:=net.Dialer{}
  conn,err:=dialer.DialContext(probeCtx,"tcp",opt.Address);if err!=nil{return result,err};defer conn.Close()
  // A canceled context without a deadline must also interrupt stalled reads.
