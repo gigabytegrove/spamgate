@@ -45,7 +45,7 @@ func validateManifestSemantics(m Manifest) error {
     return fmt.Errorf("backup manifest file/directory collision: %q and %q", ancestor, entry.Path)
    }
   }
-  identity := strings.ToLower(entry.Path)
+  identity := portableFoldIdentity(entry.Path)
   if prior, exists := folded[identity]; exists {
    return fmt.Errorf("backup manifest case-insensitive path collision: %q and %q", prior, entry.Path)
   }
