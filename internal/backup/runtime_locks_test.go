@@ -7,6 +7,7 @@ import (
     "encoding/json"
     "os"
     "path/filepath"
+ "sort"
     "testing"
     "time"
 )
@@ -99,7 +100,8 @@ func TestLegacyArchiveRuntimeLocksVerifiedButNotRestored(t *testing.T) {
             Path: name, Bytes: int64(len(body)), SHA256: hex.EncodeToString(digest[:]),
         })
     }
-    w, err := zw.Create(manifestPath)
+    sort.Slice(manifest.Entries, func(i, j int) bool { return manifest.Entries[i].Path < manifest.Entries[j].Path })
+ w, err := zw.Create(manifestPath)
     if err != nil { t.Fatal(err) }
     if err := json.NewEncoder(w).Encode(manifest); err != nil { t.Fatal(err) }
     if err := zw.Close(); err != nil { t.Fatal(err) }
