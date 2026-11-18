@@ -15,6 +15,10 @@ const maxLine=2048
 const maxLines=64
 type Result struct {
  ProbeDurationMillis int64 `json:"probe_duration_ms"`
+ GreetingDurationMillis int64 `json:"greeting_duration_ms,omitempty"`
+ EHLORoundTripMillis int64 `json:"ehlo_round_trip_ms,omitempty"`
+ StartTLSRoundTripMillis int64 `json:"starttls_round_trip_ms,omitempty"`
+ PostTLSEHLORoundTripMillis int64 `json:"post_tls_ehlo_round_trip_ms,omitempty"`
  TLSHandshakeMillis int64 `json:"tls_handshake_ms,omitempty"`
  BannerCode int `json:"banner_code"`
  EHLOCode int `json:"ehlo_code"`
@@ -100,6 +104,14 @@ func invalidHostname(name string) bool {
  }
  return false
 }
+// elapsedMillis rounds a completed positive interval up to one millisecond.
+// It intentionally does not expose the SMTP target or server reply text.
+func elapsedMillis(start time.Time) int64 {
+ elapsed := time.Since(start)
+ ms := int64(elapsed / time.Millisecond)
+ if elapsed % time.Millisecond != 0 { ms++ }
+ return ms
+}
 func Probe(ctx context.Context,opt Options)(result Result,err error){
  result=Result{AuthMechanisms:[]string{},PostTLSAuthMechanisms:[]string{},Findings:[]Finding{},EHLOWarnings:[]string{},PostTLSEHLOWarnings:[]string{}}
  started := time.Now()
@@ -124,9 +136,7 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
   }
   // Use monotonic elapsed time and round upward so a completed sub-ms probe
   // is not misrepresented as zero latency. Never expose target identifiers.
-  elapsed := time.Since(started)
-  result.ProbeDurationMillis = int64(elapsed / time.Millisecond)
-  if elapsed % time.Millisecond != 0 { result.ProbeDurationMillis++ }
+  result.ProbeDurationMillis = elapsedMillis(started)
   if err != nil { result.FailureStage = stage; result.FailureKind = classifyProbeFailure(stage, err) }
   result.Findings=Assess(result)
   if err != nil { result.Findings=append(result.Findings, failureFinding(stage)); if detail := classifiedFailureFinding(result.FailureKind); detail != nil { result.Findings=append(result.Findings, *detail) } }
@@ -153,11 +163,14 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  if err:=conn.SetDeadline(deadline);err!=nil{return result,err}
  reader:=bufio.NewReader(conn);writer:=bufio.NewWriter(conn)
  stage = "greeting"
- code,_,err:=readReply(reader);if err!=nil{return result,err};result.BannerCode=code
+ greetingStarted := time.Now()
+ code,_,err:=readReply(reader);
+ result.GreetingDurationMillis = elapsedMillis(greetingStarted)if err!=nil{return result,err};result.BannerCode=code
  if code!=220{return result,&SMTPReplyError{Stage:stage,Code:code}}
  stage = "ehlo"
+ ehloStarted := time.Now()
  if err:=send(writer,"EHLO "+opt.HelloName);err!=nil{return result,err}
- code,lines,err:=readReply(reader);if err!=nil{return result,err};result.EHLOCode=code
+ code,lines,err:=readReply(reader);result.EHLORoundTripMillis=elapsedMillis(ehloStarted);if err!=nil{return result,err};result.EHLOCode=code
  if code!=250{return result,&SMTPReplyError{Stage:stage,Code:code}}
  result.EHLOWarnings=capabilityWarnings(lines)
  result.SizeAdvertised,result.SizeLimitKnown,result.SizeLimitBytes,result.SizeWarning=sizeEvidence(lines)
@@ -167,8 +180,9 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
   return result,nil
  }
  stage = "starttls"
+ startTLSStarted := time.Now()
  if err:=send(writer,"STARTTLS");err!=nil{return result,err}
- code,_,err=readReply(reader);if err!=nil{return result,err}
+ code,_,err=readReply(reader);result.StartTLSRoundTripMillis=elapsedMillis(startTLSStarted);if err!=nil{return result,err}
  result.StartTLSReplyCode=code
  if code!=220{return result,&SMTPReplyError{Stage:stage,Code:code}}
  stage = "tls_handshake"
@@ -183,8 +197,9 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  if len(state.PeerCertificates)>0 {result.TLSCertificate=certificateInfo(state.PeerCertificates[0],time.Now())}
  reader=bufio.NewReader(tlsConn);writer=bufio.NewWriter(tlsConn)
  stage = "post_tls_ehlo"
+ postEHLOStarted := time.Now()
  if err:=send(writer,"EHLO "+opt.HelloName);err!=nil{return result,err}
- code,lines,err=readReply(reader);if err!=nil{return result,err}
+ code,lines,err=readReply(reader);result.PostTLSEHLORoundTripMillis=elapsedMillis(postEHLOStarted);if err!=nil{return result,err}
  result.PostTLSEHLOCode=code
  if code!=250{return result,&SMTPReplyError{Stage:stage,Code:code}}
  result.PostTLSEHLOWarnings=capabilityWarnings(lines)
