@@ -46,6 +46,10 @@ func TestProvenanceHoldoutRejectsLeakage(t *testing.T) {
 		name string
 		change func([]ProvenanceRecord, []ProvenanceRecord)
 	}{
+		{"repeated tuning family", func(a, b []ProvenanceRecord) { a[1].FamilyID = a[0].FamilyID }},
+		{"repeated tuning content", func(a, b []ProvenanceRecord) { a[1].ContentSHA256 = a[0].ContentSHA256 }},
+		{"repeated holdout family", func(a, b []ProvenanceRecord) { b[1].FamilyID = b[0].FamilyID }},
+		{"repeated holdout content", func(a, b []ProvenanceRecord) { b[1].ContentSHA256 = b[0].ContentSHA256 }},
 		{"family leakage", func(a, b []ProvenanceRecord) { b[0].FamilyID = a[0].FamilyID }},
 		{"content leakage", func(a, b []ProvenanceRecord) { b[0].ContentSHA256 = a[0].ContentSHA256 }},
 		{"same day", func(a, b []ProvenanceRecord) { b[0].ObservedAt = a[0].ObservedAt }},
