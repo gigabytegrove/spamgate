@@ -17,7 +17,16 @@ func portableBackupPath(name string) bool {
   case "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$":
    return false
   }
-  if len(upper) == 4 && (strings.HasPrefix(upper, "COM") || strings.HasPrefix(upper, "LPT")) && upper[3] >= '1' && upper[3] <= '9' { return false }
+  // Windows treats superscript one, two, and three as device digits too.
+  // Reject those aliases even on Linux, before a backup can be restored
+  // onto a filesystem with different device-name semantics.
+  if strings.HasPrefix(upper, "COM") || strings.HasPrefix(upper, "LPT") {
+   suffix := strings.TrimPrefix(strings.TrimPrefix(upper, "COM"), "LPT")
+   switch suffix {
+   case "1", "2", "3", "4", "5", "6", "7", "8", "9", "¹", "²", "³":
+    return false
+   }
+  }
  }
  return true
 }
