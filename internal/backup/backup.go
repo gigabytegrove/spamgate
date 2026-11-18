@@ -141,11 +141,13 @@ func Create(source, archive string) (err error) {
 		// runtime-lock filtering. This prevents invisible unarchived paths from
 		// concealing a collision on a case-insensitive recovery target.
 		if !safeName(relative) {
+			if de.IsDir() { return fmt.Errorf("unsafe data directory name: %q", relative) }
+			if relative == manifestPath { return fmt.Errorf("reserved data filename: %q", relative) }
 			return fmt.Errorf("unsafe source path: %q", relative)
 		}
 		identity := strings.ToLower(relative)
 		if prior, exists := portablePaths[identity]; exists && prior != relative {
-			return fmt.Errorf("case-insensitive source path collision: %q and %q", prior, relative)
+			return fmt.Errorf("case-insensitive path collision (file/directory or source identity): %q and %q", prior, relative)
 		}
 		portablePaths[identity] = relative
 		// Never archive process-local flock inodes. They are not application
