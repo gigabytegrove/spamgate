@@ -145,7 +145,7 @@ func Create(source, archive string) (err error) {
 			if relative == manifestPath { return fmt.Errorf("reserved data filename: %q", relative) }
 			return fmt.Errorf("unsafe source path: %q", relative)
 		}
-		identity := strings.ToLower(relative)
+		identity := portableFoldIdentity(relative)
 		if prior, exists := portablePaths[identity]; exists && prior != relative {
 			return fmt.Errorf("case-insensitive path collision / file/directory collision: %q and %q", prior, relative)
 		}
