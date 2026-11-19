@@ -3,6 +3,7 @@
 package backupverify
 
 import (
+ "context"
  "crypto/sha256"
  "encoding/hex"
  "errors"
@@ -85,13 +86,18 @@ func ValidateManifest(m Manifest) error {
 // Verify checks only regular files under root. It refuses symlinks at every
 // path component and uses O_NOFOLLOW on Linux to prevent final-link traversal.
 // It never writes, deletes, extracts, or changes the running mail server.
-func Verify(root string,m Manifest)(Report,error) {
+func Verify(root string,m Manifest)(Report,error) { return VerifyContext(context.Background(),root,m) }
+
+func VerifyContext(ctx context.Context,root string,m Manifest)(Report,error) {
  var report Report
+ if ctx == nil { return report, errors.New("verification context required") }
+ if err := ctx.Err(); err != nil { return report, err }
  if err:=ValidateManifest(m);err!=nil{return report,err}
  info,err:=os.Lstat(root)
  if err!=nil{return report,err}
  if !info.IsDir() || info.Mode()&os.ModeSymlink!=0{return report,errors.New("backup root must be a real directory")}
  for _,e:=range m.Files {
+  if err := ctx.Err(); err != nil { return report, err }
   f,err:=openVerifiedPath(root,e.Path)
   if err!=nil{return report,err}
   st,err:=f.Stat()
@@ -102,12 +108,13 @@ func Verify(root string,m Manifest)(Report,error) {
   }
   before:=st.ModTime()
   h:=sha256.New()
-  n,readErr:=io.Copy(h,io.LimitReader(f,e.Size+1))
+  n,readErr:=io.Copy(h,io.LimitReader(&verificationContextReader{ctx:ctx, reader:f},e.Size+1))
   after,statErr:=f.Stat()
   closeErr:=f.Close()
   if statErr!=nil{return report,statErr}
   if !os.SameFile(st,after) || st.Size()!=after.Size() || !before.Equal(after.ModTime()) {return report,fmt.Errorf("backup file changed during verification %q",e.Path)}
   if readErr!=nil{return report,readErr}
+  if err := ctx.Err(); err != nil { return report, err }
   if closeErr!=nil{return report,closeErr}
   if n!=e.Size || hex.EncodeToString(h.Sum(nil))!=e.SHA256 {return report,fmt.Errorf("checksum mismatch %q",e.Path)}
   report.Files++
