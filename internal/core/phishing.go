@@ -266,6 +266,10 @@ var phishingExcludedIPRanges = [...]netip.Prefix{
     netip.MustParsePrefix("198.51.100.0/24"), // TEST-NET-2
     netip.MustParsePrefix("203.0.113.0/24"), // TEST-NET-3
     netip.MustParsePrefix("240.0.0.0/4"), // reserved
+    netip.MustParsePrefix("192.88.99.0/24"), // deprecated 6to4 relay anycast
+    netip.MustParsePrefix("2001:2::/48"), // IPv6 benchmarking
+    netip.MustParsePrefix("2001:10::/28"), // deprecated ORCHID
+    netip.MustParsePrefix("2001:20::/28"), // ORCHIDv2 identifiers
     netip.MustParsePrefix("2001:db8::/32"), // documentation
 }
 
