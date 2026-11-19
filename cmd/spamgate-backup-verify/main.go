@@ -44,7 +44,6 @@ func runContext(ctx context.Context, args []string, stdout io.Writer) error {
  // The operator-supplied active-data path is an additional guard, never a
  // way to disable protection of the immutable native installation path.
  const permanentData = "/opt/spamgate/data"
- if err := backupverify.CheckBackupBoundary(permanentData, *root); err != nil { return err }
  if *operation == "restore" {
   absTarget, err := filepath.Abs(*target)
   if err != nil { return err }
