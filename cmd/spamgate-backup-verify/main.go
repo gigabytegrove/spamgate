@@ -48,8 +48,18 @@ func run(args []string, stdout io.Writer) error {
  if !keyInfo.Mode().IsRegular() || keyInfo.Mode().Perm()&0077 != 0 || keyInfo.Size() < backupverify.MinAuthenticationKeyBytes || keyInfo.Size() > 4096 {
   return errors.New("key file must be a private regular file containing 32 to 4096 raw bytes")
  }
- key, err := os.ReadFile(*keyPath)
+ keyHandle, err := os.Open(*keyPath)
  if err != nil { return err }
+ opened, statErr := keyHandle.Stat()
+ if statErr != nil { _ = keyHandle.Close(); return statErr }
+ if !os.SameFile(keyInfo,opened) || !opened.Mode().IsRegular() || opened.Mode().Perm()&0077 != 0 || opened.Size() != keyInfo.Size() {
+  _ = keyHandle.Close()
+  return errors.New("authentication key changed during opening")
+ }
+ key, readErr := io.ReadAll(io.LimitReader(keyHandle,4097))
+ closeKeyErr := keyHandle.Close()
+ if readErr != nil { return readErr }
+ if closeKeyErr != nil { return closeKeyErr }
  defer func(){ for i := range key { key[i] = 0 } }()
  if len(key) < backupverify.MinAuthenticationKeyBytes || len(key) > 4096 { return errors.New("invalid key length") }
  mf, err := os.Open(*manifestPath)
