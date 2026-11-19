@@ -253,6 +253,31 @@ func detectPhishingLinks(raw []byte) []string {
 // it is not a reputation domain. A claimed brand URL linking to a public IP
 // must not bypass the visible-link mismatch check. Internal, loopback and
 // link-local literals are excluded to avoid scoring intranet links.
+// Non-routable and special-purpose literals are not evidence of an external
+// phishing destination. IsGlobalUnicast alone includes documentation and
+// shared-address space, so exclude these ranges explicitly. This is deliberately
+// narrower than a full IANA registry policy: no DNS resolution is performed.
+var phishingExcludedIPRanges = [...]netip.Prefix{
+    netip.MustParsePrefix("0.0.0.0/8"),
+    netip.MustParsePrefix("100.64.0.0/10"), // carrier-grade NAT
+    netip.MustParsePrefix("192.0.0.0/24"), // IETF protocol assignments
+    netip.MustParsePrefix("192.0.2.0/24"), // TEST-NET-1
+    netip.MustParsePrefix("198.18.0.0/15"), // benchmarking
+    netip.MustParsePrefix("198.51.100.0/24"), // TEST-NET-2
+    netip.MustParsePrefix("203.0.113.0/24"), // TEST-NET-3
+    netip.MustParsePrefix("240.0.0.0/4"), // reserved
+    netip.MustParsePrefix("2001:db8::/32"), // documentation
+}
+
+func phishingExcludedSpecialIP(address netip.Addr) bool {
+    for _, prefix := range phishingExcludedIPRanges {
+        if prefix.Contains(address) {
+            return true
+        }
+    }
+    return false
+}
+
 func phishingPublicDestinationHost(host string) bool {
     if address, err := netip.ParseAddr(host); err == nil {
         // IPv4-mapped IPv6 literals inherit the underlying IPv4 address policy.
@@ -267,7 +292,8 @@ func phishingPublicDestinationHost(host string) bool {
             !address.IsLoopback() &&
             !address.IsLinkLocalUnicast() &&
             !address.IsLinkLocalMulticast() &&
-            !address.IsMulticast()
+            !address.IsMulticast() &&
+            !phishingExcludedSpecialIP(address)
     }
     return ValidReputationDomain(host)
 }
