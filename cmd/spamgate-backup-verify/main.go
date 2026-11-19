@@ -10,6 +10,7 @@ import (
  "os"
  "path/filepath"
  "runtime"
+ "strings"
 
  "github.com/gigabytegrove/spamgate/internal/backupverify"
 )
@@ -70,7 +71,7 @@ func run(args []string, stdout io.Writer) error {
 
 func containsPath(parent, child string) bool {
  rel, err := filepath.Rel(parent, child)
- return err == nil && rel != "." && rel != ".." && len(rel) > 3 && rel[:3] != "../" && !filepath.IsAbs(rel)
+ return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
 
 func main() {
