@@ -42,10 +42,39 @@ func TestPhishingDestinationHostClassification(t *testing.T) {
         {"fe80::1%eth0", false},
         {"ff02::1", false},
         {"::", false},
+        {"0.1.2.3", false},
+        {"100.64.0.1", false},
+        {"100.127.255.254", false},
+        {"192.0.2.1", false},
+        {"198.18.0.1", false},
+        {"198.51.100.10", false},
+        {"203.0.113.42", false},
+        {"240.1.2.3", false},
+        {"2001:db8::1", false},
+        {"::ffff:203.0.113.8", false},
+        {"100.128.0.1", true},
+        {"198.20.0.1", true},
         {"bank.example.com", true},
     } {
         if got := phishingPublicDestinationHost(tc.host); got != tc.allowed {
             t.Errorf("%q: got %v want %v", tc.host, got, tc.allowed)
         }
+    }
+}
+
+func TestPhishingSpecialPurposeDestinationsDoNotScore(t *testing.T) {
+    for _, host := range []string{
+        "192.0.2.1", "198.51.100.2", "203.0.113.3",
+        "100.64.0.1", "198.18.1.2", "[2001:db8::1]",
+        "[::ffff:203.0.113.9]",
+    } {
+        t.Run(host, func(t *testing.T) {
+            raw := phishingFixture("text/html", "", "",
+                `<a href="https://`+host+`/login">https://bank.example.com/login</a>`)
+            got, coverage := detectPhishingLinksWithCoverage(raw)
+            if coverage.Incomplete || len(got) != 0 {
+                t.Fatalf("special-use destination %s: findings=%v coverage=%+v", host, got, coverage)
+            }
+        })
     }
 }
