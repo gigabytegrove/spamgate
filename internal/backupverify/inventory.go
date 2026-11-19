@@ -1,6 +1,7 @@
 package backupverify
 
 import (
+ "context"
  "crypto/sha256"
  "encoding/hex"
  "errors"
@@ -16,7 +17,11 @@ import (
 // BuildInventory creates a deterministic inventory of an already quiesced
 // backup directory. It does not snapshot running SpamGate state.
 // Every discovered file is reopened through the hardened verifier path.
-func BuildInventory(root string) (Manifest, error) {
+func BuildInventory(root string) (Manifest, error) { return BuildInventoryContext(context.Background(),root) }
+
+func BuildInventoryContext(ctx context.Context, root string) (Manifest, error) {
+ if ctx == nil { return Manifest{}, errors.New("inventory context required") }
+ if err := ctx.Err(); err != nil { return Manifest{}, err }
  m := Manifest{Version: 2}
  info, err := os.Lstat(root)
  if err != nil { return Manifest{}, err }
@@ -26,6 +31,7 @@ func BuildInventory(root string) (Manifest, error) {
  var total int64
  err = filepath.WalkDir(root, func(name string, entry os.DirEntry, walkErr error) error {
   if walkErr != nil { return walkErr }
+  if err := ctx.Err(); err != nil { return err }
   if name == root { return nil }
   relative, err := filepath.Rel(root, name)
   if err != nil { return err }
@@ -56,12 +62,13 @@ func BuildInventory(root string) (Manifest, error) {
   }
   before := st.ModTime()
   h := sha256.New()
-  n, readErr := io.Copy(h, io.LimitReader(f, st.Size()+1))
+  n, readErr := io.Copy(h, io.LimitReader(&verificationContextReader{ctx:ctx, reader:f}, st.Size()+1))
   after, statErr := f.Stat()
   closeErr := f.Close()
   if statErr != nil { return statErr }
   if !os.SameFile(st, after) || st.Size() != after.Size() || !before.Equal(after.ModTime()) { return fmt.Errorf("backup file changed during inventory: %q", relative) }
   if readErr != nil { return readErr }
+  if err := ctx.Err(); err != nil { return err }
   if closeErr != nil { return closeErr }
   if n != st.Size() { return fmt.Errorf("backup file changed while reading: %q", relative) }
   if total > int64(MaxFiles)*MaxFileSize-n { return errors.New("backup inventory byte limit exceeded") }
@@ -79,9 +86,13 @@ func BuildInventory(root string) (Manifest, error) {
 // VerifyComplete checks authenticated bytes and also rejects unlisted files,
 // removed files, and extra paths. It is intended for an immutable backup tree.
 // It is not an atomic snapshot or protection against concurrent modifications.
-func VerifyComplete(root string, signed SignedManifest, key []byte) (Report, error) {
+func VerifyComplete(root string, signed SignedManifest, key []byte) (Report, error) { return VerifyCompleteContext(context.Background(),root,signed,key) }
+
+func VerifyCompleteContext(ctx context.Context, root string, signed SignedManifest, key []byte) (Report, error) {
+ if ctx == nil { return Report{}, errors.New("verification context required") }
+ if err := ctx.Err(); err != nil { return Report{}, err }
  if err := AuthenticateManifest(signed, key); err != nil { return Report{}, err }
- discovered, err := BuildInventory(root)
+ discovered, err := BuildInventoryContext(ctx,root)
  if err != nil { return Report{}, err }
  if signed.Manifest.Version == 2 {
   if len(discovered.Directories) != len(signed.Manifest.Directories) { return Report{}, errors.New("backup directory inventory differs") }
@@ -110,5 +121,5 @@ func VerifyComplete(root string, signed SignedManifest, key []byte) (Report, err
  }
  // Reopen through the existing descriptor-relative verifier, retaining its
  // safety properties for every authenticated file.
- return Verify(root, signed.Manifest)
+ return VerifyContext(ctx,root,signed.Manifest)
 }
