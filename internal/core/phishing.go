@@ -77,7 +77,7 @@ func phishingVisibleLinksWithCoverage(body string, coverage *mimeCoverage) []str
         if len(href) == 0 || len(href) > 4096 { continue }
         if strings.HasPrefix(href, "//") { href = "https:" + href }
         dest, err := url.Parse(href)
-        if err != nil || (dest.Scheme != "https" && dest.Scheme != "http") { continue }
+        if err != nil || (!strings.EqualFold(dest.Scheme, "https") && !strings.EqualFold(dest.Scheme, "http")) { continue }
         destHost := strings.ToLower(strings.TrimSuffix(dest.Hostname(), "."))
         if !ValidReputationDomain(destHost) { continue }
         shown := phishingVisibleURLText(claim.text)
