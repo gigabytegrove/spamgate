@@ -83,9 +83,19 @@ func VerifyComplete(root string, signed SignedManifest, key []byte) (Report, err
  if err := AuthenticateManifest(signed, key); err != nil { return Report{}, err }
  discovered, err := BuildInventory(root)
  if err != nil { return Report{}, err }
- if discovered.Version != signed.Manifest.Version { return Report{}, errors.New("backup manifest version mismatch") }
- if len(discovered.Directories) != len(signed.Manifest.Directories) { return Report{}, errors.New("backup directory inventory differs") }
- for i, dir := range discovered.Directories { if dir != signed.Manifest.Directories[i] { return Report{}, fmt.Errorf("backup directory inventory mismatch at %q", dir) } }
+ if signed.Manifest.Version == 2 {
+  if len(discovered.Directories) != len(signed.Manifest.Directories) { return Report{}, errors.New("backup directory inventory differs") }
+  for i, dir := range discovered.Directories { if dir != signed.Manifest.Directories[i] { return Report{}, fmt.Errorf("backup directory inventory mismatch at %q", dir) } }
+ } else {
+  // v1 authenticates only files. Reject directories not implied by a file,
+  // preserving the fail-closed v1 behavior without breaking old backups.
+  implied := make(map[string]bool)
+  for _, entry := range signed.Manifest.Files {
+   for parent := path.Dir(entry.Path); parent != "."; parent = path.Dir(parent) { implied[parent] = true }
+  }
+  if len(discovered.Directories) != len(implied) { return Report{}, errors.New("v1 backup has unrepresentable directory structure") }
+  for _, dir := range discovered.Directories { if !implied[dir] { return Report{}, fmt.Errorf("v1 backup has unrepresentable directory %q", dir) } }
+ }
  expected := signed.Manifest.Files
  if len(discovered.Files) != len(expected) {
   return Report{}, fmt.Errorf("backup inventory differs: expected %d files, found %d", len(expected), len(discovered.Files))
