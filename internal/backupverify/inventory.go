@@ -17,7 +17,7 @@ import (
 // backup directory. It does not snapshot running SpamGate state.
 // Every discovered file is reopened through the hardened verifier path.
 func BuildInventory(root string) (Manifest, error) {
- m := Manifest{Version: 1}
+ m := Manifest{Version: 2}
  info, err := os.Lstat(root)
  if err != nil { return Manifest{}, err }
  if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
@@ -32,12 +32,8 @@ func BuildInventory(root string) (Manifest, error) {
   relative = filepath.ToSlash(relative)
   if entry.Type()&os.ModeSymlink != 0 { return fmt.Errorf("backup symlink refused: %q", relative) }
   if entry.IsDir() {
-   // Empty directories are not represented by manifest v1 and would be
-   // silently lost during restore. Refuse them instead of claiming a
-   // complete, lossless inventory.
-   children, err := os.ReadDir(name)
-   if err != nil { return err }
-   if len(children) == 0 { return fmt.Errorf("unrepresentable empty backup directory %q", relative) }
+   if len(m.Directories) >= MaxFiles { return errors.New("backup directory inventory exceeds limit") }
+   m.Directories = append(m.Directories, relative)
    return nil
   }
   if !entry.Type().IsRegular() {
@@ -74,6 +70,7 @@ func BuildInventory(root string) (Manifest, error) {
   return nil
  })
  if err != nil { return Manifest{}, err }
+ sort.Strings(m.Directories)
  sort.Slice(m.Files, func(i, j int) bool { return m.Files[i].Path < m.Files[j].Path })
  if err := ValidateManifest(m); err != nil { return Manifest{}, err }
  return m, nil
@@ -86,6 +83,9 @@ func VerifyComplete(root string, signed SignedManifest, key []byte) (Report, err
  if err := AuthenticateManifest(signed, key); err != nil { return Report{}, err }
  discovered, err := BuildInventory(root)
  if err != nil { return Report{}, err }
+ if discovered.Version != signed.Manifest.Version { return Report{}, errors.New("backup manifest version mismatch") }
+ if len(discovered.Directories) != len(signed.Manifest.Directories) { return Report{}, errors.New("backup directory inventory differs") }
+ for i, dir := range discovered.Directories { if dir != signed.Manifest.Directories[i] { return Report{}, fmt.Errorf("backup directory inventory mismatch at %q", dir) } }
  expected := signed.Manifest.Files
  if len(discovered.Files) != len(expected) {
   return Report{}, fmt.Errorf("backup inventory differs: expected %d files, found %d", len(expected), len(discovered.Files))

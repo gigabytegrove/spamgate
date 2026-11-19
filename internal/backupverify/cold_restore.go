@@ -49,6 +49,10 @@ func RestoreColdContext(ctx context.Context, backupRoot, target string, signed S
  stage, err := os.MkdirTemp(parent, ".spamgate-restore-")
  if err != nil { return report, err }
  defer os.RemoveAll(stage)
+ for _, dir := range signed.Manifest.Directories {
+  if err := ctx.Err(); err != nil { return Report{}, err }
+  if err := os.MkdirAll(filepath.Join(stage, filepath.FromSlash(dir)), 0700); err != nil { return Report{}, err }
+ }
  for _, e := range signed.Manifest.Files {
   if err := ctx.Err(); err != nil { return Report{}, err }
   source, err := openVerifiedPath(backupRoot, e.Path)
@@ -81,6 +85,7 @@ func RestoreColdContext(ctx context.Context, backupRoot, target string, signed S
  if _, err := VerifyComplete(backupRoot, signed, key); err != nil { return Report{}, fmt.Errorf("backup changed during restore: %w", err) }
  // Flush created directories before publishing the completed tree.
  dirs := map[string]bool{stage:true}
+ for _, dir := range signed.Manifest.Directories { dirs[filepath.Join(stage, filepath.FromSlash(dir))] = true }
  for _, e := range signed.Manifest.Files {
   for dir := filepath.Dir(filepath.Join(stage,filepath.FromSlash(e.Path))); strings.HasPrefix(dir,stage+string(filepath.Separator)); dir=filepath.Dir(dir) { dirs[dir]=true }
  }

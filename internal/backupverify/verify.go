@@ -24,6 +24,7 @@ type Entry struct {
 type Manifest struct {
  Version int `json:"version"`
  Files []Entry `json:"files"`
+ Directories []string `json:"directories,omitempty"`
 }
 type Report struct {
  Files int `json:"files"`
@@ -32,7 +33,22 @@ type Report struct {
 
 // ValidateManifest rejects ambiguous, unsafe or impossible file inventories.
 func ValidateManifest(m Manifest) error {
- if m.Version != 1 { return errors.New("unsupported manifest version") }
+ if m.Version != 1 && m.Version != 2 { return errors.New("unsupported manifest version") }
+ if m.Version == 1 && len(m.Directories) != 0 { return errors.New("v1 manifest cannot contain directories") }
+ if len(m.Directories) > MaxFiles { return errors.New("too many backup directories") }
+ if m.Version == 2 {
+  dirs := make(map[string]bool, len(m.Directories))
+  for _, dir := range m.Directories {
+   if dir == "" || dir == "." || path.IsAbs(dir) || path.Clean(dir) != dir || strings.ContainsAny(dir, "\\:\x00") || dir == ".." || strings.HasPrefix(dir, "../") { return fmt.Errorf("unsafe backup directory %q", dir) }
+   if dirs[dir] { return fmt.Errorf("duplicate backup directory %q", dir) }
+   dirs[dir] = true
+  }
+  for dir := range dirs {
+   for parent := path.Dir(dir); parent != "."; parent = path.Dir(parent) {
+    if !dirs[parent] { return fmt.Errorf("missing parent directory %q", parent) }
+   }
+  }
+ }
  if len(m.Files)==0 || len(m.Files)>MaxFiles { return errors.New("invalid manifest file count") }
  seen:=make(map[string]bool,len(m.Files))
  for _, e:=range m.Files {
@@ -52,6 +68,14 @@ func ValidateManifest(m Manifest) error {
   }
  }
  for name:=range seen {
+  if m.Version == 2 {
+   for parent:=path.Dir(name);parent!=".";parent=path.Dir(parent) {
+    found:=false
+    for _, dir:=range m.Directories { if dir==parent { found=true; break } }
+    if !found { return fmt.Errorf("file parent directory absent from manifest %q",parent) }
+   }
+   for _, dir:=range m.Directories { if dir==name { return fmt.Errorf("file/directory collision at %q",name) } }
+  }
   for parent:=path.Dir(name);parent!=".";parent=path.Dir(parent) {
    if seen[parent] { return fmt.Errorf("file/directory collision at %q",parent) }
   }
