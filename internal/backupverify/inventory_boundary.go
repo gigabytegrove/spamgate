@@ -5,6 +5,7 @@ import (
  "fmt"
  "os"
  "path/filepath"
+ "strings"
 )
 
 // CreateSignedInventory signs an existing, quiesced backup directory.
@@ -46,5 +47,5 @@ func CheckBackupBoundary(activeData, backupRoot string) error {
 
 func inside(parent, child string) bool {
  rel, err := filepath.Rel(parent, child)
- return err == nil && rel != "." && rel != ".." && len(rel) > 0 && rel[:1] != "." && !filepath.IsAbs(rel)
+ return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
