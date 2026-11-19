@@ -3,7 +3,6 @@ package backupverify
 import (
  "os"
  "path/filepath"
- "strings"
  "testing"
 )
 
@@ -11,8 +10,8 @@ func TestInventoryRejectsEmptyDirectories(t *testing.T) {
  root := t.TempDir()
  if err := os.MkdirAll(filepath.Join(root, "mail", "empty"), 0700); err != nil { t.Fatal(err) }
  if err := os.WriteFile(filepath.Join(root, "mail", "message"), []byte("body"), 0600); err != nil { t.Fatal(err) }
- if _, err := BuildInventory(root); err == nil || !strings.Contains(err.Error(), "empty backup directory") {
-  t.Fatalf("expected explicit empty directory refusal, got %v", err)
+ if m, err := BuildInventory(root); err != nil || m.Version != 2 || len(m.Directories) != 2 {
+  t.Fatalf("expected v2 directory preservation, manifest=%+v err=%v", m, err)
  }
 }
 
@@ -27,7 +26,7 @@ func TestVerifyCompleteRejectsNewEmptyDirectory(t *testing.T) {
  }
 }
 
-func TestColdRestoreRefusesUnrepresentableBackupTree(t *testing.T) {
+func TestColdRestoreRefusesUnlistedDirectory(t *testing.T) {
  root, _ := fixture(t)
  key := []byte("0123456789abcdef0123456789abcdef")
  signed, err := CreateSignedInventory(root, key)
