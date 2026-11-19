@@ -4,7 +4,6 @@ package backupverify
 
 import (
  "fmt"
- "os"
  "path/filepath"
  "runtime"
  "syscall"
@@ -49,6 +48,3 @@ func publishRestore(stage, target string) error {
  return nil
 }
 
-// Ensure the syscall implementation is never silently replaced by a
-// non-atomic os.Rename implementation.
-var _ = os.ErrExist
