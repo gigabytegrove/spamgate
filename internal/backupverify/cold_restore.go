@@ -27,7 +27,7 @@ func RestoreColdContext(ctx context.Context, backupRoot, target string, signed S
  var report Report
  if err := AuthenticateManifest(signed, key); err != nil { return report, err }
  if target == "" || backupRoot == "" { return report, errors.New("backup and target required") }
- if _, err := VerifyComplete(backupRoot, signed, key); err != nil { return report, fmt.Errorf("backup verification: %w", err) }
+ if _, err := VerifyCompleteContext(ctx, backupRoot, signed, key); err != nil { return report, fmt.Errorf("backup verification: %w", err) }
  absTarget, err := filepath.Abs(target)
  if err != nil { return report, err }
  if absTarget == string(filepath.Separator) || filepath.Base(absTarget) == "." { return report, errors.New("unsafe restore target") }
@@ -82,7 +82,7 @@ func RestoreColdContext(ctx context.Context, backupRoot, target string, signed S
  }
  if err := ctx.Err(); err != nil { return Report{}, err }
  // Detect unexpected files or concurrent backup mutation before publishing.
- if _, err := VerifyComplete(backupRoot, signed, key); err != nil { return Report{}, fmt.Errorf("backup changed during restore: %w", err) }
+ if _, err := VerifyCompleteContext(ctx, backupRoot, signed, key); err != nil { return Report{}, fmt.Errorf("backup changed during restore: %w", err) }
  // Flush created directories before publishing the completed tree.
  dirs := map[string]bool{stage:true}
  for _, dir := range signed.Manifest.Directories { dirs[filepath.Join(stage, filepath.FromSlash(dir))] = true }
@@ -100,7 +100,7 @@ func RestoreColdContext(ctx context.Context, backupRoot, target string, signed S
  // Re-read the staged tree using the hardened descriptor-relative verifier.
  // This detects corruption and unexpected mutation after each file was copied.
  // Staging must remain private and quiesced until publication.
- if _, err := VerifyComplete(stage, signed, key); err != nil { return Report{}, fmt.Errorf("staged restore verification: %w", err) }
+ if _, err := VerifyCompleteContext(ctx, stage, signed, key); err != nil { return Report{}, fmt.Errorf("staged restore verification: %w", err) }
  // A preflight check provides a useful error, but only the atomic Linux
  // no-replace publish prevents replacement by a concurrent creator.
  if _, err := os.Lstat(absTarget); err == nil { return Report{}, errors.New("restore target appeared during staging") } else if !os.IsNotExist(err) { return Report{}, err }
