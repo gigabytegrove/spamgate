@@ -31,5 +31,9 @@ func openVerifiedPath(root, relative string) (*os.File, error) {
   syscall.Close(fd)
   return nil, fmt.Errorf("backup entry %q is not a regular file", relative)
  }
+ if st.Nlink != 1 {
+  syscall.Close(fd)
+  return nil, fmt.Errorf("backup entry %q has multiple hard links", relative)
+ }
  return os.NewFile(uintptr(fd), relative), nil
 }
