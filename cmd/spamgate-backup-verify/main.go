@@ -3,6 +3,7 @@
 package main
 
 import (
+ "context"
  "errors"
  "flag"
  "fmt"
@@ -10,12 +11,20 @@ import (
  "os"
  "path/filepath"
  "runtime"
+ "os/signal"
+ "syscall"
  "strings"
 
  "github.com/gigabytegrove/spamgate/internal/backupverify"
 )
 
 func run(args []string, stdout io.Writer) error {
+ return runContext(context.Background(), args, stdout)
+}
+
+func runContext(ctx context.Context, args []string, stdout io.Writer) error {
+ if ctx == nil { return errors.New("operation context required") }
+ if err := ctx.Err(); err != nil { return err }
  fs := flag.NewFlagSet("spamgate-backup-verify", flag.ContinueOnError)
  fs.SetOutput(io.Discard)
  operation := fs.String("operation", "verify", "verify or restore")
@@ -54,7 +63,7 @@ func run(args []string, stdout io.Writer) error {
  if *operation == "verify" {
   report, err = backupverify.VerifyComplete(*root, signed, key)
  } else {
-  report, err = backupverify.RestoreCold(*root, *target, signed, key)
+  report, err = backupverify.RestoreColdContext(ctx, *root, *target, signed, key)
  }
  if err != nil { return err }
  _, err = fmt.Fprintf(stdout, "%s successful: %d files, %d bytes; no mail services changed\n", *operation, report.Files, report.Bytes)
@@ -67,7 +76,9 @@ func containsPath(parent, child string) bool {
 }
 
 func main() {
- if err := run(os.Args[1:], os.Stdout); err != nil {
+ ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+ defer stop()
+ if err := runContext(ctx, os.Args[1:], os.Stdout); err != nil {
   fmt.Fprintln(os.Stderr, "spamgate-backup-verify:", err)
   os.Exit(1)
  }
