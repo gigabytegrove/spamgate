@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux && (amd64 || arm64)
 
 package backupverify
 
@@ -19,7 +19,7 @@ func publishRestore(stage, target string) error {
  if err != nil { return err }
  const renameNoReplace = 1
  const atFDCWD = ^uintptr(99) // -100 as an unsigned machine word
- _, _, errno := syscall.RawSyscall6(syscall.SYS_RENAMEAT2,
+ _, _, errno := syscall.RawSyscall6(renameat2Syscall,
   atFDCWD, uintptr(unsafe.Pointer(from)), atFDCWD,
   uintptr(unsafe.Pointer(to)), renameNoReplace, 0)
  if errno != 0 { return fmt.Errorf("atomic restore publish %q: %w", target, errno) }
