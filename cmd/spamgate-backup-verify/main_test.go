@@ -24,6 +24,7 @@ func TestNativeBackupCLI(t *testing.T) {
  signed,err:=backupverify.CreateSignedInventory(backup,key)
  if err!=nil{t.Fatal(err)}
 
+ manifest:=filepath.Join(base,"manifest.json")
  if err:=writeManifest(manifest,signed);err!=nil{t.Fatal(err)}
  args:=[]string{"-backup",backup,"-manifest",manifest,"-key-file",keyFile,"-active-data",active}
  var out bytes.Buffer
