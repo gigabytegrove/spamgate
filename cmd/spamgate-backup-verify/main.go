@@ -46,11 +46,12 @@ func runContext(ctx context.Context, args []string, stdout io.Writer) error {
  if *operation == "restore" {
   absTarget, err := resolveRestoreTarget(*target)
   if err != nil { return err }
-  absActive, err := filepath.EvalSymlinks(*active)
+  absActive, err := resolveRestoreTarget(*active)
   if err != nil { return err }
-  absActive, err = filepath.Abs(absActive)
+  permanent, err := resolveRestoreTarget("/opt/spamgate/data")
   if err != nil { return err }
-  if absTarget == absActive || containsPath(absTarget, absActive) || containsPath(absActive, absTarget) ||
+  if absTarget == permanent || containsPath(absTarget, permanent) || containsPath(permanent, absTarget) ||
+   absTarget == absActive || containsPath(absTarget, absActive) || containsPath(absActive, absTarget) ||
    overlapsPermanentData(absTarget) {
    return errors.New("restore target overlaps active data")
   }
