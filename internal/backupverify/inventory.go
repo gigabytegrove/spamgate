@@ -50,9 +50,13 @@ func BuildInventory(root string) (Manifest, error) {
    f.Close()
    return fmt.Errorf("invalid backup file %q", relative)
   }
+  before := st.ModTime()
   h := sha256.New()
   n, readErr := io.Copy(h, io.LimitReader(f, st.Size()+1))
+  after, statErr := f.Stat()
   closeErr := f.Close()
+  if statErr != nil { return statErr }
+  if !os.SameFile(st, after) || st.Size() != after.Size() || !before.Equal(after.ModTime()) { return fmt.Errorf("backup file changed during inventory: %q", relative) }
   if readErr != nil { return readErr }
   if closeErr != nil { return closeErr }
   if n != st.Size() { return fmt.Errorf("backup file changed while reading: %q", relative) }
