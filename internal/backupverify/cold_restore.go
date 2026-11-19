@@ -76,7 +76,7 @@ func RestoreCold(backupRoot, target string, signed SignedManifest, key []byte) (
  // Re-read the staged tree using the hardened descriptor-relative verifier.
  // This detects corruption and unexpected mutation after each file was copied.
  // Staging must remain private and quiesced until publication.
- if _, err := Verify(stage, signed.Manifest); err != nil { return Report{}, fmt.Errorf("staged restore verification: %w", err) }
+ if _, err := VerifyComplete(stage, signed, key); err != nil { return Report{}, fmt.Errorf("staged restore verification: %w", err) }
  // A preflight check provides a useful error, but only the atomic Linux
  // no-replace publish prevents replacement by a concurrent creator.
  if _, err := os.Lstat(absTarget); err == nil { return Report{}, errors.New("restore target appeared during staging") } else if !os.IsNotExist(err) { return Report{}, err }
