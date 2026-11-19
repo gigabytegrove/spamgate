@@ -1,6 +1,7 @@
 package backupverify
 
 import (
+ "context"
  "crypto/sha256"
  "encoding/hex"
  "errors"
@@ -15,6 +16,14 @@ import (
 // The target MUST NOT exist. It never replaces live data, invokes Postfix,
 // or changes systemd services. Call only while the backup is immutable.
 func RestoreCold(backupRoot, target string, signed SignedManifest, key []byte) (Report, error) {
+ return RestoreColdContext(context.Background(), backupRoot, target, signed, key)
+}
+
+// RestoreColdContext permits an operator to cancel a long-running cold restore
+// without publishing a partial tree. Cancellation is checked during copying.
+func RestoreColdContext(ctx context.Context, backupRoot, target string, signed SignedManifest, key []byte) (Report, error) {
+ if ctx == nil { return Report{}, errors.New("restore context required") }
+ if err := ctx.Err(); err != nil { return Report{}, err }
  var report Report
  if err := AuthenticateManifest(signed, key); err != nil { return report, err }
  if target == "" || backupRoot == "" { return report, errors.New("backup and target required") }
@@ -41,6 +50,7 @@ func RestoreCold(backupRoot, target string, signed SignedManifest, key []byte) (
  if err != nil { return report, err }
  defer os.RemoveAll(stage)
  for _, e := range signed.Manifest.Files {
+  if err := ctx.Err(); err != nil { return Report{}, err }
   source, err := openVerifiedPath(backupRoot, e.Path)
   if err != nil { return Report{}, err }
   dest := filepath.Join(stage, filepath.FromSlash(e.Path))
@@ -54,17 +64,19 @@ func RestoreCold(backupRoot, target string, signed SignedManifest, key []byte) (
    return Report{}, fmt.Errorf("restore source size or type changed for %q", e.Path)
   }
   h := sha256.New()
-  n, copyErr := io.Copy(io.MultiWriter(out,h), io.LimitReader(source,e.Size+1))
+  n, copyErr := io.Copy(io.MultiWriter(out,h), &restoreContextReader{ctx:ctx, reader:io.LimitReader(source,e.Size+1)})
   after, afterErr := source.Stat()
   syncErr := out.Sync()
   closeErr := out.Close()
   sourceErr := source.Close()
+  if err := ctx.Err(); err != nil { return Report{}, err }
   if copyErr != nil || afterErr != nil || syncErr != nil || closeErr != nil || sourceErr != nil || n != e.Size || hex.EncodeToString(h.Sum(nil)) != e.SHA256 || !stableCopySource(before, after) {
    return Report{}, fmt.Errorf("restore copy failed integrity check for %q", e.Path)
   }
   report.Files++
   report.Bytes += n
  }
+ if err := ctx.Err(); err != nil { return Report{}, err }
  // Detect unexpected files or concurrent backup mutation before publishing.
  if _, err := VerifyComplete(backupRoot, signed, key); err != nil { return Report{}, fmt.Errorf("backup changed during restore: %w", err) }
  // Flush created directories before publishing the completed tree.
@@ -87,6 +99,7 @@ func RestoreCold(backupRoot, target string, signed SignedManifest, key []byte) (
  // A preflight check provides a useful error, but only the atomic Linux
  // no-replace publish prevents replacement by a concurrent creator.
  if _, err := os.Lstat(absTarget); err == nil { return Report{}, errors.New("restore target appeared during staging") } else if !os.IsNotExist(err) { return Report{}, err }
+ if err := ctx.Err(); err != nil { return Report{}, err }
  if err := publishRestore(stage,absTarget); err != nil { return Report{}, err }
  if f,err:=os.Open(parent);err==nil { _=f.Sync(); _=f.Close() }
  return report,nil
