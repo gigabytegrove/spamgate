@@ -47,12 +47,19 @@ func RestoreCold(backupRoot, target string, signed SignedManifest, key []byte) (
   if err := os.MkdirAll(filepath.Dir(dest), 0700); err != nil { source.Close(); return Report{}, err }
   out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
   if err != nil { source.Close(); return Report{}, err }
+  before, statErr := source.Stat()
+  if statErr != nil { _ = out.Close(); _ = source.Close(); return Report{}, statErr }
+  if !before.Mode().IsRegular() || before.Size() != e.Size {
+   _ = out.Close(); _ = source.Close()
+   return Report{}, fmt.Errorf("restore source size or type changed for %q", e.Path)
+  }
   h := sha256.New()
   n, copyErr := io.Copy(io.MultiWriter(out,h), io.LimitReader(source,e.Size+1))
+  after, afterErr := source.Stat()
   syncErr := out.Sync()
   closeErr := out.Close()
   sourceErr := source.Close()
-  if copyErr != nil || syncErr != nil || closeErr != nil || sourceErr != nil || n != e.Size || hex.EncodeToString(h.Sum(nil)) != e.SHA256 {
+  if copyErr != nil || afterErr != nil || syncErr != nil || closeErr != nil || sourceErr != nil || n != e.Size || hex.EncodeToString(h.Sum(nil)) != e.SHA256 || !stableCopySource(before, after) {
    return Report{}, fmt.Errorf("restore copy failed integrity check for %q", e.Path)
   }
   report.Files++
