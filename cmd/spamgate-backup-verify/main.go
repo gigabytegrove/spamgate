@@ -65,7 +65,7 @@ func runContext(ctx context.Context, args []string, stdout io.Writer) error {
  if err != nil { return err }
  var report backupverify.Report
  if *operation == "verify" {
-  report, err = backupverify.VerifyComplete(*root, signed, key)
+  report, err = backupverify.VerifyCompleteContext(ctx, *root, signed, key)
  } else {
   report, err = backupverify.RestoreColdContext(ctx, *root, *target, signed, key)
  }
