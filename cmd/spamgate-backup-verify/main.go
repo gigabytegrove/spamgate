@@ -43,16 +43,15 @@ func runContext(ctx context.Context, args []string, stdout io.Writer) error {
  if err := backupverify.CheckBackupBoundary(*active, *root); err != nil { return err }
  // The operator-supplied active-data path is an additional guard, never a
  // way to disable protection of the immutable native installation path.
- const permanentData = "/opt/spamgate/data"
  if *operation == "restore" {
-  absTarget, err := filepath.Abs(*target)
+  absTarget, err := resolveRestoreTarget(*target)
   if err != nil { return err }
   absActive, err := filepath.EvalSymlinks(*active)
   if err != nil { return err }
   absActive, err = filepath.Abs(absActive)
   if err != nil { return err }
   if absTarget == absActive || containsPath(absTarget, absActive) || containsPath(absActive, absTarget) ||
-   absTarget == permanentData || containsPath(absTarget, permanentData) || containsPath(permanentData, absTarget) {
+   overlapsPermanentData(absTarget) {
    return errors.New("restore target overlaps active data")
   }
  }
@@ -72,6 +71,35 @@ func runContext(ctx context.Context, args []string, stdout io.Writer) error {
  if err != nil { return err }
  _, err = fmt.Fprintf(stdout, "%s successful: %d files, %d bytes; no mail services changed\n", *operation, report.Files, report.Bytes)
  return err
+}
+
+// resolveRestoreTarget resolves existing parent symlinks even when the final
+// destination does not exist. A missing final component must not bypass the
+// active-data boundary through a symlinked ancestor.
+func resolveRestoreTarget(target string) (string, error) {
+ abs, err := filepath.Abs(target)
+ if err != nil { return "", err }
+ abs = filepath.Clean(abs)
+ parent := abs
+ var missing []string
+ for {
+  _, err := os.Lstat(parent)
+  if err == nil { break }
+  if !errors.Is(err, os.ErrNotExist) { return "", err }
+  next := filepath.Dir(parent)
+  if next == parent { return "", errors.New("no existing restore ancestor") }
+  missing = append(missing, filepath.Base(parent))
+  parent = next
+ }
+ resolved, err := filepath.EvalSymlinks(parent)
+ if err != nil { return "", err }
+ for i := len(missing)-1; i >= 0; i-- { resolved = filepath.Join(resolved, missing[i]) }
+ return filepath.Clean(resolved), nil
+}
+
+func overlapsPermanentData(target string) bool {
+ const permanentData = "/opt/spamgate/data"
+ return target == permanentData || containsPath(target, permanentData) || containsPath(permanentData, target)
 }
 
 func containsPath(parent, child string) bool {
