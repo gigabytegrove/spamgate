@@ -31,7 +31,15 @@ func BuildInventory(root string) (Manifest, error) {
   if err != nil { return err }
   relative = filepath.ToSlash(relative)
   if entry.Type()&os.ModeSymlink != 0 { return fmt.Errorf("backup symlink refused: %q", relative) }
-  if entry.IsDir() { return nil }
+  if entry.IsDir() {
+   // Empty directories are not represented by manifest v1 and would be
+   // silently lost during restore. Refuse them instead of claiming a
+   // complete, lossless inventory.
+   children, err := os.ReadDir(name)
+   if err != nil { return err }
+   if len(children) == 0 { return fmt.Errorf("unrepresentable empty backup directory %q", relative) }
+   return nil
+  }
   if !entry.Type().IsRegular() {
    // Some filesystems return an unknown type; validate using Lstat.
    st, err := os.Lstat(name)
