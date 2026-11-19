@@ -4,6 +4,7 @@ import (
  "bytes"
  "os"
  "path/filepath"
+ "strings"
  "testing"
 )
 
@@ -18,7 +19,7 @@ func TestPermanentDataRestoreBoundaryCannotBeOverridden(t *testing.T) {
   t.Run(target, func(t *testing.T) {
    var output bytes.Buffer
    err := run([]string{"-operation","restore","-backup",backup,"-manifest",filepath.Join(base,"nonexistent-manifest"),"-key-file",filepath.Join(base,"nonexistent-key"),"-active-data",active,"-target",target}, &output)
-   if err == nil { t.Fatal("unsafe restore destination accepted") }
+   if err == nil || !strings.Contains(err.Error(), "overlaps active data") { t.Fatalf("expected active data boundary refusal, got %v", err) }
    if output.Len() != 0 { t.Fatalf("unexpected success output: %q",output.String()) }
   })
  }
