@@ -35,6 +35,13 @@ func TestPhishingDestinationHostClassification(t *testing.T) {
         {"8.8.8.8", true}, {"2606:4700:4700::1111", true},
         {"127.0.0.1", false}, {"10.0.0.1", false},
         {"fe80::1", false}, {"fd00::1", false},
+        {"::ffff:192.168.1.7", false},
+        {"::ffff:127.0.0.1", false},
+        {"::ffff:169.254.1.2", false},
+        {"::ffff:8.8.8.8", true},
+        {"fe80::1%eth0", false},
+        {"ff02::1", false},
+        {"::", false},
         {"bank.example.com", true},
     } {
         if got := phishingPublicDestinationHost(tc.host); got != tc.allowed {
