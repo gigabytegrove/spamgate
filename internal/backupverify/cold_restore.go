@@ -73,10 +73,10 @@ func RestoreCold(backupRoot, target string, signed SignedManifest, key []byte) (
   if err != nil { return Report{}, err }
   if closeErr != nil { return Report{}, closeErr }
  }
- // Rename never intentionally overwrites a target. A concurrent actor creating
- // target is a remaining race; operators must isolate the destination parent.
+ // A preflight check provides a useful error, but only the atomic Linux
+ // no-replace publish prevents replacement by a concurrent creator.
  if _, err := os.Lstat(absTarget); err == nil { return Report{}, errors.New("restore target appeared during staging") } else if !os.IsNotExist(err) { return Report{}, err }
- if err := os.Rename(stage,absTarget); err != nil { return Report{}, err }
+ if err := publishRestore(stage,absTarget); err != nil { return Report{}, err }
  if f,err:=os.Open(parent);err==nil { _=f.Sync(); _=f.Close() }
  return report,nil
 }
