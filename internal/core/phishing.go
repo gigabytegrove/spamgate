@@ -255,7 +255,19 @@ func detectPhishingLinks(raw []byte) []string {
 // link-local literals are excluded to avoid scoring intranet links.
 func phishingPublicDestinationHost(host string) bool {
     if address, err := netip.ParseAddr(host); err == nil {
-        return address.IsGlobalUnicast() && !address.IsPrivate() && !address.IsLoopback() && !address.IsLinkLocalUnicast()
+        // IPv4-mapped IPv6 literals inherit the underlying IPv4 address policy.
+        // Reject scoped literals and non-public ranges before considering a
+        // numeric browser destination. This is not a reachability assertion.
+        if address.Zone() != "" {
+            return false
+        }
+        address = address.Unmap()
+        return address.IsGlobalUnicast() &&
+            !address.IsPrivate() &&
+            !address.IsLoopback() &&
+            !address.IsLinkLocalUnicast() &&
+            !address.IsLinkLocalMulticast() &&
+            !address.IsMulticast()
     }
     return ValidReputationDomain(host)
 }
