@@ -8,6 +8,7 @@ import (
     "mime"
     "mime/multipart"
     "net/mail"
+    "net/netip"
     "net/url"
     "strings"
 )
@@ -79,7 +80,7 @@ func phishingVisibleLinksWithCoverage(body string, coverage *mimeCoverage) []str
         dest, err := url.Parse(href)
         if err != nil || (!strings.EqualFold(dest.Scheme, "https") && !strings.EqualFold(dest.Scheme, "http")) { continue }
         destHost := strings.ToLower(strings.TrimSuffix(dest.Hostname(), "."))
-        if !ValidReputationDomain(destHost) { continue }
+        if !phishingPublicDestinationHost(destHost) { continue }
         shown := phishingVisibleURLText(claim.text)
         if len(shown) > 256 { continue }
         shownLower := strings.ToLower(shown)
@@ -246,4 +247,15 @@ func detectPhishingLinksWithCoverage(raw []byte) ([]string, mimeCoverage) {
 func detectPhishingLinks(raw []byte) []string {
     found, _ := detectPhishingLinksWithCoverage(raw)
     return found
+}
+
+// An externally routable IP literal is a valid browser destination even though
+// it is not a reputation domain. A claimed brand URL linking to a public IP
+// must not bypass the visible-link mismatch check. Internal, loopback and
+// link-local literals are excluded to avoid scoring intranet links.
+func phishingPublicDestinationHost(host string) bool {
+    if address, err := netip.ParseAddr(host); err == nil {
+        return address.IsGlobalUnicast() && !address.IsPrivate() && !address.IsLoopback() && !address.IsLinkLocalUnicast()
+    }
+    return ValidReputationDomain(host)
 }
