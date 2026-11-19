@@ -77,9 +77,13 @@ func Verify(root string,m Manifest)(Report,error) {
    f.Close()
    return report,fmt.Errorf("type or size mismatch %q",e.Path)
   }
+  before:=st.ModTime()
   h:=sha256.New()
   n,readErr:=io.Copy(h,io.LimitReader(f,e.Size+1))
+  after,statErr:=f.Stat()
   closeErr:=f.Close()
+  if statErr!=nil{return report,statErr}
+  if !os.SameFile(st,after) || st.Size()!=after.Size() || !before.Equal(after.ModTime()) {return report,fmt.Errorf("backup file changed during verification %q",e.Path)}
   if readErr!=nil{return report,readErr}
   if closeErr!=nil{return report,closeErr}
   if n!=e.Size || hex.EncodeToString(h.Sum(nil))!=e.SHA256 {return report,fmt.Errorf("checksum mismatch %q",e.Path)}
