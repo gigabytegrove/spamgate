@@ -295,5 +295,11 @@ func phishingPublicDestinationHost(host string) bool {
             !address.IsMulticast() &&
             !phishingExcludedSpecialIP(address)
     }
+    // Browsers interpret single-number, hexadecimal, octal and shortened
+    // numeric hosts as IPv4. Apply the same public/special-use policy as
+    // canonical IP literals, rather than treating them as DNS names.
+    if normalized, ok := phishingBrowserIPv4(host); ok {
+        return phishingPublicDestinationHost(normalized.String())
+    }
     return ValidReputationDomain(host)
 }
