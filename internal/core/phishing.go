@@ -301,5 +301,10 @@ func phishingPublicDestinationHost(host string) bool {
     if normalized, ok := phishingBrowserIPv4(host); ok {
         return phishingPublicDestinationHost(normalized.String())
     }
+    // A malformed browser-numeric address is not a DNS reputation domain.
+    // Otherwise legacy numeric spellings can be inconsistently classified.
+    if phishingNumericHostCandidate(host) {
+        return false
+    }
     return ValidReputationDomain(host)
 }
