@@ -41,6 +41,10 @@ func runContext(ctx context.Context, args []string, stdout io.Writer) error {
  if *operation == "verify" && *target != "" { return errors.New("target is only valid for restore") }
  if runtime.GOOS != "linux" && *operation == "restore" { return errors.New("cold restore requires Linux") }
  if err := backupverify.CheckBackupBoundary(*active, *root); err != nil { return err }
+ // The operator-supplied active-data path is an additional guard, never a
+ // way to disable protection of the immutable native installation path.
+ const permanentData = "/opt/spamgate/data"
+ if err := backupverify.CheckBackupBoundary(permanentData, *root); err != nil { return err }
  if *operation == "restore" {
   absTarget, err := filepath.Abs(*target)
   if err != nil { return err }
@@ -48,7 +52,8 @@ func runContext(ctx context.Context, args []string, stdout io.Writer) error {
   if err != nil { return err }
   absActive, err = filepath.Abs(absActive)
   if err != nil { return err }
-  if absTarget == absActive || containsPath(absTarget, absActive) || containsPath(absActive, absTarget) {
+  if absTarget == absActive || containsPath(absTarget, absActive) || containsPath(absActive, absTarget) ||
+   absTarget == permanentData || containsPath(absTarget, permanentData) || containsPath(permanentData, absTarget) {
    return errors.New("restore target overlaps active data")
   }
  }
