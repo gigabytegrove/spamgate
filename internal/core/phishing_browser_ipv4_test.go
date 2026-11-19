@@ -59,3 +59,48 @@ func TestPhishingBrowserNumericEndToEnd(t *testing.T) {
   }
  }
 }
+
+func TestPhishingMalformedNumericHostNeverFallsThrough(t *testing.T) {
+	for _, host := range []string{
+		"08.8.8.8", "09.0.0.1", "0x", "0X", "4294967296",
+		"256.1.1.1", "1.2.3.65536", "1.2.3.4.5",
+		"0008.8.8.8", "0x100000000", "0xGG",
+	} {
+		t.Run(host, func(t *testing.T) {
+			if phishingPublicDestinationHost(host) {
+				t.Fatalf("malformed numeric host %q accepted as external destination", host)
+			}
+		})
+	}
+}
+
+func TestPhishingNumericCandidateBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		host string
+		want bool
+	}{
+		{"08.8.8.8", true},
+		{"0x", true},
+		{"0xFF.0X10", true},
+		{"4294967296", true},
+		{"example.com", false},
+		{"mail123.example.com", false},
+		{"example.123", false},
+		{"0xGG", false},
+		{"", false},
+	} {
+		if got := phishingNumericHostCandidate(tc.host); got != tc.want {
+			t.Errorf("%q: got %v, want %v", tc.host, got, tc.want)
+		}
+	}
+}
+
+func TestPhishingMalformedNumericHTMLNoFinding(t *testing.T) {
+	for _, host := range []string{"08.8.8.8", "4294967296", "256.1.1.1"} {
+		raw := phishingFixture("text/html", "", "", `<a href="https://`+host+`/login">https://bank.example.com/login</a>`)
+		got, coverage := detectPhishingLinksWithCoverage(raw)
+		if coverage.Incomplete || len(got) != 0 {
+			t.Errorf("host %q: findings=%v coverage=%+v", host, got, coverage)
+		}
+	}
+}
