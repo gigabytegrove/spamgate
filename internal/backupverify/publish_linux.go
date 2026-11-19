@@ -4,9 +4,9 @@ package backupverify
 
 import (
  "fmt"
- "os"
  "syscall"
  "unsafe"
+ "runtime"
 )
 
 // publishRestore performs an atomic no-replace directory rename on Linux.
@@ -23,7 +23,8 @@ func publishRestore(stage, target string) error {
   atFDCWD, uintptr(unsafe.Pointer(from)), atFDCWD,
   uintptr(unsafe.Pointer(to)), renameNoReplace, 0)
  if errno != 0 { return fmt.Errorf("atomic restore publish %q: %w", target, errno) }
- // Keep pointers alive across the raw system call.
- _ = os.Getpid
+ // Keep the Go-managed pathname buffers live through the syscall.
+ runtime.KeepAlive(from)
+ runtime.KeepAlive(to)
  return nil
 }
