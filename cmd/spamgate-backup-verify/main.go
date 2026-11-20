@@ -45,6 +45,7 @@ func runContext(ctx context.Context, args []string, stdout io.Writer) error {
  // The operator-supplied active-data path is an additional guard, never a
  // way to disable protection of the immutable native installation path.
  if *operation == "restore" {
+  if err := checkRestoreSourceBoundary(*root, *target); err != nil { return err }
   absTarget, err := resolveRestoreTarget(*target)
   if err != nil { return err }
   absActive, err := resolveRestoreTarget(*active)
