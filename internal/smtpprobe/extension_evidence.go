@@ -32,7 +32,11 @@ func inspectExtensions(lines []string) ExtensionEvidence {
  for _, line := range lines[1:] {
   fields := strings.Fields(line)
   if len(fields) == 0 { continue }
-  keyword := strings.ToUpper(fields[0])
+  // Tokenize the ASCII keyword before validating the entire advertisement.
+  // strings.Fields alone would silently ignore a trailing NUL or Unicode
+  // zero-width character, hiding a malformed known extension from diagnostics.
+  keyword := smtpExtensionLeadingKeyword(line)
+  if keyword == "" { continue }
   if !known[keyword] { continue }
   counts[keyword]++
   if len(fields) != 1 || line != fields[0] || !smtpExtensionASCIIKeyword(line) { invalid[keyword] = true }
@@ -97,6 +101,20 @@ func extensionWarning(warnings []string, name string) bool {
 
 // smtpExtensionASCIIKeyword refuses control characters and non-ASCII lookalikes
 // even if a future caller supplies untrusted, pre-split EHLO lines.
+// smtpExtensionLeadingKeyword extracts only the initial RFC-style ASCII token.
+// Leading whitespace is skipped solely to identify a malformed known keyword;
+// the original line must still pass strict validation before being trusted.
+func smtpExtensionLeadingKeyword(line string) string {
+ line = strings.TrimLeft(line, " \\t")
+ end := 0
+ for end < len(line) {
+  b := line[end]
+  if !((b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') || b == '-') { break }
+  end++
+ }
+ return strings.ToUpper(line[:end])
+}
+
 func smtpExtensionASCIIKeyword(line string) bool {
  if line == "" { return false }
  for i := 0; i < len(line); i++ {
