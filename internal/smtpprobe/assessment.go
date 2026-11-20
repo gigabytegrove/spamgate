@@ -57,6 +57,7 @@ func Assess(r Result) []Finding {
   findings = append(findings, Finding{Code:"AUTH_EVIDENCE_UNTRUSTWORTHY",Severity:"warning",Message:"Initial EHLO AUTH evidence is malformed or ambiguous; authentication availability cannot be inferred"})
  }
  findings = append(findings, extensionEvidenceFindings(ExtensionEvidence{},r.Extensions,false)...)
+ findings = append(findings, binaryMIMEConsistencyFindings(r.Extensions, "EHLO")...)
  findings = append(findings, credentialExposureFindings(r)...)
  if len(r.AuthMechanisms) > 0 && !ambiguousAUTH(r.EHLOWarnings) {
   findings = append(findings, Finding{
@@ -94,6 +95,7 @@ func Assess(r Result) []Finding {
  }
  if r.PostTLSEHLOCode == 250 {
   findings = append(findings, extensionEvidenceFindings(r.Extensions,r.PostTLSExtensions,true)...)
+  findings = append(findings, binaryMIMEConsistencyFindings(r.PostTLSExtensions, "POST_TLS_EHLO")...)
   // Capability disappearance is observable even when neither side supplies
   // a numeric SIZE limit. Keep this separate from numeric policy drift.
   if r.SizeAdvertised && !r.PostTLSSizeAdvertised && r.SizeWarning == "" && r.PostTLSSizeWarning == "" {
