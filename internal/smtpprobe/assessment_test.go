@@ -23,7 +23,7 @@ func TestAssessTLSCertificateExpiry(t *testing.T) {
   findings:=Assess(r)
   got:=findingCodes(findings)["TLS_CERTIFICATE_EXPIRING"]
   if got!=tc.warn {t.Errorf("days=%d warning=%v want=%v",tc.days,got,tc.warn)}
-  if got && !strings.Contains(findings[0].Message,"day(s)") {t.Fatalf("unhelpful expiry finding: %+v",findings)}
+  if got && !containsFindingMessage(findings,"TLS_CERTIFICATE_EXPIRING","day(s)") {t.Fatalf("unhelpful expiry finding: %+v",findings)}
  }
 }
 func TestAssessAvoidsUnsupportedClaims(t *testing.T) {
@@ -32,7 +32,8 @@ func TestAssessAvoidsUnsupportedClaims(t *testing.T) {
   {EHLOCode:250,StartTLSAdvertised:true,StartTLSVerified:true},
   {EHLOCode:250,StartTLSAdvertised:true,StartTLSVerified:false},
  } {
-  if findings:=Assess(r);len(findings)!=0 {t.Errorf("unexpected findings for %+v: %+v",r,findings)}
+  if findings:=Assess(r);len(findings)!=0 && !r.StartTLSVerified {t.Errorf("unexpected findings for %+v: %+v",r,findings)}
+  if r.StartTLSVerified && !findingCodes(Assess(r))["TLS_VERIFICATION_EVIDENCE_MISSING"] {t.Errorf("verified TLS without chain must report missing evidence: %+v",r)}
  }
 }
 func TestProbeIncludesSecurityFindings(t *testing.T) {
@@ -77,4 +78,9 @@ func TestAssessNegotiatedTLSVersion(t *testing.T) {
   got:=findingCodes(Assess(r))["TLS_LEGACY_VERSION_NEGOTIATED"]
   if got!=tc.want {t.Errorf("version=%q verified=%v got=%v want=%v",tc.version,tc.verified,got,tc.want)}
  }
+}
+
+func containsFindingMessage(findings []Finding, code, fragment string) bool {
+ for _, finding := range findings { if finding.Code == code && strings.Contains(finding.Message,fragment) { return true } }
+ return false
 }
