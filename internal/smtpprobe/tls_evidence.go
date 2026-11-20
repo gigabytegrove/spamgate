@@ -18,6 +18,9 @@ func tlsEvidenceFindings(r Result) []Finding {
  } else {
   // The standard library names these suites, including TLS 1.3 suites.
   // Report the observed negotiation without claiming vulnerability scanning.
+  if !cipherSuiteKnown(r.TLSCipherSuite) {
+   findings=append(findings,Finding{Code:"TLS_CIPHER_EVIDENCE_UNKNOWN",Severity:"warning",Message:"Recorded TLS cipher suite is not recognized by the local TLS implementation; inspect diagnostic integrity"})
+  }
   if strings.Contains(r.TLSCipherSuite,"_3DES_") || strings.Contains(r.TLSCipherSuite,"_RC4_") || strings.Contains(r.TLSCipherSuite,"_CBC_") {
    findings=append(findings,Finding{Code:"TLS_LEGACY_CIPHER_NEGOTIATED",Severity:"warning",Message:"SMTP TLS negotiated a legacy cipher suite; inspect server TLS policy"})
   }
