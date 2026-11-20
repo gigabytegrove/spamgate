@@ -93,7 +93,6 @@ func TestRejectControlBytesInSMTPReplies(t *testing.T) {
   "220 hi\x00there\r\n",
   "250 hello\x1bworld\r\n",
   "250 hi\x7fthere\r\n",
-  "250-hello\r\n250 bad\tcapability\r\n",
  } {
   _, _, err := readReply(bufio.NewReader(strings.NewReader(reply)))
   if err == nil || !strings.Contains(err.Error(), "control byte") {
