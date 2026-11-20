@@ -28,6 +28,7 @@ func runContext(ctx context.Context, args []string, stdout io.Writer) error {
  fs := flag.NewFlagSet("spamgate-backup-verify", flag.ContinueOnError)
  fs.SetOutput(io.Discard)
  operation := fs.String("operation", "verify", "verify or restore")
+ output := fs.String("output", "text", "text or json result format")
  root := fs.String("backup", "", "immutable backup directory")
  manifestPath := fs.String("manifest", "", "authenticated manifest JSON")
  keyPath := fs.String("key-file", "", "private raw authentication key file")
@@ -35,6 +36,7 @@ func runContext(ctx context.Context, args []string, stdout io.Writer) error {
  active := fs.String("active-data", "/opt/spamgate/data", "active data directory to protect")
  if err := fs.Parse(args); err != nil { return err }
  if len(fs.Args()) != 0 { return errors.New("unexpected positional arguments") }
+ if *output != "text" && *output != "json" { return errors.New("output must be text or json") }
  if *operation != "verify" && *operation != "restore" { return errors.New("operation must be verify or restore") }
  if *root == "" || *manifestPath == "" || *keyPath == "" { return errors.New("backup, manifest and key-file are required") }
  if *operation == "restore" && *target == "" { return errors.New("restore target required") }
@@ -80,8 +82,7 @@ func runContext(ctx context.Context, args []string, stdout io.Writer) error {
   report, err = backupverify.RestoreColdContext(ctx, *root, *target, signed, key)
  }
  if err != nil { return err }
- _, err = fmt.Fprintf(stdout, "%s successful: %d files, %d bytes; no mail services changed\n", *operation, report.Files, report.Bytes)
- return err
+ return writeBackupResult(stdout, *output, *operation, int64(report.Files), int64(report.Bytes))
 }
 
 // resolveRestoreTarget resolves existing parent symlinks even when the final
