@@ -21,7 +21,9 @@ type Result struct {
  PostTLSEHLORoundTripMillis int64 `json:"post_tls_ehlo_round_trip_ms,omitempty"`
  TLSHandshakeMillis int64 `json:"tls_handshake_ms,omitempty"`
  BannerCode int `json:"banner_code"`
+ BannerEnhancedCode string `json:"banner_enhanced_code,omitempty"`
  EHLOCode int `json:"ehlo_code"`
+ EHLOEnhancedCode string `json:"ehlo_enhanced_code,omitempty"`
  StartTLSAdvertised bool `json:"starttls_advertised"`
  SizeAdvertised bool `json:"size_advertised"`
  SizeLimitKnown bool `json:"size_limit_known"`
@@ -32,6 +34,7 @@ type Result struct {
  PostTLSSizeLimitBytes uint64 `json:"post_tls_size_limit_bytes"`
  PostTLSSizeWarning string `json:"post_tls_size_warning,omitempty"`
  StartTLSReplyCode int `json:"starttls_reply_code,omitempty"`
+ StartTLSEnhancedCode string `json:"starttls_enhanced_code,omitempty"`
  StartTLSVerified bool `json:"starttls_verified"`
  PostTLSStartTLSAdvertised bool `json:"post_tls_starttls_advertised"`
  TLSVersion string `json:"tls_version,omitempty"`
@@ -45,6 +48,7 @@ type Result struct {
  PostTLSExtensions ExtensionEvidence `json:"post_tls_extensions"`
  AuthMechanisms []string `json:"auth_mechanisms"`
  PostTLSEHLOCode int `json:"post_tls_ehlo_code,omitempty"`
+ PostTLSEHLOEnhancedCode string `json:"post_tls_ehlo_enhanced_code,omitempty"`
  PostTLSAuthMechanisms []string `json:"post_tls_auth_mechanisms"`
 }
 // CertificateInfo reports the verified peer leaf certificate without exposing its raw DER.
@@ -171,15 +175,17 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  reader:=bufio.NewReader(conn);writer:=bufio.NewWriter(conn)
  stage = "greeting"
  greetingStarted := time.Now()
- code,_,err:=readReply(reader);
+ code,greetingLines,err:=readReply(reader);
  result.GreetingDurationMillis = elapsedMillis(greetingStarted)
  if err!=nil{return result,err}
  result.BannerCode=code
+ result.BannerEnhancedCode=observedEnhancedStatus(code,greetingLines)
  if code!=220{return result,&SMTPReplyError{Stage:stage,Code:code}}
  stage = "ehlo"
  ehloStarted := time.Now()
  if err:=send(writer,"EHLO "+opt.HelloName);err!=nil{return result,err}
  code,lines,err:=readReply(reader);result.EHLORoundTripMillis=elapsedMillis(ehloStarted);if err!=nil{return result,err};result.EHLOCode=code
+ result.EHLOEnhancedCode=observedEnhancedStatus(code,lines)
  if code!=250{return result,&SMTPReplyError{Stage:stage,Code:code}}
  result.Extensions=inspectExtensions(lines)
  result.EHLOWarnings=capabilityWarnings(lines)
@@ -192,8 +198,9 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  stage = "starttls"
  startTLSStarted := time.Now()
  if err:=send(writer,"STARTTLS");err!=nil{return result,err}
- code,_,err=readReply(reader);result.StartTLSRoundTripMillis=elapsedMillis(startTLSStarted);if err!=nil{return result,err}
+ code,startTLSLines,err:=readReply(reader);result.StartTLSRoundTripMillis=elapsedMillis(startTLSStarted);if err!=nil{return result,err}
  result.StartTLSReplyCode=code
+ result.StartTLSEnhancedCode=observedEnhancedStatus(code,startTLSLines)
  if code!=220{return result,&SMTPReplyError{Stage:stage,Code:code}}
  stage = "tls_handshake"
  tlsConn:=tls.Client(conn,&tls.Config{ServerName:opt.ServerName,MinVersion:tls.VersionTLS12})
@@ -211,6 +218,7 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  if err:=send(writer,"EHLO "+opt.HelloName);err!=nil{return result,err}
  code,lines,err=readReply(reader);result.PostTLSEHLORoundTripMillis=elapsedMillis(postEHLOStarted);if err!=nil{return result,err}
  result.PostTLSEHLOCode=code
+ result.PostTLSEHLOEnhancedCode=observedEnhancedStatus(code,lines)
  if code!=250{return result,&SMTPReplyError{Stage:stage,Code:code}}
  result.PostTLSExtensions=inspectExtensions(lines)
  result.PostTLSEHLOWarnings=capabilityWarnings(lines)
