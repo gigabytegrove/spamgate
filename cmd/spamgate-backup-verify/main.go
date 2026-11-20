@@ -61,13 +61,13 @@ func runContext(ctx context.Context, args []string, stdout io.Writer) error {
    return errors.New("restore target overlaps active data")
   }
  }
- if err := checkNativeBackupPaths(*active, *root, *keyPath, *manifestPath); err != nil { return err }
  if *operation == "restore" {
-  // Credential overlap must win over generic "destination exists" errors:
-  // it is a stronger, security-relevant refusal and requires no manifest decode.
+  // Reject invalid restore destinations without requiring credentials to exist.
+  // Credential overlap remains a stronger refusal than destination existence.
   if err := checkRestoreCredentialBoundary(*target, *manifestPath, *keyPath); err != nil { return err }
   if err := checkColdRestoreDestination(*target); err != nil { return err }
  }
+ if err := checkNativeBackupPaths(*active, *root, *keyPath, *manifestPath); err != nil { return err }
  key, err := readPrivateFile(*keyPath, 4096, backupverify.MinAuthenticationKeyBytes)
  if err != nil { return fmt.Errorf("authentication key: %w", err) }
  defer func(){ for i := range key { key[i] = 0 } }()
