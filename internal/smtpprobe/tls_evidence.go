@@ -47,7 +47,7 @@ func tlsEvidenceFindings(r Result) []Finding {
   // use the recorded observation timestamp when it is available.
   if !r.TLSObservedAt.IsZero() && !cert.NotAfter.IsZero() {
    expired := !cert.NotAfter.After(r.TLSObservedAt)
-   if (expired && cert.DaysUntilExpiry >= 0) || (!expired && cert.DaysUntilExpiry < 0) {
+   if (expired && cert.DaysUntilExpiry >= 0) || (!expired && cert.DaysUntilExpiry == -1) {
     add("TLS_CERTIFICATE_EXPIRY_EVIDENCE_INCONSISTENT", "Certificate expiry count contradicts recorded TLS observation time; inspect diagnostic integrity")
    }
   }
