@@ -35,7 +35,7 @@ func inspectExtensions(lines []string) ExtensionEvidence {
   keyword := strings.ToUpper(fields[0])
   if !known[keyword] { continue }
   counts[keyword]++
-  if len(fields) != 1 || line != fields[0] { invalid[keyword] = true }
+  if len(fields) != 1 || line != fields[0] || !smtpExtensionASCIIKeyword(line) { invalid[keyword] = true }
  }
  for _, keyword := range []string{"PIPELINING", "8BITMIME", "SMTPUTF8", "CHUNKING", "BINARYMIME", "DSN", "REQUIRETLS", "ENHANCEDSTATUSCODES"} {
   if counts[keyword] > 1 { e.Warnings = append(e.Warnings, "DUPLICATE_"+keyword+"_EXTENSION") }
@@ -93,4 +93,17 @@ func extensionWarning(warnings []string, name string) bool {
   if warning == "DUPLICATE_"+name+"_EXTENSION" || warning == "MALFORMED_"+name+"_EXTENSION" { return true }
  }
  return false
+}
+
+// smtpExtensionASCIIKeyword refuses control characters and non-ASCII lookalikes
+// even if a future caller supplies untrusted, pre-split EHLO lines.
+func smtpExtensionASCIIKeyword(line string) bool {
+ if line == "" { return false }
+ for i := 0; i < len(line); i++ {
+  b := line[i]
+  if !((b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') || b == '-') {
+   return false
+  }
+ }
+ return true
 }
