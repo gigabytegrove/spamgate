@@ -40,6 +40,7 @@ func ambiguousAUTH(warnings []string) bool {
 
 func Assess(r Result) []Finding {
  findings := smtpReplyClassFindings(r)
+ findings = append(findings, enhancedReplyFindings(r)...)
  // A rejected SMTP greeting is a transport/protocol failure, not an EHLO
  // policy verdict. Report it even if no EHLO exchange could take place.
  if r.BannerCode != 0 && r.BannerCode != 220 {
