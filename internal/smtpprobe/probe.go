@@ -20,6 +20,7 @@ type Result struct {
  StartTLSRoundTripMillis int64 `json:"starttls_round_trip_ms,omitempty"`
  PostTLSEHLORoundTripMillis int64 `json:"post_tls_ehlo_round_trip_ms,omitempty"`
  TLSHandshakeMillis int64 `json:"tls_handshake_ms,omitempty"`
+ TLSObservedAt time.Time `json:"tls_observed_at,omitempty"`
  BannerCode int `json:"banner_code"`
  BannerEnhancedCode string `json:"banner_enhanced_code,omitempty"`
  EHLOCode int `json:"ehlo_code"`
@@ -222,10 +223,11 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  state:=tlsConn.ConnectionState();result.StartTLSVerified=true;result.TLSVersion=tls.VersionName(state.Version)
  result.TLSCipherSuite=tls.CipherSuiteName(state.CipherSuite)
  result.TLSVerifiedChains=len(state.VerifiedChains)
+ result.TLSObservedAt=time.Now().UTC()
  // A TLS client certificate is not supplied by this read-only probe.
  // Never infer SMTP AUTH or mutual authentication from server TLS success.
  result.TLSMutualAuthentication=false
- if len(state.PeerCertificates)>0 {result.TLSCertificate=certificateInfo(state.PeerCertificates[0],time.Now())}
+ if len(state.PeerCertificates)>0 {result.TLSCertificate=certificateInfo(state.PeerCertificates[0],result.TLSObservedAt)}
  reader=bufio.NewReader(tlsConn);writer=bufio.NewWriter(tlsConn)
  stage = "post_tls_ehlo"
  postEHLOStarted := time.Now()
