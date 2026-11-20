@@ -85,6 +85,7 @@ func Assess(r Result) []Finding {
   })
  }
  if !r.StartTLSVerified { return findings }
+ findings = append(findings, tlsEvidenceFindings(r)...)
  if r.TLSVersion == "TLS 1.2" {
   findings = append(findings, Finding{
    Code:"TLS_LEGACY_VERSION_NEGOTIATED", Severity:"info",
