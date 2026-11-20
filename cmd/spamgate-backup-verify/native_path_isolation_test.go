@@ -42,3 +42,26 @@ func TestNativeBackupPathBoundaryRejectsAlias(t *testing.T) {
  if err:=checkNativeBackupPaths(active,alias,key,manifest);err!=nil{t.Fatal(err)}
  if err:=checkNativeBackupPaths(active,backup,filepath.Join(base,"missing-key"),manifest);err==nil{t.Fatal("missing key accepted")}
 }
+
+func TestNativeBackupRejectsHardlinkedKeyAndManifest(t *testing.T) {
+ base := t.TempDir()
+ active := filepath.Join(base, "active")
+ backup := filepath.Join(base, "backup")
+ for _, dir := range []string{active, backup} {
+  if err := os.Mkdir(dir, 0700); err != nil { t.Fatal(err) }
+ }
+ key := filepath.Join(base, "secret.key")
+ manifest := filepath.Join(base, "manifest.json")
+ if err := os.WriteFile(key, []byte("not a real key"), 0600); err != nil { t.Fatal(err) }
+ if err := os.Link(key, manifest); err != nil { t.Skipf("hard links unsupported: %v", err) }
+ err := checkNativeBackupPaths(active, backup, key, manifest)
+ if err == nil || !strings.Contains(err.Error(), "separate files") {
+  t.Fatalf("hardlinked key and manifest accepted: %v", err)
+ }
+ // A distinct inode is permitted; the verifier still checks signature and format.
+ if err := os.Remove(manifest); err != nil { t.Fatal(err) }
+ if err := os.WriteFile(manifest, []byte("not a real manifest"), 0600); err != nil { t.Fatal(err) }
+ if err := checkNativeBackupPaths(active, backup, key, manifest); err != nil {
+  t.Fatalf("distinct files rejected: %v", err)
+ }
+}
