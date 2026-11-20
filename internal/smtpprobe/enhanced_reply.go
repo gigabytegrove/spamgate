@@ -12,7 +12,7 @@ func observedEnhancedStatus(code int, lines []string) string {
  if code < 200 || code > 599 || (code/100 != 2 && code/100 != 4 && code/100 != 5) || len(lines) == 0 || len(lines) > 100 { return "" }
  var observed string
  for _, line := range lines {
-  if len(line) == 0 || len(line) > 512 || strings.ContainsAny(line, "\r\n\x00") { return "" }
+  if len(line) == 0 || len(line) > 512 || containsUnsafeReplyByte(line) { return "" }
   // Only ASCII space and tab delimit the status token. Unicode whitespace
   // must not transform a malformed wire response into trusted evidence.
   end := strings.IndexAny(line, " \t")
@@ -46,4 +46,16 @@ func enhancedReplyFindings(r Result) []Finding {
    Message:fmt.Sprintf("Observed SMTP reply %d with enhanced status %s; no message was submitted",item.code,item.enhanced)})
  }
  return out
+}
+
+
+// containsUnsafeReplyByte refuses C0 controls (except ASCII HTAB, which is
+// allowed as a token delimiter) and DEL. This validation also applies when
+// callers construct Result values without passing through the wire parser.
+func containsUnsafeReplyByte(line string) bool {
+ for i := 0; i < len(line); i++ {
+  b := line[i]
+  if (b < 32 && b != '\t') || b == 127 { return true }
+ }
+ return false
 }
