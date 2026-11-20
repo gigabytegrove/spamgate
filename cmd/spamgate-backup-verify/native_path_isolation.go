@@ -41,6 +41,7 @@ func checkNativeBackupPaths(active, backup, key, manifest string) error {
  if err != nil || !keyInfo.Mode().IsRegular() {
   return errors.New("authentication key must be a regular file")
  }
+ if err := checkPrivateKeyLinks(keyInfo); err != nil { return err }
  manifestInfo, err := os.Stat(manifestPath)
  if err != nil || !manifestInfo.Mode().IsRegular() {
   return errors.New("manifest must be a regular file")
