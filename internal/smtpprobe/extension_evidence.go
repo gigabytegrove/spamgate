@@ -11,6 +11,7 @@ type ExtensionEvidence struct {
  CHUNKING bool `json:"chunking"`
  BinaryMIME bool `json:"binary_mime"`
  DSN bool `json:"dsn"`
+ EnhancedStatusCodes bool `json:"enhanced_status_codes"`
  REQUIRETLS bool `json:"require_tls"`
  Warnings []string `json:"warnings"`
 }
@@ -24,6 +25,7 @@ func inspectExtensions(lines []string) ExtensionEvidence {
  known := map[string]bool{
   "PIPELINING": true, "8BITMIME": true, "SMTPUTF8": true,
   "CHUNKING": true, "BINARYMIME": true, "DSN": true, "REQUIRETLS": true,
+  "ENHANCEDSTATUSCODES": true,
  }
  counts := map[string]int{}
  invalid := map[string]bool{}
@@ -35,7 +37,7 @@ func inspectExtensions(lines []string) ExtensionEvidence {
   counts[keyword]++
   if len(fields) != 1 || line != fields[0] { invalid[keyword] = true }
  }
- for _, keyword := range []string{"PIPELINING", "8BITMIME", "SMTPUTF8", "CHUNKING", "BINARYMIME", "DSN", "REQUIRETLS"} {
+ for _, keyword := range []string{"PIPELINING", "8BITMIME", "SMTPUTF8", "CHUNKING", "BINARYMIME", "DSN", "REQUIRETLS", "ENHANCEDSTATUSCODES"} {
   if counts[keyword] > 1 { e.Warnings = append(e.Warnings, "DUPLICATE_"+keyword+"_EXTENSION") }
   if invalid[keyword] { e.Warnings = append(e.Warnings, "MALFORMED_"+keyword+"_EXTENSION") }
   if counts[keyword] != 1 || invalid[keyword] { continue }
@@ -46,6 +48,7 @@ func inspectExtensions(lines []string) ExtensionEvidence {
   case "CHUNKING": e.CHUNKING = true
   case "BINARYMIME": e.BinaryMIME = true
   case "DSN": e.DSN = true
+  case "ENHANCEDSTATUSCODES": e.EnhancedStatusCodes = true
   case "REQUIRETLS": e.REQUIRETLS = true
   }
  }
@@ -71,6 +74,7 @@ func extensionEvidenceFindings(before, after ExtensionEvidence, postTLS bool) []
   {"CHUNKING",before.CHUNKING,after.CHUNKING},
   {"BINARYMIME",before.BinaryMIME,after.BinaryMIME},
   {"DSN",before.DSN,after.DSN},
+  {"ENHANCEDSTATUSCODES",before.EnhancedStatusCodes,after.EnhancedStatusCodes},
   {"REQUIRETLS",before.REQUIRETLS,after.REQUIRETLS},
  }
  for _, c := range changes {
