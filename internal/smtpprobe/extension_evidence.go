@@ -105,7 +105,7 @@ func extensionWarning(warnings []string, name string) bool {
 // Leading whitespace is skipped solely to identify a malformed known keyword;
 // the original line must still pass strict validation before being trusted.
 func smtpExtensionLeadingKeyword(line string) string {
- line = strings.TrimLeft(line, " \\t")
+ line = strings.TrimLeft(line, " \t")
  end := 0
  for end < len(line) {
   b := line[end]
