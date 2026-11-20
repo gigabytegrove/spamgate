@@ -42,3 +42,20 @@ func TestColdRestoreDestinationRejectsCredentialIndependentInvalidTarget(t *test
  err:=run([]string{"--operation","restore","--active-data",active,"--backup",backup,"--target",filepath.Join(root,"absent","child"),"--manifest",filepath.Join(root,"missing-manifest"),"--key-file",filepath.Join(root,"missing-key")},os.Stdout)
  if err==nil || !strings.Contains(err.Error(),"restore parent") { t.Fatalf("expected destination preflight before credential read; got %v",err) }
 }
+
+func TestColdRestoreValidDestinationStillRequiresCredentials(t *testing.T) {
+ root := t.TempDir()
+ active := filepath.Join(root, "active")
+ backup := filepath.Join(root, "backup")
+ for _, path := range []string{active, backup} {
+  if err := os.Mkdir(path, 0700); err != nil { t.Fatal(err) }
+ }
+ err := run([]string{"--operation","restore","--active-data",active,"--backup",backup,"--target",filepath.Join(root,"new"),"--manifest",filepath.Join(root,"missing-manifest"),"--key-file",filepath.Join(root,"missing-key")},os.Stdout)
+ if err == nil { t.Fatal("missing credentials must not permit restore") }
+ if strings.Contains(err.Error(),"restore parent") || strings.Contains(err.Error(),"already exists") {
+  t.Fatalf("valid destination incorrectly rejected: %v",err)
+ }
+ if _, statErr := os.Lstat(filepath.Join(root,"new")); !os.IsNotExist(statErr) {
+  t.Fatalf("failed restore created destination: %v",statErr)
+ }
+}
