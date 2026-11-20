@@ -37,11 +37,18 @@ func checkNativeBackupPaths(active, backup, key, manifest string) error {
   return errors.New("authentication key must remain outside active SpamGate data")
  }
  if keyPath == manifestPath { return errors.New("authentication key and manifest must be separate files") }
- if st, err := os.Stat(keyPath); err != nil || !st.Mode().IsRegular() {
+ keyInfo, err := os.Stat(keyPath)
+ if err != nil || !keyInfo.Mode().IsRegular() {
   return errors.New("authentication key must be a regular file")
  }
- if st, err := os.Stat(manifestPath); err != nil || !st.Mode().IsRegular() {
+ manifestInfo, err := os.Stat(manifestPath)
+ if err != nil || !manifestInfo.Mode().IsRegular() {
   return errors.New("manifest must be a regular file")
+ }
+ // Path comparison alone cannot detect two hard links to the same inode.
+ // Never permit the signed manifest to double as the secret key file.
+ if os.SameFile(keyInfo, manifestInfo) {
+  return errors.New("authentication key and manifest must be separate files")
  }
  return nil
 }
