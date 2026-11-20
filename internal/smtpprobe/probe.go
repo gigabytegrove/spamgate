@@ -38,6 +38,9 @@ type Result struct {
  StartTLSVerified bool `json:"starttls_verified"`
  PostTLSStartTLSAdvertised bool `json:"post_tls_starttls_advertised"`
  TLSVersion string `json:"tls_version,omitempty"`
+ TLSCipherSuite string `json:"tls_cipher_suite,omitempty"`
+ TLSMutualAuthentication bool `json:"tls_mutual_authentication"`
+ TLSVerifiedChains int `json:"tls_verified_chains,omitempty"`
  TLSCertificate *CertificateInfo `json:"tls_certificate,omitempty"`
  Findings []Finding `json:"findings"`
  FailureStage string `json:"failure_stage,omitempty"`
@@ -217,6 +220,11 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  if handshakeElapsed % time.Millisecond != 0 { result.TLSHandshakeMillis++ }
  if handshakeErr!=nil{return result,fmt.Errorf("TLS verification failed: %w",handshakeErr)}
  state:=tlsConn.ConnectionState();result.StartTLSVerified=true;result.TLSVersion=tls.VersionName(state.Version)
+ result.TLSCipherSuite=tls.CipherSuiteName(state.CipherSuite)
+ result.TLSVerifiedChains=len(state.VerifiedChains)
+ // A TLS client certificate is not supplied by this read-only probe.
+ // Never infer SMTP AUTH or mutual authentication from server TLS success.
+ result.TLSMutualAuthentication=false
  if len(state.PeerCertificates)>0 {result.TLSCertificate=certificateInfo(state.PeerCertificates[0],time.Now())}
  reader=bufio.NewReader(tlsConn);writer=bufio.NewWriter(tlsConn)
  stage = "post_tls_ehlo"
