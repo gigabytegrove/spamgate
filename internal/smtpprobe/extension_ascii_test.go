@@ -38,3 +38,39 @@ func TestSMTPMalformedExtensionCannotBecomeTrusted(t *testing.T) {
   }
  }
 }
+
+func TestMalformedKnownExtensionSuffixIsReported(t *testing.T) {
+ cases := []string{
+  "PIPELINING\x00", "PIPELINING\u200b", "PIPELINING\u00a0",
+  "PIPELINING\r", "PIPELINING\t", " PIPELINING", "\tPIPELINING",
+  "PIPELINING EXTRA",
+ }
+ for _, line := range cases {
+  t.Run(line, func(t *testing.T) {
+   got := inspectExtensions([]string{"mx.example", line})
+   if got.PIPELINING { t.Fatalf("malformed %q trusted", line) }
+   if !extensionWarning(got.Warnings, "PIPELINING") {
+    t.Fatalf("malformed %q not diagnosed: %v", line, got.Warnings)
+   }
+  })
+ }
+}
+
+func TestUnknownExtensionCannotImpersonateKnownKeyword(t *testing.T) {
+ for _, line := range []string{"PIPELININGX", "PIPELINING-OTHER", "X-PIPELINING", "PIPELINING2"} {
+  got := inspectExtensions([]string{"mx.example", line})
+  if got.PIPELINING || len(got.Warnings) != 0 {
+   t.Fatalf("unknown extension %q misidentified: %+v", line, got)
+  }
+ }
+}
+
+func TestMalformedExtensionSuppressesTLSDrift(t *testing.T) {
+ before := inspectExtensions([]string{"mx.example", "PIPELINING\x00"})
+ after := inspectExtensions([]string{"mx.example", "PIPELINING"})
+ for _, finding := range extensionEvidenceFindings(before, after, true) {
+  if finding.Code == "PIPELINING_ADVERTISEMENT_CHANGED_AFTER_TLS" {
+   t.Fatalf("malformed baseline caused false drift: %+v", finding)
+  }
+ }
+}
