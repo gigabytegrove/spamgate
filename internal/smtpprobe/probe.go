@@ -41,6 +41,8 @@ type Result struct {
  FailureKind string `json:"failure_kind,omitempty"`
  EHLOWarnings []string `json:"ehlo_warnings"`
  PostTLSEHLOWarnings []string `json:"post_tls_ehlo_warnings"`
+ Extensions ExtensionEvidence `json:"extensions"`
+ PostTLSExtensions ExtensionEvidence `json:"post_tls_extensions"`
  AuthMechanisms []string `json:"auth_mechanisms"`
  PostTLSEHLOCode int `json:"post_tls_ehlo_code,omitempty"`
  PostTLSAuthMechanisms []string `json:"post_tls_auth_mechanisms"`
@@ -179,6 +181,7 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  if err:=send(writer,"EHLO "+opt.HelloName);err!=nil{return result,err}
  code,lines,err:=readReply(reader);result.EHLORoundTripMillis=elapsedMillis(ehloStarted);if err!=nil{return result,err};result.EHLOCode=code
  if code!=250{return result,&SMTPReplyError{Stage:stage,Code:code}}
+ result.Extensions=inspectExtensions(lines)
  result.EHLOWarnings=capabilityWarnings(lines)
  result.SizeAdvertised,result.SizeLimitKnown,result.SizeLimitBytes,result.SizeWarning=sizeEvidence(lines)
  result.StartTLSAdvertised,result.AuthMechanisms=capabilities(lines)
@@ -209,6 +212,7 @@ func Probe(ctx context.Context,opt Options)(result Result,err error){
  code,lines,err=readReply(reader);result.PostTLSEHLORoundTripMillis=elapsedMillis(postEHLOStarted);if err!=nil{return result,err}
  result.PostTLSEHLOCode=code
  if code!=250{return result,&SMTPReplyError{Stage:stage,Code:code}}
+ result.PostTLSExtensions=inspectExtensions(lines)
  result.PostTLSEHLOWarnings=capabilityWarnings(lines)
  result.PostTLSSizeAdvertised,result.PostTLSSizeLimitKnown,result.PostTLSSizeLimitBytes,result.PostTLSSizeWarning=sizeEvidence(lines)
  result.PostTLSStartTLSAdvertised,result.PostTLSAuthMechanisms=capabilities(lines)
