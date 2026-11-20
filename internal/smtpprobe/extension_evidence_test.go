@@ -12,12 +12,12 @@ func TestExtensionEvidenceBoundaries(t *testing.T) {
   want ExtensionEvidence
  }{
   {"identity only",[]string{"PIPELINING"},ExtensionEvidence{Warnings:[]string{}}},
-  {"valid all",[]string{"server","PIPELINING","8BITMIME","SMTPUTF8","CHUNKING","DSN","REQUIRETLS"},ExtensionEvidence{true,true,true,true,true,true,[]string{}}},
+  {"valid all",[]string{"server","PIPELINING","8BITMIME","SMTPUTF8","CHUNKING","DSN","REQUIRETLS"},ExtensionEvidence{PIPELINING:true,EightBitMIME:true,SMTPUTF8:true,CHUNKING:true,DSN:true,REQUIRETLS:true,Warnings:[]string{}}},
   {"case insensitive",[]string{"server","pipelining","smtpUtf8"},ExtensionEvidence{PIPELINING:true,SMTPUTF8:true,Warnings:[]string{}}},
   {"duplicate",[]string{"server","PIPELINING","pipelining"},ExtensionEvidence{Warnings:[]string{"DUPLICATE_PIPELINING_EXTENSION"}}},
   {"parameters",[]string{"server","SMTPUTF8 EXTRA"},ExtensionEvidence{Warnings:[]string{"MALFORMED_SMTPUTF8_EXTENSION"}}},
   {"trailing space",[]string{"server","DSN "},ExtensionEvidence{Warnings:[]string{"MALFORMED_DSN_EXTENSION"}}},
-  {"unknown extension",[]string{"server","BINARYMIME"},ExtensionEvidence{Warnings:[]string{}}},
+  {"binary mime",[]string{"server","BINARYMIME"},ExtensionEvidence{BinaryMIME:true,Warnings:[]string{}}},
  }
  for _, tc := range cases { t.Run(tc.name,func(t *testing.T){
   got := inspectExtensions(tc.lines)
