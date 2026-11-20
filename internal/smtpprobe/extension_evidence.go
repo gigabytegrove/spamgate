@@ -9,6 +9,7 @@ type ExtensionEvidence struct {
  EightBitMIME bool `json:"eight_bit_mime"`
  SMTPUTF8 bool `json:"smtp_utf8"`
  CHUNKING bool `json:"chunking"`
+ BinaryMIME bool `json:"binary_mime"`
  DSN bool `json:"dsn"`
  REQUIRETLS bool `json:"require_tls"`
  Warnings []string `json:"warnings"`
@@ -22,7 +23,7 @@ func inspectExtensions(lines []string) ExtensionEvidence {
  if len(lines) < 2 { return e }
  known := map[string]bool{
   "PIPELINING": true, "8BITMIME": true, "SMTPUTF8": true,
-  "CHUNKING": true, "DSN": true, "REQUIRETLS": true,
+  "CHUNKING": true, "BINARYMIME": true, "DSN": true, "REQUIRETLS": true,
  }
  counts := map[string]int{}
  invalid := map[string]bool{}
@@ -34,7 +35,7 @@ func inspectExtensions(lines []string) ExtensionEvidence {
   counts[keyword]++
   if len(fields) != 1 || line != fields[0] { invalid[keyword] = true }
  }
- for _, keyword := range []string{"PIPELINING", "8BITMIME", "SMTPUTF8", "CHUNKING", "DSN", "REQUIRETLS"} {
+ for _, keyword := range []string{"PIPELINING", "8BITMIME", "SMTPUTF8", "CHUNKING", "BINARYMIME", "DSN", "REQUIRETLS"} {
   if counts[keyword] > 1 { e.Warnings = append(e.Warnings, "DUPLICATE_"+keyword+"_EXTENSION") }
   if invalid[keyword] { e.Warnings = append(e.Warnings, "MALFORMED_"+keyword+"_EXTENSION") }
   if counts[keyword] != 1 || invalid[keyword] { continue }
@@ -43,6 +44,7 @@ func inspectExtensions(lines []string) ExtensionEvidence {
   case "8BITMIME": e.EightBitMIME = true
   case "SMTPUTF8": e.SMTPUTF8 = true
   case "CHUNKING": e.CHUNKING = true
+  case "BINARYMIME": e.BinaryMIME = true
   case "DSN": e.DSN = true
   case "REQUIRETLS": e.REQUIRETLS = true
   }
@@ -67,6 +69,7 @@ func extensionEvidenceFindings(before, after ExtensionEvidence, postTLS bool) []
   {"8BITMIME",before.EightBitMIME,after.EightBitMIME},
   {"SMTPUTF8",before.SMTPUTF8,after.SMTPUTF8},
   {"CHUNKING",before.CHUNKING,after.CHUNKING},
+  {"BINARYMIME",before.BinaryMIME,after.BinaryMIME},
   {"DSN",before.DSN,after.DSN},
   {"REQUIRETLS",before.REQUIRETLS,after.REQUIRETLS},
  }
