@@ -45,6 +45,9 @@ func runContext(ctx context.Context, args []string, stdout io.Writer) error {
   if err := checkRestoreSourceBoundary(*root, *target); err != nil { return err }
  }
  if err := checkNativeBackupPaths(*active, *root, *keyPath, *manifestPath); err != nil { return err }
+ if *operation == "restore" {
+  if err := checkRestoreCredentialBoundary(*target, *manifestPath, *keyPath); err != nil { return err }
+ }
  // The operator-supplied active-data path is an additional guard, never a
  // way to disable protection of the immutable native installation path.
  if *operation == "restore" {
