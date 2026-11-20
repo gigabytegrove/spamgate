@@ -1,0 +1,5 @@
+package main
+import("strings";"testing";"math")
+func TestConfusionMatrix(t *testing.T){r,e:=evaluate(strings.NewReader("{\"id\":\"1\",\"truth\":\"spam\",\"score\":0.9}\n{\"id\":\"2\",\"truth\":\"spam\",\"score\":0.1}\n{\"id\":\"3\",\"truth\":\"clean\",\"score\":0.8}\n{\"id\":\"4\",\"truth\":\"clean\",\"score\":0.2}\n"),0.5);if e!=nil||r.TP!=1||r.FN!=1||r.FP!=1||r.TN!=1||math.Abs(r.Precision-0.5)>1e-9||r.FalsePositiveRate!=0.5{t.Fatalf("%+v %v",r,e)}}
+func TestInvalidCorpus(t *testing.T){cases:=[]string{"",`{"id":"a","truth":"clean","score":0.2}`,"{\"id\":\"a\",\"truth\":\"clean\",\"score\":0}\n{\"id\":\"a\",\"truth\":\"spam\",\"score\":1}","{\"id\":\"a\",\"truth\":\"clean\",\"score\":1.5}\n", "{\"id\":\"a\",\"truth\":\"clean\",\"score\":0,\"unknown\":1}\n", "{\"id\":\"a\",\"truth\":\"clean\",\"score\":0} {}\n"};for _,c:=range cases{if _,e:=evaluate(strings.NewReader(c),0.5);e==nil{t.Errorf("accepted invalid %q",c)}}}
+func TestInvalidThreshold(t *testing.T){if _,e:=evaluate(strings.NewReader(""),math.NaN());e==nil{t.Fatal("NaN threshold accepted")}}
