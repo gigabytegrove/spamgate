@@ -13,9 +13,11 @@ func tlsEvidenceFindings(r Result) []Finding {
  add := func(code, message string) {
   findings = append(findings, Finding{Code:code, Severity:"warning", Message:message})
  }
- if r.TLSVerifiedChains == 0 {
+ if r.TLSVerifiedChains <= 0 {
   add("TLS_VERIFICATION_EVIDENCE_MISSING", "STARTTLS is marked verified but no verified certificate chain was recorded; inspect probe evidence")
  }
+ if r.TLSVersion == "" { add("TLS_VERSION_EVIDENCE_MISSING", "STARTTLS is marked verified but the negotiated TLS protocol version was not recorded") }
+ if r.TLSCertificate == nil { add("TLS_CERTIFICATE_EVIDENCE_MISSING", "STARTTLS is marked verified but no peer leaf certificate metadata was recorded") }
  if r.TLSCipherSuite == "" {
   add("TLS_CIPHER_EVIDENCE_MISSING", "STARTTLS is marked verified but the negotiated cipher suite was not recorded")
  } else {
@@ -26,12 +28,29 @@ func tlsEvidenceFindings(r Result) []Finding {
    if insecure || strings.Contains(suite.Name, "_CBC_") {
     add("TLS_LEGACY_CIPHER_NEGOTIATED", "SMTP TLS negotiated a legacy cipher suite; inspect server TLS policy")
    }
-   // TLS 1.3 has a distinct cipher suite namespace. A contradictory
-   // result must be diagnosed rather than treated as successful evidence.
-   tls13Suite := strings.HasPrefix(suite.Name, "TLS_AES_") || suite.Name == "TLS_CHACHA20_POLY1305_SHA256"
-   if (r.TLSVersion == "TLS 1.3" && !tls13Suite) ||
-    (r.TLSVersion == "TLS 1.2" && tls13Suite) {
-    add("TLS_VERSION_CIPHER_MISMATCH", "Recorded TLS version and cipher suite are inconsistent; inspect diagnostic integrity")
+   // SupportedVersions is authoritative for each suite. Name prefixes alone
+   // cannot detect TLS 1.0/1.1 or future version/suite incompatibility.
+   version := uint16(0)
+   switch r.TLSVersion {
+   case "TLS 1.0": version = tls.VersionTLS10
+   case "TLS 1.1": version = tls.VersionTLS11
+   case "TLS 1.2": version = tls.VersionTLS12
+   case "TLS 1.3": version = tls.VersionTLS13
+   case "": // Missing version is reported independently.
+   default:
+    add("TLS_VERSION_EVIDENCE_UNKNOWN", "Recorded TLS protocol version is not recognized; inspect diagnostic integrity")
+   }
+   if version != 0 {
+    supported := false
+    for _, candidate := range suite.SupportedVersions {
+     if candidate == version { supported = true; break }
+    }
+    if !supported {
+     add("TLS_VERSION_CIPHER_MISMATCH", "Recorded TLS version and cipher suite are inconsistent; inspect diagnostic integrity")
+    }
+    if version < tls.VersionTLS12 {
+     add("TLS_OBSOLETE_VERSION_NEGOTIATED", "Recorded SMTP TLS protocol is older than TLS 1.2; inspect server policy and diagnostic integrity")
+    }
    }
   }
  }
