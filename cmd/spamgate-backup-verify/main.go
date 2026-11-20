@@ -44,10 +44,6 @@ func runContext(ctx context.Context, args []string, stdout io.Writer) error {
  if *operation == "restore" {
   if err := checkRestoreSourceBoundary(*root, *target); err != nil { return err }
  }
- if err := checkNativeBackupPaths(*active, *root, *keyPath, *manifestPath); err != nil { return err }
- if *operation == "restore" {
-  if err := checkRestoreCredentialBoundary(*target, *manifestPath, *keyPath); err != nil { return err }
- }
  // The operator-supplied active-data path is an additional guard, never a
  // way to disable protection of the immutable native installation path.
  if *operation == "restore" {
@@ -62,6 +58,10 @@ func runContext(ctx context.Context, args []string, stdout io.Writer) error {
    overlapsPermanentData(absTarget) {
    return errors.New("restore target overlaps active data")
   }
+ }
+ if err := checkNativeBackupPaths(*active, *root, *keyPath, *manifestPath); err != nil { return err }
+ if *operation == "restore" {
+  if err := checkRestoreCredentialBoundary(*target, *manifestPath, *keyPath); err != nil { return err }
  }
  key, err := readPrivateFile(*keyPath, 4096, backupverify.MinAuthenticationKeyBytes)
  if err != nil { return fmt.Errorf("authentication key: %w", err) }
