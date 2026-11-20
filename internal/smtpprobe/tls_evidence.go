@@ -5,40 +5,53 @@ import (
  "strings"
 )
 
-// tlsEvidenceFindings reports negotiated TLS properties only after the probe
-// completed certificate verification. It never equates TLS with SMTP AUTH.
+// tlsEvidenceFindings reports observed negotiation evidence. A successful
+// handshake is not evidence of SMTP AUTH or successful mail delivery.
 func tlsEvidenceFindings(r Result) []Finding {
  if !r.StartTLSVerified { return nil }
- findings:=[]Finding{}
+ findings := make([]Finding, 0, 6)
+ add := func(code, message string) {
+  findings = append(findings, Finding{Code:code, Severity:"warning", Message:message})
+ }
  if r.TLSVerifiedChains == 0 {
-  findings=append(findings,Finding{Code:"TLS_VERIFICATION_EVIDENCE_MISSING",Severity:"warning",Message:"STARTTLS is marked verified but no verified certificate chain was recorded; inspect probe evidence"})
+  add("TLS_VERIFICATION_EVIDENCE_MISSING", "STARTTLS is marked verified but no verified certificate chain was recorded; inspect probe evidence")
  }
  if r.TLSCipherSuite == "" {
-  findings=append(findings,Finding{Code:"TLS_CIPHER_EVIDENCE_MISSING",Severity:"warning",Message:"STARTTLS is marked verified but the negotiated cipher suite was not recorded"})
+  add("TLS_CIPHER_EVIDENCE_MISSING", "STARTTLS is marked verified but the negotiated cipher suite was not recorded")
  } else {
-  // The standard library names these suites, including TLS 1.3 suites.
-  // Report the observed negotiation without claiming vulnerability scanning.
-  if !cipherSuiteKnown(r.TLSCipherSuite) {
-   findings=append(findings,Finding{Code:"TLS_CIPHER_EVIDENCE_UNKNOWN",Severity:"warning",Message:"Recorded TLS cipher suite is not recognized by the local TLS implementation; inspect diagnostic integrity"})
-  }
-  if strings.Contains(r.TLSCipherSuite,"_3DES_") || strings.Contains(r.TLSCipherSuite,"_RC4_") || strings.Contains(r.TLSCipherSuite,"_CBC_") {
-   findings=append(findings,Finding{Code:"TLS_LEGACY_CIPHER_NEGOTIATED",Severity:"warning",Message:"SMTP TLS negotiated a legacy cipher suite; inspect server TLS policy"})
+  suite, known, insecure := lookupCipherSuite(r.TLSCipherSuite)
+  if !known {
+   add("TLS_CIPHER_EVIDENCE_UNKNOWN", "Recorded TLS cipher suite is not recognized by the local TLS implementation; inspect diagnostic integrity")
+  } else {
+   if insecure || strings.Contains(suite.Name, "_CBC_") {
+    add("TLS_LEGACY_CIPHER_NEGOTIATED", "SMTP TLS negotiated a legacy cipher suite; inspect server TLS policy")
+   }
+   // TLS 1.3 has a distinct cipher suite namespace. A contradictory
+   // result must be diagnosed rather than treated as successful evidence.
+   tls13Suite := strings.HasPrefix(suite.Name, "TLS_AES_") || suite.Name == "TLS_CHACHA20_POLY1305_SHA256"
+   if (r.TLSVersion == "TLS 1.3" && !tls13Suite) ||
+    (r.TLSVersion == "TLS 1.2" && tls13Suite) {
+    add("TLS_VERSION_CIPHER_MISMATCH", "Recorded TLS version and cipher suite are inconsistent; inspect diagnostic integrity")
+   }
   }
  }
  if r.TLSMutualAuthentication {
-  findings=append(findings,Finding{Code:"TLS_CLIENT_AUTH_EVIDENCE_UNEXPECTED",Severity:"warning",Message:"Read-only SMTP probe reported mutual TLS authentication without supplying a client certificate; inspect diagnostic integrity"})
+  add("TLS_CLIENT_AUTH_EVIDENCE_UNEXPECTED", "Read-only SMTP probe reported mutual TLS authentication without supplying a client certificate; inspect diagnostic integrity")
  }
  return findings
 }
 
-// cipherSuiteKnown is a bounded name check for externally constructed Results.
-// The probe itself obtains names exclusively from crypto/tls.
+func lookupCipherSuite(name string) (tls.CipherSuite, bool, bool) {
+ for _, suite := range tls.CipherSuites() {
+  if suite.Name == name { return *suite, true, false }
+ }
+ for _, suite := range tls.InsecureCipherSuites() {
+  if suite.Name == name { return *suite, true, true }
+ }
+ return tls.CipherSuite{}, false, false
+}
+
 func cipherSuiteKnown(name string) bool {
- for _,suite:=range tls.CipherSuites() {
-  if suite.Name==name {return true}
- }
- for _,suite:=range tls.InsecureCipherSuites() {
-  if suite.Name==name {return true}
- }
- return false
+ _, known, _ := lookupCipherSuite(name)
+ return known
 }
