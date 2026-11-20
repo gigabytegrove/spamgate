@@ -59,6 +59,9 @@ func runContext(ctx context.Context, args []string, stdout io.Writer) error {
    return errors.New("restore target overlaps active data")
   }
  }
+ if *operation == "restore" {
+  if err := checkColdRestoreDestination(*target); err != nil { return err }
+ }
  if err := checkNativeBackupPaths(*active, *root, *keyPath, *manifestPath); err != nil { return err }
  if *operation == "restore" {
   if err := checkRestoreCredentialBoundary(*target, *manifestPath, *keyPath); err != nil { return err }
