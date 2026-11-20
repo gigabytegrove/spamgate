@@ -40,6 +40,17 @@ func tlsEvidenceFindings(r Result) []Finding {
   if cert.DaysUntilExpiry < -1 {
    add("TLS_CERTIFICATE_EXPIRY_EVIDENCE_INCONSISTENT", "Certificate expiry evidence contains an invalid negative day count; inspect diagnostic integrity")
   }
+  // DaysUntilExpiry is a rounded observation, not a second source of
+  // certificate validity. A future NotAfter with an expired sentinel (or
+  // an already-expired NotAfter with a positive count) is contradictory.
+  // Avoid wall-clock assumptions when inspecting archived diagnostic data:
+  // use the recorded observation timestamp when it is available.
+  if !r.TLSObservedAt.IsZero() && !cert.NotAfter.IsZero() {
+   expired := !cert.NotAfter.After(r.TLSObservedAt)
+   if (expired && cert.DaysUntilExpiry >= 0) || (!expired && cert.DaysUntilExpiry < 0) {
+    add("TLS_CERTIFICATE_EXPIRY_EVIDENCE_INCONSISTENT", "Certificate expiry count contradicts recorded TLS observation time; inspect diagnostic integrity")
+   }
+  }
  }
  if r.TLSCipherSuite == "" {
   add("TLS_CIPHER_EVIDENCE_MISSING", "STARTTLS is marked verified but the negotiated cipher suite was not recorded")
