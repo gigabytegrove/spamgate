@@ -38,7 +38,7 @@ func Load(path string)(Snapshot,error){
  fi,err:=os.Lstat(path)
  if err!=nil{return Snapshot{},err}
  if !fi.Mode().IsRegular() || fi.Size()<=0 || fi.Size()>maxReportSize {return Snapshot{},errors.New("report must be a bounded regular file")}
- f,err:=os.Open(path)
+ f,err:=openEvidence(path)
  if err!=nil{return Snapshot{},err}
  defer f.Close()
  opened,err:=f.Stat()
