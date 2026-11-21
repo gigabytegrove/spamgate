@@ -1,0 +1,5 @@
+# Paired classifier confidence and sample gates — 2026-11-20
+
+This change extends the existing paired JSONL classifier comparison with Wilson 95% false-positive upper confidence bounds and minimum labeled sample counts. Both baseline and candidate use the exact same clean denominator. New flags: `-min-clean`, `-min-spam`, `-max-candidate-fpr`, and `-max-candidate-fpr-upper-95`. Default minimum counts are one per class and default maximum rates are one (opt-in strictness); existing zero-new-regressions defaults remain unchanged. Invalid numeric limits are rejected with exit 2. Acceptance failure exits 1, and the report is emitted as JSON before gate evaluation.
+
+This utility consumes **externally supplied scores**. It does not invoke the production classifier, independently validate ground-truth labels, or certify representative false-positive rates. A Wilson bound is a statistical estimate assuming representative independent samples, not a guarantee. Production issue #5 remains open. No native service or Postfix/Dovecot settings are changed.
