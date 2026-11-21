@@ -12,9 +12,10 @@ import (
  "strings"
 )
 
-type comparisonSample struct { ID string; Truth string; Score float64 }
+type comparisonSample struct { ID string; Tenant string; Truth string; Score float64 }
 type comparisonReport struct {
  Total int `json:"total"`
+ ByTenant map[string]tenantComparison `json:"by_tenant,omitempty"`
  Clean int `json:"clean"`
  Spam int `json:"spam"`
  BaselineFalsePositives int `json:"baseline_false_positives"`
@@ -53,14 +54,16 @@ func loadCorpus(r io.Reader) (map[string]comparisonSample,error) {
  return samples,nil
 }
 func compareCorpora(baseline,candidate map[string]comparisonSample,threshold float64)(comparisonReport,error){
- r:=comparisonReport{NewFalsePositiveIDs:[]string{},NewFalseNegativeIDs:[]string{}}
+ r:=comparisonReport{NewFalsePositiveIDs:[]string{},NewFalseNegativeIDs:[]string{},ByTenant:map[string]tenantComparison{}}
  if !(threshold>=0 && threshold<=1){return r,errors.New("threshold must be between 0 and 1")}
  if len(baseline)!=len(candidate){return r,errors.New("corpus sample count differs")}
  for id,b:=range baseline {
   c,ok:=candidate[id];if !ok{return r,fmt.Errorf("candidate missing sample %q",id)}
   if b.Truth!=c.Truth{return r,fmt.Errorf("ground truth changed for %q",id)}
+  if b.Tenant!=c.Tenant{return r,fmt.Errorf("tenant changed for %q",id)}
   if !(b.Score>=0&&b.Score<=1&&c.Score>=0&&c.Score<=1){return r,fmt.Errorf("invalid score for %q",id)}
   oldPositive:=b.Score>=threshold;newPositive:=c.Score>=threshold
+  updateTenantComparison(r.ByTenant,b.Tenant,b.Truth,oldPositive,newPositive)
   if b.Truth=="clean" {
    r.Clean++
    if oldPositive{r.BaselineFalsePositives++}
@@ -87,6 +90,7 @@ func compareCorpora(baseline,candidate map[string]comparisonSample,threshold flo
  r.CandidateFalseNegativeUpper95=compareWilsonUpper(r.CandidateFalseNegatives,r.Spam)
  r.CleanRegressionPValue=pairedRegressionP(r.NewFalsePositives,r.FixedFalsePositives)
  r.SpamRegressionPValue=pairedRegressionP(r.NewFalseNegatives,r.FixedFalseNegatives)
+ finalizeTenantComparisons(r.ByTenant)
  sort.Strings(r.NewFalsePositiveIDs);sort.Strings(r.NewFalseNegativeIDs)
  return r,nil
 }
@@ -101,15 +105,25 @@ func compareRun(args []string,stdout,stderr io.Writer)int{
  maxCandidateFPR:=f.Float64("max-candidate-fpr",1,"maximum candidate clean false-positive rate")
  maxCandidateFNR:=f.Float64("max-candidate-fnr",1,"maximum candidate spam false-negative rate")
  maxCandidateFNUpper:=f.Float64("max-candidate-fnr-upper-95",1,"maximum candidate Wilson 95 percent upper false-negative bound")
+ requireTenants:=f.Bool("require-tenants",false,"require explicit tenant on every sample and enforce tenant-level gates")
+ minTenantClean:=f.Int("min-tenant-clean",1,"minimum clean samples per tenant when require-tenants is enabled")
+ minTenantSpam:=f.Int("min-tenant-spam",1,"minimum spam samples per tenant when require-tenants is enabled")
+ maxTenantFPR:=f.Float64("max-tenant-fpr",1,"maximum false-positive rate per tenant")
+ maxTenantFNR:=f.Float64("max-tenant-fnr",1,"maximum false-negative rate per tenant")
+ maxTenantFPRUpper:=f.Float64("max-tenant-fpr-upper-95",1,"maximum Wilson upper false-positive bound per tenant")
+ maxTenantFNRUpper:=f.Float64("max-tenant-fnr-upper-95",1,"maximum Wilson upper false-negative bound per tenant")
  maxCandidateUpper:=f.Float64("max-candidate-fpr-upper-95",1,"maximum candidate Wilson 95 percent upper false-positive bound")
  if err:=f.Parse(args);err!=nil{return 2}
+ if *minTenantClean<1||*minTenantSpam<1||!validRate(*maxTenantFPR)||!validRate(*maxTenantFNR)||!validRate(*maxTenantFPRUpper)||!validRate(*maxTenantFNRUpper){fmt.Fprintln(stderr,"invalid tenant gate arguments");return 2}
  if *baselinePath==""||*candidatePath==""||*baselinePath==*candidatePath||f.NArg()!=0||*maxNewFP<0||*maxNewFN<0||*minClean<1||*minSpam<1||!(*maxCandidateFPR>=0&&*maxCandidateFPR<=1)||!(*maxCandidateUpper>=0&&*maxCandidateUpper<=1)||!(*maxCandidateFNR>=0&&*maxCandidateFNR<=1)||!(*maxCandidateFNUpper>=0&&*maxCandidateFNUpper<=1)||!(*threshold>=0&&*threshold<=1){fmt.Fprintln(stderr,"invalid arguments");return 2}
  bf,err:=os.Open(*baselinePath);if err!=nil{fmt.Fprintln(stderr,err);return 2};defer bf.Close()
  cf,err:=os.Open(*candidatePath);if err!=nil{fmt.Fprintln(stderr,err);return 2};defer cf.Close()
  b,err:=loadCorpus(bf);if err!=nil{fmt.Fprintln(stderr,"baseline:",err);return 2}
  c,err:=loadCorpus(cf);if err!=nil{fmt.Fprintln(stderr,"candidate:",err);return 2}
  report,err:=compareCorpora(b,c,*threshold);if err!=nil{fmt.Fprintln(stderr,err);return 2}
+ if *requireTenants {for name,t:=range report.ByTenant {if name=="" {fmt.Fprintln(stderr,"tenant evidence required");return 2};if t.Clean<*minTenantClean||t.Spam<*minTenantSpam {fmt.Fprintf(stderr,"insufficient tenant corpus %q\n",name);return 2}}}
  if err:=json.NewEncoder(stdout).Encode(report);err!=nil{fmt.Fprintln(stderr,err);return 2}
+ if *requireTenants && !tenantGatesPass(report.ByTenant,*maxTenantFPR,*maxTenantFNR,*maxTenantFPRUpper,*maxTenantFNRUpper){fmt.Fprintln(stderr,"tenant classifier regression gate failed");return 1}
  if report.Clean<*minClean||report.Spam<*minSpam||report.CandidateFalsePositiveRate>*maxCandidateFPR||report.CandidateFalsePositiveUpper95>*maxCandidateUpper||report.CandidateFalseNegativeRate>*maxCandidateFNR||report.CandidateFalseNegativeUpper95>*maxCandidateFNUpper||report.NewFalsePositives>*maxNewFP||report.NewFalseNegatives>*maxNewFN{fmt.Fprintln(stderr,"classifier regression gate failed");return 1}
  return 0
 }
