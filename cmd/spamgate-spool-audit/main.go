@@ -19,8 +19,12 @@ func run(args []string, stdout, stderr io.Writer) int {
  flags.SetOutput(stderr)
  dir := flags.String("dir", "/opt/spamgate/data/delivery-queue", "native SMTP spool directory (read-only)")
  jsonOut := flags.Bool("json", false, "emit privacy-limited JSON")
+ maxQueued := flags.Int("max-queued", -1, "maximum verified queued messages; -1 disables this limit")
+ maxDead := flags.Int("max-dead", -1, "maximum verified dead messages; -1 disables this limit")
+ maxPending := flags.Int("max-pending", -1, "maximum unpublished pending records; -1 disables this limit")
  if err := flags.Parse(args); err != nil { return 2 }
  if flags.NArg() != 0 { fmt.Fprintln(stderr, "unexpected positional arguments"); return 2 }
+ if *maxQueued < -1 || *maxDead < -1 || *maxPending < -1 { fmt.Fprintln(stderr, "queue limits must be -1 (disabled) or nonnegative"); return 2 }
  report, err := spoolaudit.Audit(*dir)
  if err != nil { fmt.Fprintln(stderr, "spool audit failed:", err); return 2 }
  if *jsonOut {
@@ -50,6 +54,10 @@ func run(args []string, stdout, stderr io.Writer) int {
     return 2
    }
   }
+ }
+ if failures := queueLimitFailures(report.States, report.Pending, *maxQueued, *maxDead, *maxPending); len(failures) != 0 {
+  for _, failure := range failures { fmt.Fprintln(stderr, "queue threshold exceeded:", failure) }
+  return 1
  }
  if report.HasFindings() { return 1 }
  return 0
