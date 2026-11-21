@@ -62,3 +62,15 @@ func tenantGatesPass(by map[string]tenantComparison,maxFPR,maxFNR,maxFPRUpper,ma
  }
  return true
 }
+
+ // tenantGatesPassWithRegressions enforces absolute paired regression budgets
+ // independently for every tenant. A negative budget disables only that budget.
+ // Aggregate improvements must never mask newly harmed tenants.
+func tenantGatesPassWithRegressions(by map[string]tenantComparison,maxFPR,maxFNR,maxFPRUpper,maxFNRUpper float64,maxNewFP,maxNewFN int) bool {
+ if maxNewFP < -1 || maxNewFN < -1 || !tenantGatesPass(by,maxFPR,maxFNR,maxFPRUpper,maxFNRUpper) {return false}
+ for _,t:=range by {
+  if maxNewFP>=0 && t.NewFalsePositives>maxNewFP {return false}
+  if maxNewFN>=0 && t.NewFalseNegatives>maxNewFN {return false}
+ }
+ return true
+}
