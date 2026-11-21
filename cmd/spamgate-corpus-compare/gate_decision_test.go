@@ -25,13 +25,14 @@ func TestGateDecisionAllFailuresAndStableTenantOrdering(t *testing.T) {
  first:=assessComparisonGates(r,l)
  if len(first)<12 {t.Fatalf("missing independent failures: %v",first)}
  for i:=0;i<100;i++ {if got:=assessComparisonGates(r,l);!reflect.DeepEqual(first,got){t.Fatalf("unstable order: %v vs %v",first,got)}}
- if strings.Index(strings.Join(first,"|"),"tenant[\\\"a\\\"]")>strings.Index(strings.Join(first,"|"),"tenant[\\\"z\\\"]"){t.Fatal("tenant ordering not deterministic")}
+ if strings.Index(strings.Join(first,"|"),`tenant["a"]`)>strings.Index(strings.Join(first,"|"),`tenant["z"]`){t.Fatal("tenant ordering not deterministic")}
 }
 func TestGateDecisionExplicitPassAndFailureJSON(t *testing.T){
  dir:=t.TempDir()
  baseline:=filepath.Join(dir,"baseline.jsonl");candidate:=filepath.Join(dir,"candidate.jsonl")
- corpus:="{\\"id\\":\\"a\\",\\"truth\\":\\"clean\\",\\"tenant\\":\\"one\\",\\"score\\":0.1}\\n{\\"id\\":\\"b\\",\\"truth\\":\\"spam\\",\\"tenant\\":\\"one\\",\\"score\\":0.9}\\n"
- corpus=strings.ReplaceAll(corpus,"\\\\n","\n")
+ corpus:=`{"id":"a","truth":"clean","tenant":"one","score":0.1}
+{"id":"b","truth":"spam","tenant":"one","score":0.9}
+`
  for _,p:=range []string{baseline,candidate}{if err:=os.WriteFile(p,[]byte(corpus),0600);err!=nil{t.Fatal(err)}}
  args:=[]string{"-baseline",baseline,"-candidate",candidate,"-require-tenants"}
  var out,errs bytes.Buffer
@@ -43,5 +44,5 @@ func TestGateDecisionExplicitPassAndFailureJSON(t *testing.T){
  args=append(args,"-min-tenant-clean","2")
  if code:=compareRun(args,&out,&errs);code!=1{t.Fatalf("failure code %d: %s",code,errs.String())}
  if err:=json.Unmarshal(out.Bytes(),&report);err!=nil{t.Fatal(err)}
- if report.GatePassed||len(report.GateFailures)==0||report.GateFailures[0]!="tenant[\\"one\\"].minimum_clean_samples"{t.Fatalf("missing machine-readable reason: %+v",report)}
+ if report.GatePassed||len(report.GateFailures)==0||report.GateFailures[0]!=`tenant["one"].minimum_clean_samples`{t.Fatalf("missing machine-readable reason: %+v",report)}
 }
