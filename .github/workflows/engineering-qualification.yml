@@ -101,6 +101,26 @@ jobs:
           GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="$LDFLAGS" -o dist/spamgate-eval-linux-amd64 ./cmd/spamgate-eval
           GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="$LDFLAGS" -o dist/spamgate-postfix-release-linux-amd64 ./cmd/spamgate-postfix-release
           GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="$LDFLAGS" -o dist/spamgate-spool-audit-linux-amd64 ./cmd/spamgate-spool-audit
+          GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -o dist/spamgate-corpus-compare-linux-amd64 ./cmd/spamgate-corpus-compare
+          COMPARE_DIR="$(mktemp -d)"
+          printf '%s\\n' '{"id":"clean-1","tenant":"test","truth":"clean","score":0.1}' '{"id":"spam-1","tenant":"test","truth":"spam","score":0.9}' > "$COMPARE_DIR/base.jsonl"
+          cp "$COMPARE_DIR/base.jsonl" "$COMPARE_DIR/candidate.jsonl"
+          dist/spamgate-corpus-compare-linux-amd64 -baseline "$COMPARE_DIR/base.jsonl" -candidate "$COMPARE_DIR/candidate.jsonl" -require-tenants > "$COMPARE_DIR/pass.json"
+          python3 - "$COMPARE_DIR/pass.json" <<'PY_COMPARE_PASS'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          assert r["gate_passed"] is True and r["gate_failures"] == []
+          PY_COMPARE_PASS
+          if dist/spamgate-corpus-compare-linux-amd64 -baseline "$COMPARE_DIR/base.jsonl" -candidate "$COMPARE_DIR/candidate.jsonl" -require-tenants -min-tenant-clean=2 > "$COMPARE_DIR/fail.json"; then
+            echo 'Undersized tenant evidence incorrectly passed' >&2; exit 1
+          fi
+          python3 - "$COMPARE_DIR/fail.json" <<'PY_COMPARE_FAIL'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          assert r["gate_passed"] is False
+          assert 'tenant["test"].minimum_clean_samples' in r["gate_failures"]
+          PY_COMPARE_FAIL
+          rm -rf "$COMPARE_DIR"
           GOOS=windows GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="$LDFLAGS -H=windowsgui" -o dist/spamgate-windows-amd64.exe ./cmd/spamgate
           python3 - "$BUILD_VERSION" "$SOURCE_SHA" <<'PY'
           import datetime, json, pathlib, sys
