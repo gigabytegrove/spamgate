@@ -45,6 +45,8 @@ type Report struct {
  States map[string]int `json:"states"`
  OldestQueuedSeconds int64 `json:"oldest_queued_seconds"`
  OldestDeliveringSeconds int64 `json:"oldest_delivering_seconds"`
+ OldestDeadSeconds int64 `json:"oldest_dead_seconds"`
+ QueueAgeBuckets map[string]map[string]int `json:"queue_age_buckets"`
  FindingCounts map[string]int `json:"finding_counts"`
  Findings []Finding `json:"findings"`
  Truncated bool `json:"truncated"`
@@ -165,7 +167,7 @@ func readRecord(path string) (record,error) {
 // Live scans are observations, not transactionally coherent snapshots.
 // Pending files are NEVER replayed automatically.
 func Audit(dir string) (Report,error) {
- out:=Report{States:make(map[string]int),FindingCounts:make(map[string]int),Findings:make([]Finding,0)}
+ out:=Report{States:make(map[string]int),FindingCounts:make(map[string]int),Findings:make([]Finding,0),QueueAgeBuckets:map[string]map[string]int{"queued":{"under_5m":0,"5m_to_1h":0,"1h_to_24h":0,"over_24h":0},"delivering":{"under_5m":0,"5m_to_1h":0,"1h_to_24h":0,"over_24h":0},"dead":{"under_5m":0,"5m_to_1h":0,"1h_to_24h":0,"over_24h":0}}}
  // A valid pending record can exist without a published counterpart after
  // an interrupted fsync/rename. Multiple such records with the same ID
  // must be reported before any operator considers manual recovery.
@@ -237,6 +239,12 @@ func Audit(dir string) (Report,error) {
     if age<0 {age=0}
     if rec.State=="queued"&&age>out.OldestQueuedSeconds {out.OldestQueuedSeconds=age}
     if rec.State=="delivering"&&age>out.OldestDeliveringSeconds {out.OldestDeliveringSeconds=age}
+    if rec.State=="dead"&&age>out.OldestDeadSeconds {out.OldestDeadSeconds=age}
+    if buckets,ok:=out.QueueAgeBuckets[rec.State];ok {
+     bucket:="under_5m"
+     if age>=86400 {bucket="over_24h"} else if age>=3600 {bucket="1h_to_24h"} else if age>=300 {bucket="5m_to_1h"}
+     buckets[bucket]++
+    }
    }
    if rec.IntegritySHA256==""||rec.StateSHA256==""{
     out.LegacyUnsigned++
