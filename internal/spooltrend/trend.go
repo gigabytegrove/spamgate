@@ -9,7 +9,6 @@ import (
  "io"
  "os"
  "sort"
- "math"
  "strings"
 )
 
@@ -66,9 +65,7 @@ func Load(path string)(Snapshot,error){
  after,err:=f.Stat()
  if err!=nil{return Snapshot{},err}
  if !os.SameFile(opened,after)||after.Size()!=fi.Size()||!after.ModTime().Equal(fi.ModTime()) {return Snapshot{},errors.New("report changed during read")}
- if s.GatePassed==nil || !*s.GatePassed || s.Truncated || len(s.Findings)!=0 || len(s.GateFailures)!=0 {
-  return Snapshot{},errors.New("input is not a passing, complete spool audit")
- }
+ if err:=validateSnapshot(s);err!=nil{return Snapshot{},err}
  if s.Examined<0||s.Published<0||s.Pending<0||s.Published>s.Examined || s.Pending>s.Examined-s.Published||s.States==nil {
   return Snapshot{},errors.New("invalid spool counts")
  }
@@ -79,14 +76,14 @@ func Load(path string)(Snapshot,error){
   if n>s.Published-total{return Snapshot{},errors.New("verified states exceed published records")}
   total+=n
  }
- if total>s.Published {return Snapshot{},errors.New("verified states exceed published records")}
+ if total!=s.Published {return Snapshot{},errors.New("verified state count does not match published records")}
  return s,nil
 }
 func Compare(before,after Snapshot,maxQueuedGrowth,maxDeadGrowth int)(Result,error){
  if maxQueuedGrowth < -1 || maxDeadGrowth < -1{return Result{},errors.New("invalid limits")}
  // Callers constructing snapshots directly must meet the same acceptance contract.
  for _,s:=range []Snapshot{before,after} {
-  if s.GatePassed==nil||!*s.GatePassed||s.Truncated||len(s.Findings)!=0||len(s.GateFailures)!=0||s.States==nil {return Result{},errors.New("unqualified input snapshot")}
+  if err:=validateSnapshot(s);err!=nil{return Result{},err}
  }
  a,b:=before.States,after.States
  r:=Result{GatePassed:true,Before:map[string]int{},After:map[string]int{},QueueDelta:b["queued"]-a["queued"],DeliveringDelta:b["delivering"]-a["delivering"],DeadDelta:b["dead"]-a["dead"],PendingDelta:after.Pending-before.Pending}
@@ -97,4 +94,16 @@ func Compare(before,after Snapshot,maxQueuedGrowth,maxDeadGrowth int)(Result,err
  r.GatePassed=len(r.GateFailures)==0
  return r,nil
 }
-var _ = math.MaxInt
+// validateSnapshot also protects callers that construct Snapshot values directly.
+func validateSnapshot(s Snapshot) error {
+ if s.GatePassed==nil || !*s.GatePassed || s.Truncated || len(s.Findings)!=0 || len(s.GateFailures)!=0 {return errors.New("unqualified input snapshot")}
+ if s.Examined<0 || s.Published<0 || s.Pending<0 || s.Published>s.Examined || s.Pending>s.Examined-s.Published || s.States==nil {return errors.New("invalid snapshot counts")}
+ total:=0
+ for state,n:=range s.States {
+  switch state {case "queued","delivering","dead","delivered","discard_pending":default:return fmt.Errorf("invalid state %q",state)}
+  if n<0 || n>s.Published-total {return errors.New("invalid verified state count")}
+  total+=n
+ }
+ if total!=s.Published {return errors.New("published records missing verified states")}
+ return nil
+}
