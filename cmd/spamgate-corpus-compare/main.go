@@ -47,7 +47,7 @@ func loadCorpus(r io.Reader) (map[string]comparisonSample,error) {
   s,err:=decodeSample(raw);if err!=nil{return nil,fmt.Errorf("line %d: %w",line,err)}
   if s.ID=="" || (s.Truth!="clean" && s.Truth!="spam") || !(s.Score>=0 && s.Score<=1) {return nil,fmt.Errorf("line %d: invalid sample",line)}
   if _,exists:=samples[s.ID];exists{return nil,fmt.Errorf("line %d: duplicate id %q",line,s.ID)}
-  samples[s.ID]=comparisonSample{ID:s.ID,Truth:s.Truth,Score:s.Score}
+  samples[s.ID]=comparisonSample{ID:s.ID,Tenant:s.Tenant,Truth:s.Truth,Score:s.Score}
  }
  if err:=scan.Err();err!=nil{return nil,err}
  if len(samples)==0{return nil,errors.New("empty corpus")}
