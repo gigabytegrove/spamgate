@@ -24,6 +24,8 @@ func decodeSample(raw string)(comparisonSample,error){
   switch key{
   case "id":
    if err:=json.Unmarshal(rawValue,&s.ID);err!=nil{return s,err}
+  case "tenant":
+   if err:=json.Unmarshal(rawValue,&s.Tenant);err!=nil{return s,err}
   case "truth":
    if err:=json.Unmarshal(rawValue,&s.Truth);err!=nil{return s,err}
   case "score":
