@@ -28,6 +28,7 @@ type Finding struct {
  Detail string `json:"detail"`
 }
 type Report struct {
+ CapturedAt time.Time `json:"captured_at"`
  GatePassed *bool `json:"gate_passed,omitempty"`
  GateFailures []string `json:"gate_failures,omitempty"`
  Examined int `json:"examined"`
@@ -167,7 +168,7 @@ func readRecord(path string) (record,error) {
 // Live scans are observations, not transactionally coherent snapshots.
 // Pending files are NEVER replayed automatically.
 func Audit(dir string) (Report,error) {
- out:=Report{States:make(map[string]int),FindingCounts:make(map[string]int),Findings:make([]Finding,0),QueueAgeBuckets:map[string]map[string]int{"queued":{"under_5m":0,"5m_to_1h":0,"1h_to_24h":0,"over_24h":0},"delivering":{"under_5m":0,"5m_to_1h":0,"1h_to_24h":0,"over_24h":0},"dead":{"under_5m":0,"5m_to_1h":0,"1h_to_24h":0,"over_24h":0}}}
+ out:=Report{CapturedAt:time.Now().UTC(),States:make(map[string]int),FindingCounts:make(map[string]int),Findings:make([]Finding,0),QueueAgeBuckets:map[string]map[string]int{"queued":{"under_5m":0,"5m_to_1h":0,"1h_to_24h":0,"over_24h":0},"delivering":{"under_5m":0,"5m_to_1h":0,"1h_to_24h":0,"over_24h":0},"dead":{"under_5m":0,"5m_to_1h":0,"1h_to_24h":0,"over_24h":0}}}
  // A valid pending record can exist without a published counterpart after
  // an interrupted fsync/rename. Multiple such records with the same ID
  // must be reported before any operator considers manual recovery.
