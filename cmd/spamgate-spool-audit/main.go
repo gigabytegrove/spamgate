@@ -28,7 +28,8 @@ func run(args []string, stdout, stderr io.Writer) int {
  report, err := spoolaudit.Audit(*dir)
  if err != nil { fmt.Fprintln(stderr, "spool audit failed:", err); return 2 }
  failures := queueLimitFailures(report.States, report.Pending, *maxQueued, *maxDead, *maxPending)
- passed := !report.HasFindings() && len(failures) == 0
+ failures = append(failures, integrityGateFailures(report)...)
+ passed := len(failures) == 0
  report.GatePassed = &passed
  report.GateFailures = failures
  if *jsonOut {
@@ -59,11 +60,10 @@ func run(args []string, stdout, stderr io.Writer) int {
    }
   }
  }
- if len(failures) != 0 {
-  for _, failure := range failures { fmt.Fprintln(stderr, "queue threshold exceeded:", failure) }
+ if !passed {
+  for _, failure := range failures { fmt.Fprintln(stderr, "spool qualification failed:", failure) }
   return 1
  }
- if report.HasFindings() { return 1 }
  return 0
 }
 
