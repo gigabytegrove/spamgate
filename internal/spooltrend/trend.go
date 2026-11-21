@@ -10,11 +10,13 @@ import (
  "os"
  "sort"
  "strings"
+ "time"
 )
 
 const maxReportSize = 4 << 20
 
 type Snapshot struct {
+ CapturedAt time.Time `json:"captured_at,omitempty"`
  GatePassed *bool `json:"gate_passed"`
  GateFailures []string `json:"gate_failures"`
  Examined int `json:"examined"`
@@ -96,6 +98,8 @@ func Compare(before,after Snapshot,maxQueuedGrowth,maxDeadGrowth int)(Result,err
  for _,s:=range []Snapshot{before,after} {
   if err:=validateSnapshot(s);err!=nil{return Result{},err}
  }
+ if before.CapturedAt.IsZero()!=after.CapturedAt.IsZero() {return Result{},errors.New("mixed timestamped and legacy snapshots")}
+ if !before.CapturedAt.IsZero() && !after.CapturedAt.After(before.CapturedAt) {return Result{},errors.New("later report must have a strictly later capture timestamp")}
  a,b:=before.States,after.States
  queuedDelta,err:=checkedDelta(b["queued"],a["queued"]);if err!=nil{return Result{},err}
  deliveringDelta,err:=checkedDelta(b["delivering"],a["delivering"]);if err!=nil{return Result{},err}
@@ -112,6 +116,7 @@ func Compare(before,after Snapshot,maxQueuedGrowth,maxDeadGrowth int)(Result,err
 // validateSnapshot also protects callers that construct Snapshot values directly.
 func validateSnapshot(s Snapshot) error {
  if s.GatePassed==nil || !*s.GatePassed || s.Truncated || len(s.Findings)!=0 || len(s.GateFailures)!=0 {return errors.New("unqualified input snapshot")}
+ if !s.CapturedAt.IsZero() && (s.CapturedAt.Before(time.Date(2020,1,1,0,0,0,0,time.UTC)) || s.CapturedAt.After(time.Now().Add(5*time.Minute))) {return errors.New("invalid capture timestamp")}
  if s.Examined<0 || s.Published<0 || s.Pending<0 || s.Published>s.Examined || s.Pending>s.Examined-s.Published || s.States==nil {return errors.New("invalid snapshot counts")}
  total:=0
  for state,n:=range s.States {
