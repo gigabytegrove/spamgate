@@ -128,7 +128,6 @@ func compareRun(args []string,stdout,stderr io.Writer)int{
  b,err:=loadCorpus(bf);if err!=nil{fmt.Fprintln(stderr,"baseline:",err);return 2}
  c,err:=loadCorpus(cf);if err!=nil{fmt.Fprintln(stderr,"candidate:",err);return 2}
  report,err:=compareCorpora(b,c,*threshold);if err!=nil{fmt.Fprintln(stderr,err);return 2}
- if *requireTenants {for name,t:=range report.ByTenant {if name=="" {fmt.Fprintln(stderr,"tenant evidence required");return 2};if t.Clean<*minTenantClean||t.Spam<*minTenantSpam {fmt.Fprintf(stderr,"insufficient tenant corpus %q\n",name);return 2}}}
  report.GateFailures=assessComparisonGates(report,comparisonGateLimits{
   RequireTenants:*requireTenants,MinClean:*minClean,MinSpam:*minSpam,
   MaxNewFP:*maxNewFP,MaxNewFN:*maxNewFN,
