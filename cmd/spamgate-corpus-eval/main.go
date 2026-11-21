@@ -19,7 +19,7 @@ func evaluate(r io.Reader, threshold float64) (Report,error) {
  scan:=bufio.NewScanner(r);scan.Buffer(make([]byte,4096),4*1024*1024)
  seen:=map[string]struct{}{}
  for line:=1;scan.Scan();line++ { raw:=strings.TrimSpace(scan.Text());if raw==""{continue}
- var s Sample; dec:=json.NewDecoder(strings.NewReader(raw));dec.DisallowUnknownFields();if err:=dec.Decode(&s);err!=nil{return out,fmt.Errorf("line %d: %w",line,err)};var extra any;if err:=dec.Decode(&extra);err!=io.EOF{return out,fmt.Errorf("line %d: trailing JSON",line)}
+ s,err:=decodeSample(raw);if err!=nil{return out,fmt.Errorf("line %d: %w",line,err)}
  if s.ID==""{return out,fmt.Errorf("line %d: missing id",line)};if _,ok:=seen[s.ID];ok{return out,fmt.Errorf("line %d: duplicate id %q",line,s.ID)};seen[s.ID]=struct{}{}
  if s.Truth!="spam"&&s.Truth!="clean"{return out,fmt.Errorf("line %d: truth must be spam or clean",line)}
  if !(s.Score>=0&&s.Score<=1){return out,fmt.Errorf("line %d: score outside [0,1]",line)}
