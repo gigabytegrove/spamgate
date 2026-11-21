@@ -48,7 +48,7 @@ func TestRestoreCredentialBoundaryRejectsMissingAndNonregularInputs(t *testing.T
  if err := checkRestoreCredentialBoundary(target,manifest,key); err == nil || !strings.Contains(err.Error(),"regular file") { t.Fatalf("directory manifest: %v",err) }
 }
 
-func TestRestoreCLIRejectsCredentialOverlapBeforeManifestDecode(t *testing.T) {
+func TestRestoreCLIRejectsExistingDestinationBeforeManifestDecode(t *testing.T) {
  base := t.TempDir()
  backup := filepath.Join(base,"backup")
  secrets := filepath.Join(base,"secrets")
@@ -63,6 +63,6 @@ func TestRestoreCLIRejectsCredentialOverlapBeforeManifestDecode(t *testing.T) {
  }
  var output strings.Builder
  err := run([]string{"-operation","restore","-backup",backup,"-active-data",active,"-target",secrets,"-manifest",manifest,"-key-file",key},&output)
- if err == nil || !strings.Contains(err.Error(),"restore destination overlaps") { t.Fatalf("expected credential overlap before decode, got %v",err) }
+ if err == nil || !strings.Contains(err.Error(),"restore target already exists") { t.Fatalf("expected existing destination refusal before decode, got %v",err) }
  if output.Len()!=0 { t.Fatalf("unexpected output %q",output.String()) }
 }
