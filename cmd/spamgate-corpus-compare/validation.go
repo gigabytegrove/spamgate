@@ -18,13 +18,16 @@ func decodeSample(raw string)(comparisonSample,error){
   k,err:=dec.Token();if err!=nil{return s,err}
   key,ok:=k.(string);if !ok{return s,errors.New("invalid key")}
   if seen[key]{return s,fmt.Errorf("duplicate field %q",key)};seen[key]=true
+  var rawValue json.RawMessage
+  if err:=dec.Decode(&rawValue);err!=nil{return s,err}
+  if string(rawValue)=="null"{return s,fmt.Errorf("null field %q",key)}
   switch key{
   case "id":
-   if err:=dec.Decode(&s.ID);err!=nil{return s,err}
+   if err:=json.Unmarshal(rawValue,&s.ID);err!=nil{return s,err}
   case "truth":
-   if err:=dec.Decode(&s.Truth);err!=nil{return s,err}
+   if err:=json.Unmarshal(rawValue,&s.Truth);err!=nil{return s,err}
   case "score":
-   if err:=dec.Decode(&s.Score);err!=nil{return s,err}
+   if err:=json.Unmarshal(rawValue,&s.Score);err!=nil{return s,err}
   default:return s,fmt.Errorf("unknown field %q",key)
   }
  }
