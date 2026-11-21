@@ -13,7 +13,7 @@ func TestIntegrityGateFailures(t *testing.T) {
   report spoolaudit.Report
   want []string
  }{
-  {"clean", spoolaudit.Report{}, nil},
+  {"clean", spoolaudit.Report{}, []string{}},
   {"sorted", spoolaudit.Report{FindingCounts:map[string]int{"z":2,"a":1,"zero":0}}, []string{"integrity:a=1","integrity:z=2"}},
   {"truncated", spoolaudit.Report{FindingCounts:map[string]int{"unreadable_record":4},Truncated:true}, []string{"integrity:unreadable_record=4","integrity:findings_truncated"}},
   {"inconsistent", spoolaudit.Report{Findings:[]spoolaudit.Finding{{Code:"test"}}}, []string{"integrity:unclassified_findings"}},
