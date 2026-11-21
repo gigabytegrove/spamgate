@@ -14,6 +14,8 @@ import (
 
 type comparisonSample struct { ID string; Tenant string; Truth string; Score float64 }
 type comparisonReport struct {
+ GatePassed bool `json:"gate_passed"`
+ GateFailures []string `json:"gate_failures"`
  Total int `json:"total"`
  ByTenant map[string]tenantComparison `json:"by_tenant,omitempty"`
  Clean int `json:"clean"`
@@ -127,9 +129,19 @@ func compareRun(args []string,stdout,stderr io.Writer)int{
  c,err:=loadCorpus(cf);if err!=nil{fmt.Fprintln(stderr,"candidate:",err);return 2}
  report,err:=compareCorpora(b,c,*threshold);if err!=nil{fmt.Fprintln(stderr,err);return 2}
  if *requireTenants {for name,t:=range report.ByTenant {if name=="" {fmt.Fprintln(stderr,"tenant evidence required");return 2};if t.Clean<*minTenantClean||t.Spam<*minTenantSpam {fmt.Fprintf(stderr,"insufficient tenant corpus %q\n",name);return 2}}}
+ report.GateFailures=assessComparisonGates(report,comparisonGateLimits{
+  RequireTenants:*requireTenants,MinClean:*minClean,MinSpam:*minSpam,
+  MaxNewFP:*maxNewFP,MaxNewFN:*maxNewFN,
+  MaxFPR:*maxCandidateFPR,MaxFNR:*maxCandidateFNR,
+  MaxFPRUpper:*maxCandidateUpper,MaxFNRUpper:*maxCandidateFNUpper,
+  MinTenantClean:*minTenantClean,MinTenantSpam:*minTenantSpam,
+  MaxTenantNewFP:*maxTenantNewFP,MaxTenantNewFN:*maxTenantNewFN,
+  MaxTenantFPR:*maxTenantFPR,MaxTenantFNR:*maxTenantFNR,
+  MaxTenantFPRUpper:*maxTenantFPRUpper,MaxTenantFNRUpper:*maxTenantFNRUpper,
+ })
+ report.GatePassed=len(report.GateFailures)==0
  if err:=json.NewEncoder(stdout).Encode(report);err!=nil{fmt.Fprintln(stderr,err);return 2}
- if *requireTenants && !tenantGatesPassWithRegressions(report.ByTenant,*maxTenantFPR,*maxTenantFNR,*maxTenantFPRUpper,*maxTenantFNRUpper,*maxTenantNewFP,*maxTenantNewFN){fmt.Fprintln(stderr,"tenant classifier regression gate failed");return 1}
- if report.Clean<*minClean||report.Spam<*minSpam||report.CandidateFalsePositiveRate>*maxCandidateFPR||report.CandidateFalsePositiveUpper95>*maxCandidateUpper||report.CandidateFalseNegativeRate>*maxCandidateFNR||report.CandidateFalseNegativeUpper95>*maxCandidateFNUpper||report.NewFalsePositives>*maxNewFP||report.NewFalseNegatives>*maxNewFN{fmt.Fprintln(stderr,"classifier regression gate failed");return 1}
+ if !report.GatePassed {fmt.Fprintln(stderr,"classifier regression gate failed:",strings.Join(report.GateFailures,", "));return 1}
  return 0
 }
 func main(){os.Exit(compareRun(os.Args[1:],os.Stdout,os.Stderr))}
