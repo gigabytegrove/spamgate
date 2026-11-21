@@ -114,6 +114,9 @@ func compareRun(args []string,stdout,stderr io.Writer)int{
  maxTenantFNRUpper:=f.Float64("max-tenant-fnr-upper-95",1,"maximum Wilson upper false-negative bound per tenant")
  maxCandidateUpper:=f.Float64("max-candidate-fpr-upper-95",1,"maximum candidate Wilson 95 percent upper false-positive bound")
  if err:=f.Parse(args);err!=nil{return 2}
+ tenantGateSupplied:=false
+ f.Visit(func(option *flag.Flag){switch option.Name {case "min-tenant-clean","min-tenant-spam","max-tenant-fpr","max-tenant-fnr","max-tenant-fpr-upper-95","max-tenant-fnr-upper-95":tenantGateSupplied=true}})
+ if tenantGateSupplied && !*requireTenants {fmt.Fprintln(stderr,"tenant gates require -require-tenants");return 2}
  if *minTenantClean<1||*minTenantSpam<1||!validRate(*maxTenantFPR)||!validRate(*maxTenantFNR)||!validRate(*maxTenantFPRUpper)||!validRate(*maxTenantFNRUpper){fmt.Fprintln(stderr,"invalid tenant gate arguments");return 2}
  if *baselinePath==""||*candidatePath==""||*baselinePath==*candidatePath||f.NArg()!=0||*maxNewFP<0||*maxNewFN<0||*minClean<1||*minSpam<1||!(*maxCandidateFPR>=0&&*maxCandidateFPR<=1)||!(*maxCandidateUpper>=0&&*maxCandidateUpper<=1)||!(*maxCandidateFNR>=0&&*maxCandidateFNR<=1)||!(*maxCandidateFNUpper>=0&&*maxCandidateFNUpper<=1)||!(*threshold>=0&&*threshold<=1){fmt.Fprintln(stderr,"invalid arguments");return 2}
  bf,err:=os.Open(*baselinePath);if err!=nil{fmt.Fprintln(stderr,err);return 2};defer bf.Close()
