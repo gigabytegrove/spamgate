@@ -4,7 +4,6 @@ package main
 
 import (
  "encoding/json"
- "errors"
  "flag"
  "fmt"
  "io"
@@ -20,16 +19,27 @@ func run(args []string, stdout, stderr io.Writer) int {
  after := fs.String("after", "", "later spamgate-spool-audit -json report")
  maxGrowth := fs.Int("max-queue-growth", -1, "maximum increase in queued messages; -1 disables")
  maxDeadGrowth := fs.Int("max-dead-growth", -1, "maximum increase in dead messages; -1 disables")
+ maxDeliveringGrowth := fs.Int("max-delivering-growth", -1, "maximum increase in actively delivering messages; -1 disables")
+ maxPendingGrowth := fs.Int("max-pending-growth", -1, "maximum increase in unpublished pending messages; -1 disables")
+ maxDeadCount := fs.Int("max-dead-count", -1, "maximum absolute dead messages in later report; -1 disables")
  if err := fs.Parse(args); err != nil { return 2 }
- if fs.NArg()!=0 || *before=="" || *after=="" || *before==*after || *maxGrowth < -1 || *maxDeadGrowth < -1 {
-  fmt.Fprintln(stderr,"provide distinct -before and -after paths and limits >= -1")
+ policy:=spooltrend.Policy{
+  MaxQueuedGrowth:*maxGrowth,
+  MaxDeadGrowth:*maxDeadGrowth,
+  MaxDeliveringGrowth:*maxDeliveringGrowth,
+  MaxPendingGrowth:*maxPendingGrowth,
+  MaxDeadCount:*maxDeadCount,
+ }
+ if fs.NArg()!=0 || *before=="" || *after=="" || *before==*after {
+  fmt.Fprintln(stderr,"provide distinct -before and -after paths and no positional arguments")
   return 2
  }
+ if err:=policy.Validate();err!=nil{fmt.Fprintln(stderr,err);return 2}
  a,err:=spooltrend.Load(*before)
  if err!=nil { fmt.Fprintln(stderr,"earlier report:",err); return 2 }
  b,err:=spooltrend.Load(*after)
  if err!=nil { fmt.Fprintln(stderr,"later report:",err); return 2 }
- result,err:=spooltrend.Compare(a,b,*maxGrowth,*maxDeadGrowth)
+ result,err:=spooltrend.CompareWithPolicy(a,b,policy)
  if err!=nil { fmt.Fprintln(stderr,"comparison:",err); return 2 }
  enc:=json.NewEncoder(stdout)
  enc.SetIndent("","  ")
@@ -41,4 +51,3 @@ func run(args []string, stdout, stderr io.Writer) int {
  return 0
 }
 func main() { os.Exit(run(os.Args[1:],os.Stdout,os.Stderr)) }
-var _ = errors.New
