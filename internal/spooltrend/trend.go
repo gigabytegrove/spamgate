@@ -9,6 +9,7 @@ import (
  "io"
  "os"
  "sort"
+ "math"
  "strings"
 )
 
@@ -44,8 +45,11 @@ func Load(path string)(Snapshot,error){
  opened,err:=f.Stat()
  if err!=nil{return Snapshot{},err}
  if !opened.Mode().IsRegular() || !os.SameFile(fi,opened) {return Snapshot{},errors.New("report changed during open")}
- dec:=json.NewDecoder(io.LimitReader(f,maxReportSize+1))
- dec.DisallowUnknownFields()
+ data,err:=io.ReadAll(io.LimitReader(f,maxReportSize+1))
+ if err!=nil{return Snapshot{},err}
+ if len(data)>maxReportSize{return Snapshot{},errors.New("report exceeds size limit")}
+ if err:=validateJSON(data);err!=nil{return Snapshot{},err}
+ dec:=json.NewDecoder(strings.NewReader(string(data)))
  var s Snapshot
  // Spool reports contain additional fields; parse into a raw object first
  // to retain forward compatibility while enforcing required safety fields.
@@ -65,13 +69,14 @@ func Load(path string)(Snapshot,error){
  if s.GatePassed==nil || !*s.GatePassed || s.Truncated || len(s.Findings)!=0 || len(s.GateFailures)!=0 {
   return Snapshot{},errors.New("input is not a passing, complete spool audit")
  }
- if s.Examined<0||s.Published<0||s.Pending<0||s.Published+s.Pending>s.Examined||s.States==nil {
+ if s.Examined<0||s.Published<0||s.Pending<0||s.Published>s.Examined || s.Pending>s.Examined-s.Published||s.States==nil {
   return Snapshot{},errors.New("invalid spool counts")
  }
  total:=0
  for state,n:=range s.States {
   switch state {case "queued","delivering","dead","delivered","discard_pending":default:return Snapshot{},fmt.Errorf("invalid state %q",state)}
   if n<0{return Snapshot{},errors.New("negative state count")}
+  if n>s.Published-total{return Snapshot{},errors.New("verified states exceed published records")}
   total+=n
  }
  if total>s.Published {return Snapshot{},errors.New("verified states exceed published records")}
@@ -92,4 +97,4 @@ func Compare(before,after Snapshot,maxQueuedGrowth,maxDeadGrowth int)(Result,err
  r.GatePassed=len(r.GateFailures)==0
  return r,nil
 }
-var _ = strings.TrimSpace
+var _ = math.MaxInt
