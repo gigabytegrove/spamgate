@@ -103,7 +103,7 @@ jobs:
           GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="$LDFLAGS" -o dist/spamgate-spool-audit-linux-amd64 ./cmd/spamgate-spool-audit
           GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -o dist/spamgate-corpus-compare-linux-amd64 ./cmd/spamgate-corpus-compare
           COMPARE_DIR="$(mktemp -d)"
-          printf '%s\\n' '{"id":"clean-1","tenant":"test","truth":"clean","score":0.1}' '{"id":"spam-1","tenant":"test","truth":"spam","score":0.9}' > "$COMPARE_DIR/base.jsonl"
+          printf '%s\n' '{"id":"clean-1","tenant":"test","truth":"clean","score":0.1}' '{"id":"spam-1","tenant":"test","truth":"spam","score":0.9}' > "$COMPARE_DIR/base.jsonl"
           cp "$COMPARE_DIR/base.jsonl" "$COMPARE_DIR/candidate.jsonl"
           dist/spamgate-corpus-compare-linux-amd64 -baseline "$COMPARE_DIR/base.jsonl" -candidate "$COMPARE_DIR/candidate.jsonl" -require-tenants > "$COMPARE_DIR/pass.json"
           python3 - "$COMPARE_DIR/pass.json" <<'PY_COMPARE_PASS'
