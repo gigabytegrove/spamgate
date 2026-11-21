@@ -108,6 +108,8 @@ func compareRun(args []string,stdout,stderr io.Writer)int{
  requireTenants:=f.Bool("require-tenants",false,"require explicit tenant on every sample and enforce tenant-level gates")
  minTenantClean:=f.Int("min-tenant-clean",1,"minimum clean samples per tenant when require-tenants is enabled")
  minTenantSpam:=f.Int("min-tenant-spam",1,"minimum spam samples per tenant when require-tenants is enabled")
+ maxTenantNewFP:=f.Int("max-tenant-new-fp",-1,"maximum new false positives per tenant; -1 disables")
+ maxTenantNewFN:=f.Int("max-tenant-new-fn",-1,"maximum new false negatives per tenant; -1 disables")
  maxTenantFPR:=f.Float64("max-tenant-fpr",1,"maximum false-positive rate per tenant")
  maxTenantFNR:=f.Float64("max-tenant-fnr",1,"maximum false-negative rate per tenant")
  maxTenantFPRUpper:=f.Float64("max-tenant-fpr-upper-95",1,"maximum Wilson upper false-positive bound per tenant")
@@ -115,9 +117,9 @@ func compareRun(args []string,stdout,stderr io.Writer)int{
  maxCandidateUpper:=f.Float64("max-candidate-fpr-upper-95",1,"maximum candidate Wilson 95 percent upper false-positive bound")
  if err:=f.Parse(args);err!=nil{return 2}
  tenantGateSupplied:=false
- f.Visit(func(option *flag.Flag){switch option.Name {case "min-tenant-clean","min-tenant-spam","max-tenant-fpr","max-tenant-fnr","max-tenant-fpr-upper-95","max-tenant-fnr-upper-95":tenantGateSupplied=true}})
+ f.Visit(func(option *flag.Flag){switch option.Name {case "min-tenant-clean","min-tenant-spam","max-tenant-fpr","max-tenant-fnr","max-tenant-fpr-upper-95","max-tenant-fnr-upper-95","max-tenant-new-fp","max-tenant-new-fn":tenantGateSupplied=true}})
  if tenantGateSupplied && !*requireTenants {fmt.Fprintln(stderr,"tenant gates require -require-tenants");return 2}
- if *minTenantClean<1||*minTenantSpam<1||!validRate(*maxTenantFPR)||!validRate(*maxTenantFNR)||!validRate(*maxTenantFPRUpper)||!validRate(*maxTenantFNRUpper){fmt.Fprintln(stderr,"invalid tenant gate arguments");return 2}
+ if *maxTenantNewFP < -1 || *maxTenantNewFN < -1 || *minTenantClean<1||*minTenantSpam<1||!validRate(*maxTenantFPR)||!validRate(*maxTenantFNR)||!validRate(*maxTenantFPRUpper)||!validRate(*maxTenantFNRUpper){fmt.Fprintln(stderr,"invalid tenant gate arguments");return 2}
  if *baselinePath==""||*candidatePath==""||*baselinePath==*candidatePath||f.NArg()!=0||*maxNewFP<0||*maxNewFN<0||*minClean<1||*minSpam<1||!(*maxCandidateFPR>=0&&*maxCandidateFPR<=1)||!(*maxCandidateUpper>=0&&*maxCandidateUpper<=1)||!(*maxCandidateFNR>=0&&*maxCandidateFNR<=1)||!(*maxCandidateFNUpper>=0&&*maxCandidateFNUpper<=1)||!(*threshold>=0&&*threshold<=1){fmt.Fprintln(stderr,"invalid arguments");return 2}
  bf,err:=os.Open(*baselinePath);if err!=nil{fmt.Fprintln(stderr,err);return 2};defer bf.Close()
  cf,err:=os.Open(*candidatePath);if err!=nil{fmt.Fprintln(stderr,err);return 2};defer cf.Close()
@@ -126,7 +128,7 @@ func compareRun(args []string,stdout,stderr io.Writer)int{
  report,err:=compareCorpora(b,c,*threshold);if err!=nil{fmt.Fprintln(stderr,err);return 2}
  if *requireTenants {for name,t:=range report.ByTenant {if name=="" {fmt.Fprintln(stderr,"tenant evidence required");return 2};if t.Clean<*minTenantClean||t.Spam<*minTenantSpam {fmt.Fprintf(stderr,"insufficient tenant corpus %q\n",name);return 2}}}
  if err:=json.NewEncoder(stdout).Encode(report);err!=nil{fmt.Fprintln(stderr,err);return 2}
- if *requireTenants && !tenantGatesPass(report.ByTenant,*maxTenantFPR,*maxTenantFNR,*maxTenantFPRUpper,*maxTenantFNRUpper){fmt.Fprintln(stderr,"tenant classifier regression gate failed");return 1}
+ if *requireTenants && !tenantGatesPassWithRegressions(report.ByTenant,*maxTenantFPR,*maxTenantFNR,*maxTenantFPRUpper,*maxTenantFNRUpper,*maxTenantNewFP,*maxTenantNewFN){fmt.Fprintln(stderr,"tenant classifier regression gate failed");return 1}
  if report.Clean<*minClean||report.Spam<*minSpam||report.CandidateFalsePositiveRate>*maxCandidateFPR||report.CandidateFalsePositiveUpper95>*maxCandidateUpper||report.CandidateFalseNegativeRate>*maxCandidateFNR||report.CandidateFalseNegativeUpper95>*maxCandidateFNUpper||report.NewFalsePositives>*maxNewFP||report.NewFalseNegatives>*maxNewFN{fmt.Fprintln(stderr,"classifier regression gate failed");return 1}
  return 0
 }
