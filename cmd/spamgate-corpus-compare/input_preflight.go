@@ -7,9 +7,10 @@ import (
  "path/filepath"
 )
 
-// openEvidence opens an immutable snapshot of an ordinary on-disk corpus.
-// Symlinks and non-regular files are rejected to prevent FIFO hangs, device
-// reads, and accidental reuse of the same evidence under different paths.
+// openEvidence checks that the named corpus and opened descriptor identify the
+// same regular file. This is not an immutable snapshot: writers must not modify
+// evidence during qualification. An adversarial pathname replacement between
+// Lstat and Open remains outside this check's security guarantee.
 func openEvidence(path string) (*os.File, error) {
  if path == "" { return nil, errors.New("empty corpus path") }
  cleaned := filepath.Clean(path)
