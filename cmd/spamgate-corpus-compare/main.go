@@ -35,6 +35,8 @@ type comparisonReport struct {
  CandidateFalseNegativeRate float64 `json:"candidate_false_negative_rate"`
  BaselineFalseNegativeUpper95 float64 `json:"baseline_false_negative_upper_95"`
  CandidateFalseNegativeUpper95 float64 `json:"candidate_false_negative_upper_95"`
+ CleanRegressionPValue float64 `json:"clean_regression_p_value"`
+ SpamRegressionPValue float64 `json:"spam_regression_p_value"`
 }
 func loadCorpus(r io.Reader) (map[string]comparisonSample,error) {
  scan:=bufio.NewScanner(r);scan.Buffer(make([]byte,4096),4*1024*1024)
@@ -83,6 +85,8 @@ func compareCorpora(baseline,candidate map[string]comparisonSample,threshold flo
  r.CandidateFalseNegativeRate=float64(r.CandidateFalseNegatives)/float64(r.Spam)
  r.BaselineFalseNegativeUpper95=compareWilsonUpper(r.BaselineFalseNegatives,r.Spam)
  r.CandidateFalseNegativeUpper95=compareWilsonUpper(r.CandidateFalseNegatives,r.Spam)
+ r.CleanRegressionPValue=pairedRegressionP(r.NewFalsePositives,r.FixedFalsePositives)
+ r.SpamRegressionPValue=pairedRegressionP(r.NewFalseNegatives,r.FixedFalseNegatives)
  sort.Strings(r.NewFalsePositiveIDs);sort.Strings(r.NewFalseNegativeIDs)
  return r,nil
 }
