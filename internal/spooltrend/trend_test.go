@@ -10,7 +10,9 @@ import (
 
 func snapshot(states map[string]int) Snapshot {
  ok:=true
- return Snapshot{GatePassed:&ok,Examined:10,Published:10,States:states,Findings:[]json.RawMessage{}}
+ total:=0
+ for _,n:=range states {total+=n}
+ return Snapshot{GatePassed:&ok,Examined:total,Published:total,States:states,Findings:[]json.RawMessage{}}
 }
 func TestGrowthGates(t *testing.T){
  a:=snapshot(map[string]int{"queued":2,"dead":0})
@@ -46,4 +48,21 @@ func TestLoadRejectsUnsafeEvidence(t *testing.T){
  }
  if err:=os.Symlink(path,filepath.Join(dir,"link"));err!=nil{t.Fatal(err)}
  if _,err:=Load(filepath.Join(dir,"link"));err==nil{t.Fatal("accepted symlink")}
+}
+
+func TestRejectIncompletePublishedStates(t *testing.T) {
+ a:=snapshot(map[string]int{"queued":1})
+ b:=snapshot(map[string]int{"queued":1})
+ b.Published=2
+ b.Examined=2
+ if _,err:=Compare(a,b,-1,-1);err==nil {t.Fatal("accepted missing verified state")}
+ b=snapshot(map[string]int{"queued":1})
+ b.States["unexpected"]=1
+ if _,err:=Compare(a,b,-1,-1);err==nil {t.Fatal("accepted unknown state")}
+ b=snapshot(map[string]int{"queued":1})
+ b.States["dead"]=-1
+ if _,err:=Compare(a,b,-1,-1);err==nil {t.Fatal("accepted negative state")}
+ b=snapshot(map[string]int{"queued":1})
+ b.Pending=1
+ if _,err:=Compare(a,b,-1,-1);err==nil {t.Fatal("accepted impossible pending count")}
 }
