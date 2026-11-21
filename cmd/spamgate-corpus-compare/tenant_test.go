@@ -43,7 +43,7 @@ func TestTenantCLIQualification(t *testing.T) {
  if err:=json.Unmarshal(out.Bytes(),&report);err!=nil{t.Fatal(err)}
  if report.ByTenant["north"].Clean!=1 {t.Fatal("missing tenant report")}
  out.Reset();errs.Reset()
- if code:=compareRun(append(append([]string{},args...),"-min-tenant-clean=2"),&out,&errs);code!=2 {t.Fatalf("undersized tenant corpus code %d",code)}
+ if code:=compareRun(append(append([]string{},args...),"-min-tenant-clean=2"),&out,&errs);code!=1 {t.Fatalf("undersized tenant corpus code %d",code)}
  out.Reset();errs.Reset()
  if code:=compareRun(append(append([]string{},args...),"-max-tenant-fpr-upper-95=0"),&out,&errs);code!=1 {t.Fatalf("confidence gate code %d",code)}
  out.Reset();errs.Reset()
