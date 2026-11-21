@@ -5,20 +5,21 @@ import (
  "fmt"
  "os"
  "path/filepath"
+ "syscall"
 )
 
-// openEvidence checks that the named corpus and opened descriptor identify the
-// same regular file. This is not an immutable snapshot: writers must not modify
-// evidence during qualification. An adversarial pathname replacement between
-// Lstat and Open remains outside this check's security guarantee.
+// openEvidence checks the opened inode rather than trusting a pathname.
+// O_NOFOLLOW closes the Lstat/Open symlink-swap window on native Linux.
 func openEvidence(path string) (*os.File, error) {
  if path == "" { return nil, errors.New("empty corpus path") }
  cleaned := filepath.Clean(path)
  info, err := os.Lstat(cleaned)
  if err != nil { return nil, fmt.Errorf("inspect corpus: %w", err) }
  if !info.Mode().IsRegular() { return nil, errors.New("corpus must be a regular file (no symlinks, pipes or devices)") }
- f, err := os.Open(cleaned)
- if err != nil { return nil, fmt.Errorf("open corpus: %w", err) }
+ fd, err := syscall.Open(cleaned, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+ if err != nil { return nil, fmt.Errorf("open corpus without following symlinks: %w", err) }
+ f := os.NewFile(uintptr(fd), cleaned)
+ if f == nil { syscall.Close(fd); return nil, errors.New("could not wrap corpus descriptor") }
  opened, err := f.Stat()
  if err != nil { f.Close(); return nil, err }
  if !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
