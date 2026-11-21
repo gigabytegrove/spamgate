@@ -28,6 +28,8 @@ type Finding struct {
  Detail string `json:"detail"`
 }
 type Report struct {
+ GatePassed *bool `json:"gate_passed,omitempty"`
+ GateFailures []string `json:"gate_failures,omitempty"`
  Examined int `json:"examined"`
  Published int `json:"published"`
  Pending int `json:"pending"`
