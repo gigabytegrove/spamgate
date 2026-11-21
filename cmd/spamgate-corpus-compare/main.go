@@ -27,6 +27,10 @@ type comparisonReport struct {
  FixedFalseNegatives int `json:"fixed_false_negatives"`
  NewFalsePositiveIDs []string `json:"new_false_positive_ids"`
  NewFalseNegativeIDs []string `json:"new_false_negative_ids"`
+ BaselineFalsePositiveUpper95 float64 `json:"baseline_false_positive_upper_95"`
+ CandidateFalsePositiveUpper95 float64 `json:"candidate_false_positive_upper_95"`
+ BaselineFalsePositiveRate float64 `json:"baseline_false_positive_rate"`
+ CandidateFalsePositiveRate float64 `json:"candidate_false_positive_rate"`
 }
 func loadCorpus(r io.Reader) (map[string]comparisonSample,error) {
  scan:=bufio.NewScanner(r);scan.Buffer(make([]byte,4096),4*1024*1024)
@@ -67,6 +71,10 @@ func compareCorpora(baseline,candidate map[string]comparisonSample,threshold flo
   r.Total++
  }
  if r.Clean==0||r.Spam==0{return r,errors.New("both classes required")}
+ r.BaselineFalsePositiveRate=float64(r.BaselineFalsePositives)/float64(r.Clean)
+ r.CandidateFalsePositiveRate=float64(r.CandidateFalsePositives)/float64(r.Clean)
+ r.BaselineFalsePositiveUpper95=compareWilsonUpper(r.BaselineFalsePositives,r.Clean)
+ r.CandidateFalsePositiveUpper95=compareWilsonUpper(r.CandidateFalsePositives,r.Clean)
  sort.Strings(r.NewFalsePositiveIDs);sort.Strings(r.NewFalseNegativeIDs)
  return r,nil
 }
@@ -76,15 +84,19 @@ func compareRun(args []string,stdout,stderr io.Writer)int{
  threshold:=f.Float64("threshold",0.5,"classifier threshold")
  maxNewFP:=f.Int("max-new-fp",0,"maximum newly misclassified clean samples")
  maxNewFN:=f.Int("max-new-fn",0,"maximum newly missed spam samples")
+ minClean:=f.Int("min-clean",1,"minimum labeled clean samples")
+ minSpam:=f.Int("min-spam",1,"minimum labeled spam samples")
+ maxCandidateFPR:=f.Float64("max-candidate-fpr",1,"maximum candidate clean false-positive rate")
+ maxCandidateUpper:=f.Float64("max-candidate-fpr-upper-95",1,"maximum candidate Wilson 95 percent upper false-positive bound")
  if err:=f.Parse(args);err!=nil{return 2}
- if *baselinePath==""||*candidatePath==""||*baselinePath==*candidatePath||f.NArg()!=0||*maxNewFP<0||*maxNewFN<0||!(*threshold>=0&&*threshold<=1){fmt.Fprintln(stderr,"invalid arguments");return 2}
+ if *baselinePath==""||*candidatePath==""||*baselinePath==*candidatePath||f.NArg()!=0||*maxNewFP<0||*maxNewFN<0||*minClean<1||*minSpam<1||!(*maxCandidateFPR>=0&&*maxCandidateFPR<=1)||!(*maxCandidateUpper>=0&&*maxCandidateUpper<=1)||!(*threshold>=0&&*threshold<=1){fmt.Fprintln(stderr,"invalid arguments");return 2}
  bf,err:=os.Open(*baselinePath);if err!=nil{fmt.Fprintln(stderr,err);return 2};defer bf.Close()
  cf,err:=os.Open(*candidatePath);if err!=nil{fmt.Fprintln(stderr,err);return 2};defer cf.Close()
  b,err:=loadCorpus(bf);if err!=nil{fmt.Fprintln(stderr,"baseline:",err);return 2}
  c,err:=loadCorpus(cf);if err!=nil{fmt.Fprintln(stderr,"candidate:",err);return 2}
  report,err:=compareCorpora(b,c,*threshold);if err!=nil{fmt.Fprintln(stderr,err);return 2}
  if err:=json.NewEncoder(stdout).Encode(report);err!=nil{fmt.Fprintln(stderr,err);return 2}
- if report.NewFalsePositives>*maxNewFP||report.NewFalseNegatives>*maxNewFN{fmt.Fprintln(stderr,"classifier regression gate failed");return 1}
+ if report.Clean<*minClean||report.Spam<*minSpam||report.CandidateFalsePositiveRate>*maxCandidateFPR||report.CandidateFalsePositiveUpper95>*maxCandidateUpper||report.NewFalsePositives>*maxNewFP||report.NewFalseNegatives>*maxNewFN{fmt.Fprintln(stderr,"classifier regression gate failed");return 1}
  return 0
 }
 func main(){os.Exit(compareRun(os.Args[1:],os.Stdout,os.Stderr))}
