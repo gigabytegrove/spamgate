@@ -123,8 +123,7 @@ func compareRun(args []string,stdout,stderr io.Writer)int{
  if tenantGateSupplied && !*requireTenants {fmt.Fprintln(stderr,"tenant gates require -require-tenants");return 2}
  if *maxTenantNewFP < -1 || *maxTenantNewFN < -1 || *minTenantClean<1||*minTenantSpam<1||!validRate(*maxTenantFPR)||!validRate(*maxTenantFNR)||!validRate(*maxTenantFPRUpper)||!validRate(*maxTenantFNRUpper){fmt.Fprintln(stderr,"invalid tenant gate arguments");return 2}
  if *baselinePath==""||*candidatePath==""||*baselinePath==*candidatePath||f.NArg()!=0||*maxNewFP<0||*maxNewFN<0||*minClean<1||*minSpam<1||!(*maxCandidateFPR>=0&&*maxCandidateFPR<=1)||!(*maxCandidateUpper>=0&&*maxCandidateUpper<=1)||!(*maxCandidateFNR>=0&&*maxCandidateFNR<=1)||!(*maxCandidateFNUpper>=0&&*maxCandidateFNUpper<=1)||!(*threshold>=0&&*threshold<=1){fmt.Fprintln(stderr,"invalid arguments");return 2}
- bf,err:=os.Open(*baselinePath);if err!=nil{fmt.Fprintln(stderr,err);return 2};defer bf.Close()
- cf,err:=os.Open(*candidatePath);if err!=nil{fmt.Fprintln(stderr,err);return 2};defer cf.Close()
+ bf,cf,err:=openEvidencePair(*baselinePath,*candidatePath);if err!=nil{fmt.Fprintln(stderr,err);return 2};defer bf.Close();defer cf.Close()
  b,err:=loadCorpus(bf);if err!=nil{fmt.Fprintln(stderr,"baseline:",err);return 2}
  c,err:=loadCorpus(cf);if err!=nil{fmt.Fprintln(stderr,"candidate:",err);return 2}
  report,err:=compareCorpora(b,c,*threshold);if err!=nil{fmt.Fprintln(stderr,err);return 2}
