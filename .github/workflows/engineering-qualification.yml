@@ -102,6 +102,17 @@ jobs:
           GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="$LDFLAGS" -o dist/spamgate-postfix-release-linux-amd64 ./cmd/spamgate-postfix-release
           GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="$LDFLAGS" -o dist/spamgate-spool-audit-linux-amd64 ./cmd/spamgate-spool-audit
           GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -o dist/spamgate-corpus-compare-linux-amd64 ./cmd/spamgate-corpus-compare
+          GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -o dist/spamgate-spool-trend-linux-amd64 ./cmd/spamgate-spool-trend
+          TREND_DIR="$(mktemp -d)"
+          printf '%s\\n' '{"gate_passed":true,"examined":1,"published":1,"pending":0,"states":{"queued":1},"findings":[],"truncated":false}' > "$TREND_DIR/before.json"
+          printf '%s\\n' '{"gate_passed":true,"examined":2,"published":2,"pending":0,"states":{"queued":2},"findings":[],"truncated":false}' > "$TREND_DIR/after.json"
+          if dist/spamgate-spool-trend-linux-amd64 -before "$TREND_DIR/before.json" -after "$TREND_DIR/after.json" -max-queue-growth=0 > "$TREND_DIR/fail.json"; then echo "Spool growth gate incorrectly passed" >&2; exit 1; fi
+          python3 - "$TREND_DIR/fail.json" <<'PY_TREND'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          assert r["gate_passed"] is False and r["queue_delta"] == 1 and r["gate_failures"]
+          PY_TREND
+          rm -rf "$TREND_DIR"
           COMPARE_DIR="$(mktemp -d)"
           printf '%s\n' '{"id":"clean-1","tenant":"test","truth":"clean","score":0.1}' '{"id":"spam-1","tenant":"test","truth":"spam","score":0.9}' > "$COMPARE_DIR/base.jsonl"
           cp "$COMPARE_DIR/base.jsonl" "$COMPARE_DIR/candidate.jsonl"
