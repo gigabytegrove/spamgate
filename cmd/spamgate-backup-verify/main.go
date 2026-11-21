@@ -64,8 +64,10 @@ func runContext(ctx context.Context, args []string, stdout io.Writer) error {
  if *operation == "restore" {
   // Reject invalid restore destinations without requiring credentials to exist.
   // Credential overlap remains a stronger refusal than destination existence.
-  if err := checkRestoreCredentialBoundary(*target, *manifestPath, *keyPath); err != nil { return err }
+  // A structurally invalid destination must fail before credential path resolution.
+  // The credential boundary is still checked before reading either secret.
   if err := checkColdRestoreDestination(*target); err != nil { return err }
+  if err := checkRestoreCredentialBoundary(*target, *manifestPath, *keyPath); err != nil { return err }
  }
  if err := checkNativeBackupPaths(*active, *root, *keyPath, *manifestPath); err != nil { return err }
  key, err := readPrivateFile(*keyPath, 4096, backupverify.MinAuthenticationKeyBytes)
