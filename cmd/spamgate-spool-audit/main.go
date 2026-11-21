@@ -27,6 +27,10 @@ func run(args []string, stdout, stderr io.Writer) int {
  if *maxQueued < -1 || *maxDead < -1 || *maxPending < -1 { fmt.Fprintln(stderr, "queue limits must be -1 (disabled) or nonnegative"); return 2 }
  report, err := spoolaudit.Audit(*dir)
  if err != nil { fmt.Fprintln(stderr, "spool audit failed:", err); return 2 }
+ failures := queueLimitFailures(report.States, report.Pending, *maxQueued, *maxDead, *maxPending)
+ passed := !report.HasFindings() && len(failures) == 0
+ report.GatePassed = &passed
+ report.GateFailures = failures
  if *jsonOut {
   enc := json.NewEncoder(stdout)
   enc.SetIndent("", "  ")
@@ -55,7 +59,7 @@ func run(args []string, stdout, stderr io.Writer) int {
    }
   }
  }
- if failures := queueLimitFailures(report.States, report.Pending, *maxQueued, *maxDead, *maxPending); len(failures) != 0 {
+ if len(failures) != 0 {
   for _, failure := range failures { fmt.Fprintln(stderr, "queue threshold exceeded:", failure) }
   return 1
  }
