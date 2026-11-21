@@ -43,6 +43,8 @@ type Report struct {
  InvalidFilenames int `json:"invalid_filenames"`
  UnexpectedEntries int `json:"unexpected_entries"`
  States map[string]int `json:"states"`
+ OldestQueuedSeconds int64 `json:"oldest_queued_seconds"`
+ OldestDeliveringSeconds int64 `json:"oldest_delivering_seconds"`
  FindingCounts map[string]int `json:"finding_counts"`
  Findings []Finding `json:"findings"`
  Truncated bool `json:"truncated"`
@@ -167,6 +169,7 @@ func Audit(dir string) (Report,error) {
  // A valid pending record can exist without a published counterpart after
  // an interrupted fsync/rename. Multiple such records with the same ID
  // must be reported before any operator considers manual recovery.
+ observedAt:=time.Now()
  pendingByID:=make(map[string]map[string]struct{})
  // Count each verified pending-to-final identity only once, even when
  // interrupted writes left multiple identical pending files behind.
@@ -226,7 +229,15 @@ func Audit(dir string) (Report,error) {
    // Signed records with impossible lifecycles are not trusted states.
    anomalies:=lifecycleAnomalies(rec)
    if published&&rec.ID==strings.TrimSuffix(name,".json")&&
-    rec.IntegritySHA256!=""&&rec.StateSHA256!=""&&len(anomalies)==0 {out.States[rec.State]++}
+    rec.IntegritySHA256!=""&&rec.StateSHA256!=""&&len(anomalies)==0 {
+    out.States[rec.State]++
+    // Only verified published records contribute to operational age metrics.
+    // Clamp future timestamps to zero; lifecycle anomalies are reported separately.
+    age:=int64(observedAt.Sub(rec.Created).Seconds())
+    if age<0 {age=0}
+    if rec.State=="queued"&&age>out.OldestQueuedSeconds {out.OldestQueuedSeconds=age}
+    if rec.State=="delivering"&&age>out.OldestDeliveringSeconds {out.OldestDeliveringSeconds=age}
+   }
    if rec.IntegritySHA256==""||rec.StateSHA256==""{
     out.LegacyUnsigned++
     out.add("legacy_unsigned",name,"one or both integrity digests are absent; provenance cannot be verified")
