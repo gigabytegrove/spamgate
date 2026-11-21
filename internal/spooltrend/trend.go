@@ -79,6 +79,17 @@ func Load(path string)(Snapshot,error){
  if total!=s.Published {return Snapshot{},errors.New("verified state count does not match published records")}
  return s,nil
 }
+// checkedDelta refuses a change that cannot be represented by the native int type.
+// An overflowed delta must never be interpreted as a safe negative growth.
+func checkedDelta(after, before int) (int,error) {
+ const maxInt = int(^uint(0) >> 1)
+ const minInt = -maxInt - 1
+ if before < 0 || after < 0 { return 0,errors.New("negative count in trend") }
+ if before > 0 && after < minInt+before { return 0,errors.New("trend delta underflow") }
+ if before < 0 && after > maxInt+before { return 0,errors.New("trend delta overflow") }
+ return after-before,nil
+}
+
 func Compare(before,after Snapshot,maxQueuedGrowth,maxDeadGrowth int)(Result,error){
  if maxQueuedGrowth < -1 || maxDeadGrowth < -1{return Result{},errors.New("invalid limits")}
  // Callers constructing snapshots directly must meet the same acceptance contract.
@@ -86,7 +97,11 @@ func Compare(before,after Snapshot,maxQueuedGrowth,maxDeadGrowth int)(Result,err
   if err:=validateSnapshot(s);err!=nil{return Result{},err}
  }
  a,b:=before.States,after.States
- r:=Result{GatePassed:true,Before:map[string]int{},After:map[string]int{},QueueDelta:b["queued"]-a["queued"],DeliveringDelta:b["delivering"]-a["delivering"],DeadDelta:b["dead"]-a["dead"],PendingDelta:after.Pending-before.Pending}
+ queuedDelta,err:=checkedDelta(b["queued"],a["queued"]);if err!=nil{return Result{},err}
+ deliveringDelta,err:=checkedDelta(b["delivering"],a["delivering"]);if err!=nil{return Result{},err}
+ deadDelta,err:=checkedDelta(b["dead"],a["dead"]);if err!=nil{return Result{},err}
+ pendingDelta,err:=checkedDelta(after.Pending,before.Pending);if err!=nil{return Result{},err}
+ r:=Result{GatePassed:true,Before:map[string]int{},After:map[string]int{},QueueDelta:queuedDelta,DeliveringDelta:deliveringDelta,DeadDelta:deadDelta,PendingDelta:pendingDelta}
  for _,state:=range []string{"queued","delivering","dead","delivered","discard_pending"} {r.Before[state]=a[state];r.After[state]=b[state]}
  if maxQueuedGrowth>=0&&r.QueueDelta>maxQueuedGrowth {r.GateFailures=append(r.GateFailures,fmt.Sprintf("queued_growth=%d exceeds max-queue-growth=%d",r.QueueDelta,maxQueuedGrowth))}
  if maxDeadGrowth>=0&&r.DeadDelta>maxDeadGrowth {r.GateFailures=append(r.GateFailures,fmt.Sprintf("dead_growth=%d exceeds max-dead-growth=%d",r.DeadDelta,maxDeadGrowth))}
