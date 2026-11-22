@@ -39,6 +39,12 @@ func TestLoadRejectsUnsafeEvidence(t *testing.T){
   {"missing",`{"gate_passed":true}`,false},
   {"negative",strings.Replace(good,`"queued":1`,`"queued":-1`,1),false},
   {"bad-state",strings.Replace(good,`"queued":1`,`"unknown":1`,1),false},
+  {"null-gate",strings.Replace(good,`"gate_passed":true`,`"gate_passed":null`,1),false},
+  {"null-count",strings.Replace(good,`"examined":1`,`"examined":null`,1),false},
+  {"null-pending",strings.Replace(good,`"pending":0`,`"pending":null`,1),false},
+  {"null-states",strings.Replace(good,`"states":{"queued":1}`,`"states":null`,1),false},
+  {"null-findings",strings.Replace(good,`"findings":[]`,`"findings":null`,1),false},
+  {"null-truncated",strings.Replace(good,`"truncated":false`,`"truncated":null`,1),false},
  }{
   t.Run(tc.name,func(t *testing.T){
    if err:=os.WriteFile(path,[]byte(tc.body),0600);err!=nil{t.Fatal(err)}
