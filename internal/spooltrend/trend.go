@@ -61,7 +61,7 @@ func Load(path string)(Snapshot,error){
  for _,key:=range []string{"gate_passed","examined","published","pending","states","findings","truncated"} {
   if _,ok:=raw[key];!ok{return Snapshot{},fmt.Errorf("missing %s",key)}
  }
- data,err:=json.Marshal(raw)
+ data,err=json.Marshal(raw)
  if err!=nil{return Snapshot{},err}
  if err:=json.Unmarshal(data,&s);err!=nil{return Snapshot{},err}
  after,err:=f.Stat()
