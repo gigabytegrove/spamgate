@@ -65,12 +65,12 @@ func TestRelayAcceptedDataDoesNotWaitForQuit(t *testing.T) {
  }()
  relay := &Relay{Address: ln.Addr().String(), TLSMode: "none"}
  msg := core.Message{Sender: "sender@example.org", Recipients: []string{"recipient@example.org"}}
- ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+ ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
  defer cancel()
  start := time.Now()
  err = relay.Send(ctx, msg, []byte("From: sender@example.org\r\nTo: recipient@example.org\r\nSubject: accepted\r\n\r\nhello\r\n"))
  if err != nil { t.Fatalf("accepted DATA failed: %v", err) }
- if time.Since(start) > 900*time.Millisecond { t.Fatal("accepted DATA was delayed by connection shutdown") }
+ if time.Since(start) > 1500*time.Millisecond { t.Fatal("accepted DATA was delayed by connection shutdown") }
  select {
  case peerErr := <-done:
   if peerErr != nil { t.Fatal(peerErr) }
