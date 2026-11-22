@@ -59,7 +59,9 @@ func Load(path string)(Snapshot,error){
  var extra any
  if err:=dec.Decode(&extra);err!=io.EOF{return Snapshot{},errors.New("trailing JSON or oversized input")}
  for _,key:=range []string{"gate_passed","examined","published","pending","states","findings","truncated"} {
-  if _,ok:=raw[key];!ok{return Snapshot{},fmt.Errorf("missing %s",key)}
+  value,ok:=raw[key]
+  if !ok{return Snapshot{},fmt.Errorf("missing %s",key)}
+  if strings.TrimSpace(string(value))=="null" {return Snapshot{},fmt.Errorf("null %s",key)}
  }
  data,err=json.Marshal(raw)
  if err!=nil{return Snapshot{},err}
