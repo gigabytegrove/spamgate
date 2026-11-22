@@ -104,6 +104,11 @@ func (r *Relay) Send(ctx context.Context, m core.Message, raw []byte) error {
 		}
 	}
 	if r.Username != "" {
+		// Refuse unadvertised authentication before exposing credentials.
+		// This must inspect the post-STARTTLS EHLO capability set.
+		if e = requireRelayPlainAuth(client); e != nil {
+			return e
+		}
 		if e = client.Auth(smtp.PlainAuth("", r.Username, r.Password, host)); e != nil {
 			return e
 		}
