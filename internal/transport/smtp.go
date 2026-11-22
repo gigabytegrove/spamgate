@@ -202,6 +202,11 @@ func SMTPFromEnv(store *core.Store, relay *Relay) (*SMTP, error) {
 	}
 	return s, nil
 }
+func (s *SMTP) logger() *slog.Logger {
+	if s != nil && s.log != nil { return s.log }
+	return slog.Default()
+}
+
 func (s *SMTP) Listen(ctx context.Context) error {
  // The native SMTP listener must never accept a message without the
  // fsync-backed outbox. Direct relay before SMTP 250 has ambiguous outcomes.
@@ -211,10 +216,10 @@ func (s *SMTP) Listen(ctx context.Context) error {
 		return e
 	}
 	defer listener.Close()
-	go func() { <-ctx.Done(); _ = listener.Close() }()
+	stopClose := context.AfterFunc(ctx, func() { _ = listener.Close() })
+	defer stopClose()
 	slots := make(chan struct{}, 64)
-	logger := s.log
-	if logger == nil { logger = slog.Default() }
+	logger := s.logger()
 	logger.Info("SMTP content filter listening", "address", s.Addr)
 	for {
 		conn, e := listener.Accept()
@@ -291,6 +296,7 @@ func readLineLimited(reader *bufio.Reader, limit int) ([]byte, error) {
 }
 func (s *SMTP) handle(conn net.Conn) {
 	defer conn.Close()
+	logger := s.logger()
 	_ = conn.SetDeadline(time.Now().Add(4 * time.Minute))
 	reader := bufio.NewReaderSize(conn, 64*1024)
 	writer := bufio.NewWriter(conn)
@@ -625,19 +631,19 @@ func (s *SMTP) handle(conn net.Conn) {
 				// worker will deterministically dead-letter on its first attempt.
 				// Apply the same offline validation at SMTP acceptance and replay.
 				if preflightErr := validateRelayOriginal(m, queuedRaw); preflightErr != nil {
-					s.log.Warn("SMTP original failed relay preflight", "id", m.ID, "error", preflightErr)
+					logger.Warn("SMTP original failed relay preflight", "id", m.ID, "error", preflightErr)
 					reply(554, "5.6.0 Original cannot be relayed safely")
 					resetEnvelope()
 					continue
 				}
 				if e = s.Queue.Enqueue(m, queuedRaw); e != nil {
-					s.log.Error("durable queue could not accept message", "id", m.ID, "error", e)
+					logger.Error("durable queue could not accept message", "id", m.ID, "error", e)
 					reply(451, "4.3.0 Durable queue unavailable")
 				} else {
 					// Queue is authoritative: failure to mirror into history must NOT
 					// make the client retry an already durably accepted message.
 					if e = s.Store.Save(m); e != nil {
-						s.log.Error("queued mail history record failed", "id", m.ID, "error", e)
+						logger.Error("queued mail history record failed", "id", m.ID, "error", e)
 					}
 					reply(250, "2.0.0 Queued id="+m.ID)
 				}
@@ -671,14 +677,14 @@ func (s *SMTP) handle(conn net.Conn) {
 			e = s.Relay.Send(relayCtx, m, outgoing)
 			cancel()
 			if e != nil {
-				s.log.Error("SMTP relay failure", "id", m.ID, "error", e)
+				logger.Error("SMTP relay failure", "id", m.ID, "error", e)
 				m.Delivery = "relay_failed"
 				_ = s.Store.Save(m)
 				reply(451, "4.4.1 Upstream delivery unavailable")
 			} else {
 				m.Delivery = "relayed"
 				if saveErr := s.Store.Save(m); saveErr != nil {
-					s.log.Error("post-delivery audit update failed", "id", m.ID, "error", saveErr)
+					logger.Error("post-delivery audit update failed", "id", m.ID, "error", saveErr)
 				}
 				reply(250, "2.0.0 Accepted id="+m.ID)
 			}
