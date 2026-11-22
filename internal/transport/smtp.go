@@ -129,7 +129,9 @@ func (r *Relay) Send(ctx context.Context, m core.Message, raw []byte) error {
 	if len(m.Recipients) == 0 {
 		return errors.New("no recipients")
 	}
-	for _, recipient := range m.Recipients {
+	// Replayed legacy envelopes may contain duplicate RCPT entries. Avoid
+	// sending an identical recipient twice to the downstream relay.
+	for _, recipient := range uniqueSMTPRecipients(m.Recipients) {
 		if e = client.Rcpt(recipient); e != nil {
 			return wrapRelayStage("RCPT", e)
 		}
@@ -472,7 +474,9 @@ func (s *SMTP) handle(conn net.Conn) {
 				reply(452, "4.5.3 Too many recipients")
 				continue
 			}
-			recipients = append(recipients, addr)
+			// SMTP accepts a repeated RCPT command, but the durable envelope
+			// must contain each exact mailbox only once.
+			recipients = appendUniqueSMTPRecipient(recipients, addr)
 			reply(250, "2.1.5 Recipient accepted")
 		case upper == "DATA":
 			if !s.Store.Config().SetupComplete {
