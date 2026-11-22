@@ -245,21 +245,25 @@ func (s *SMTP) allowedPeer(remote net.Addr) bool {
 	return false
 }
 func (s *SMTP) allowedRecipient(address string) bool {
-	p := strings.LastIndex(address, "@")
-	if p < 0 {
+	// Authorization is intentionally independent of the SMTP command parser.
+	// A future caller must not turn a malformed envelope with an extra @,
+	// empty mailbox or Unicode domain into an authorized relay recipient.
+	at := strings.IndexByte(address, '@')
+	if at <= 0 || at == len(address)-1 || strings.IndexByte(address[at+1:], '@') >= 0 {
 		return false
 	}
-	domain := address[p+1:]
-	for _, d := range s.Domains {
-		// Match configured ASCII DNS names without Unicode case folding.
-		// Unicode ToLower can turn U+212A (Kelvin sign) into ASCII k,
-		// incorrectly authorizing an unrelated recipient domain.
-		if equalASCIIDNSDomain(domain, d) {
+	domain := address[at+1:]
+	if !validSMTPRecipientDomain(domain) {
+		return false
+	}
+	for _, allowed := range s.Domains {
+		if equalASCIIDNSDomain(domain, allowed) {
 			return true
 		}
 	}
 	return false
 }
+
 func readLineLimited(reader *bufio.Reader, limit int) ([]byte, error) {
 	var out []byte
 	for {
