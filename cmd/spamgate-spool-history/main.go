@@ -32,6 +32,9 @@ func run(args []string,stdout,stderr io.Writer) int {
  delivering:=fs.Int("max-delivering-growth",-1,"maximum per-interval delivering growth")
  pending:=fs.Int("max-pending-growth",-1,"maximum per-interval pending growth")
  deadCount:=fs.Int("max-dead-count",-1,"maximum absolute dead count")
+ queuedCount:=fs.Int("max-queued-count",-1,"maximum absolute queued count across all observations")
+ deliveringCount:=fs.Int("max-delivering-count",-1,"maximum absolute delivering count across all observations")
+ pendingCount:=fs.Int("max-pending-count",-1,"maximum absolute pending count across all observations")
  age:=fs.Duration("max-snapshot-age",0,"maximum age of latest report; zero disables")
  gap:=fs.Duration("max-snapshot-gap",0,"maximum interval between captures; zero disables")
  if err:=fs.Parse(args);err!=nil{return 2}
@@ -40,6 +43,8 @@ func run(args []string,stdout,stderr io.Writer) int {
  freshness:=spooltrend.FreshnessPolicy{RequireTimestamps:true,MaxSnapshotAge:*age,MaxSnapshotGap:*gap}
  if err:=policy.Validate();err!=nil{fmt.Fprintln(stderr,err);return 2}
  if err:=freshness.Validate();err!=nil{fmt.Fprintln(stderr,err);return 2}
+ ceilings:=spooltrend.SeriesCeilings{MaxQueued:*queuedCount,MaxDelivering:*deliveringCount,MaxPending:*pendingCount}
+ if err:=ceilings.Validate();err!=nil{fmt.Fprintln(stderr,err);return 2}
  seen:=map[string]os.FileInfo{}
  snapshots:=make([]spooltrend.Snapshot,0,len(paths))
  for i,path:=range paths {
@@ -54,6 +59,8 @@ func run(args []string,stdout,stderr io.Writer) int {
   snapshots=append(snapshots,s)
  }
  result,err:=spooltrend.AnalyzeSeries(snapshots,policy,freshness,time.Now().UTC())
+ if err!=nil{fmt.Fprintln(stderr,err);return 2}
+ result,err=spooltrend.ApplySeriesCeilings(result,ceilings)
  if err!=nil{fmt.Fprintln(stderr,err);return 2}
  encoder:=json.NewEncoder(stdout)
  encoder.SetIndent("","  ")
