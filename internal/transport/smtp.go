@@ -253,7 +253,14 @@ func (s *SMTP) allowedRecipient(address string) bool {
 		return false
 	}
 	domain := address[at+1:]
-	if !validSMTPRecipientDomain(domain) {
+	// DNS domain case is ASCII-only. Never Unicode-fold a lookalike into
+	// an allowlisted name before validating the configured DNS syntax.
+	for i := 0; i < len(domain); i++ {
+		if domain[i] > 0x7f {
+			return false
+		}
+	}
+	if !validSMTPRecipientDomain(strings.ToLower(domain)) {
 		return false
 	}
 	for _, allowed := range s.Domains {
