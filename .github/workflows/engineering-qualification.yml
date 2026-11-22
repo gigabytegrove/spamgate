@@ -103,6 +103,25 @@ jobs:
           GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -ldflags="$LDFLAGS" -o dist/spamgate-spool-audit-linux-amd64 ./cmd/spamgate-spool-audit
           GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -o dist/spamgate-corpus-compare-linux-amd64 ./cmd/spamgate-corpus-compare
           GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -o dist/spamgate-spool-trend-linux-amd64 ./cmd/spamgate-spool-trend
+          GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=false -o dist/spamgate-spool-history-linux-amd64 ./cmd/spamgate-spool-history
+          HISTORY_DIR="$(mktemp -d)"
+          python3 - "$HISTORY_DIR" <<'PY_HISTORY'
+          import datetime,json,pathlib,sys
+          root=pathlib.Path(sys.argv[1])
+          now=datetime.datetime.now(datetime.timezone.utc)
+          for i,count in enumerate((1,9,1)):
+              record={"captured_at":(now-datetime.timedelta(minutes=3-i)).isoformat(),"gate_passed":True,"gate_failures":[],"examined":count,"published":count,"pending":0,"states":{"queued":count},"findings":[],"truncated":False}
+              (root/f"{i}.json").write_text(json.dumps(record))
+          PY_HISTORY
+          if dist/spamgate-spool-history-linux-amd64 -report "$HISTORY_DIR/0.json" -report "$HISTORY_DIR/1.json" -report "$HISTORY_DIR/2.json" -max-queue-growth=3 > "$HISTORY_DIR/result.json"; then
+            echo "Intermediate queue surge incorrectly passed" >&2; exit 1
+          fi
+          python3 - "$HISTORY_DIR/result.json" <<'PY_HISTORY_CHECK'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          assert not r["gate_passed"] and r["failed_intervals"]==1 and r["peak_queued"]==9
+          PY_HISTORY_CHECK
+          rm -rf "$HISTORY_DIR"
           TREND_DIR="$(mktemp -d)"
           printf '%s\n' '{"gate_passed":true,"examined":1,"published":1,"pending":0,"states":{"queued":1},"findings":[],"truncated":false}' > "$TREND_DIR/before.json"
           printf '%s\n' '{"gate_passed":true,"examined":2,"published":2,"pending":0,"states":{"queued":2},"findings":[],"truncated":false}' > "$TREND_DIR/after.json"
