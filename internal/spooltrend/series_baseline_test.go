@@ -42,3 +42,20 @@ func TestHistoryTimelineContainsEveryBoundedObservation(t *testing.T) {
  }
  if got.PeakQueued!=8 || got.LargestQueuedIncrease!=7 {t.Fatalf("peak mismatch: %+v",got)}
 }
+
+func TestHistoryDeadBaselineClearsWithoutFailedInterval(t *testing.T) {
+ now := time.Date(2026, 11, 22, 9, 0, 0, 0, time.UTC)
+ samples := []Snapshot{
+  seriesSample(now.Add(-2*time.Minute), 1, 7),
+  seriesSample(now.Add(-time.Minute), 1, 0),
+ }
+ policy := Policy{MaxQueuedGrowth: -1, MaxDeadGrowth: -1, MaxDeliveringGrowth: -1, MaxPendingGrowth: -1, MaxDeadCount: 3}
+ got, err := AnalyzeSeries(samples, policy, FreshnessPolicy{}, now)
+ if err != nil { t.Fatal(err) }
+ if got.GatePassed || got.FailedIntervals != 0 || len(got.GateFailures) != 1 {
+  t.Fatalf("cleared baseline must fail without a failed interval: %+v", got)
+ }
+ if !strings.Contains(got.GateFailures[0], "sample_0: dead_count=7") {
+  t.Fatalf("missing baseline violation: %v", got.GateFailures)
+ }
+}
