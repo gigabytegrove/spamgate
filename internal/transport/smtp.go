@@ -249,9 +249,12 @@ func (s *SMTP) allowedRecipient(address string) bool {
 	if p < 0 {
 		return false
 	}
-	domain := strings.ToLower(address[p+1:])
+	domain := address[p+1:]
 	for _, d := range s.Domains {
-		if domain == d {
+		// Match configured ASCII DNS names without Unicode case folding.
+		// Unicode ToLower can turn U+212A (Kelvin sign) into ASCII k,
+		// incorrectly authorizing an unrelated recipient domain.
+		if equalASCIIDNSDomain(domain, d) {
 			return true
 		}
 	}
