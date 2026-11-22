@@ -470,13 +470,16 @@ func (s *SMTP) handle(conn net.Conn) {
 				reply(550, "5.7.1 Relaying denied for recipient domain")
 				continue
 			}
-			if len(recipients) >= 100 {
-				reply(452, "4.5.3 Too many recipients")
-				continue
+			// An exact duplicate is already part of this transaction and must
+			// remain idempotently accepted even at the distinct-recipient cap.
+			// Reject only a *new* mailbox when all 100 slots are occupied.
+			if !containsSMTPRecipient(recipients, addr) {
+				if len(recipients) >= 100 {
+					reply(452, "4.5.3 Too many recipients")
+					continue
+				}
+				recipients = append(recipients, addr)
 			}
-			// SMTP accepts a repeated RCPT command, but the durable envelope
-			// must contain each exact mailbox only once.
-			recipients = appendUniqueSMTPRecipient(recipients, addr)
 			reply(250, "2.1.5 Recipient accepted")
 		case upper == "DATA":
 			if !s.Store.Config().SetupComplete {
