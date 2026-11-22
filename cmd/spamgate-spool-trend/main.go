@@ -41,6 +41,16 @@ func run(args []string, stdout, stderr io.Writer) int {
   return 2
  }
  if err:=policy.Validate();err!=nil{fmt.Fprintln(stderr,err);return 2}
+ // Distinct path strings can still refer to one inode through hard links.
+ // Reject these before interpreting the same evidence as two observations.
+ beforeInfo,err:=os.Lstat(*before)
+ if err!=nil {fmt.Fprintln(stderr,"earlier report:",err);return 2}
+ afterInfo,err:=os.Lstat(*after)
+ if err!=nil {fmt.Fprintln(stderr,"later report:",err);return 2}
+ if os.SameFile(beforeInfo,afterInfo) {
+  fmt.Fprintln(stderr,"earlier and later reports refer to the same file")
+  return 2
+ }
  a,err:=spooltrend.Load(*before)
  if err!=nil { fmt.Fprintln(stderr,"earlier report:",err); return 2 }
  b,err:=spooltrend.Load(*after)
