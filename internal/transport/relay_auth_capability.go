@@ -14,7 +14,7 @@ func requireRelayPlainAuth(client *smtp.Client) error {
     if client == nil {
         return errors.New("SMTP relay client is nil")
     }
-    advertised, ok := client.Extension("AUTH")
+    ok, advertised := client.Extension("AUTH")
     if !ok {
         return errors.New("SMTP relay does not advertise AUTH")
     }
