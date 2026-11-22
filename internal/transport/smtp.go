@@ -144,7 +144,10 @@ func (r *Relay) Send(ctx context.Context, m core.Message, raw []byte) error {
 	if e = writer.Close(); e != nil {
 		return wrapRelayStage("DATA", e)
 	}
-	_ = client.Quit()
+	// The final 250 after DATA is the delivery acceptance boundary. Do not
+	// wait for a QUIT response: some relays keep that response pending, and
+	// delaying success can trigger upstream retries of an accepted message.
+	// The deferred client.Close closes the SMTP connection immediately.
 	return nil
 }
 
