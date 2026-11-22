@@ -213,7 +213,9 @@ func (s *SMTP) Listen(ctx context.Context) error {
 	defer listener.Close()
 	go func() { <-ctx.Done(); _ = listener.Close() }()
 	slots := make(chan struct{}, 64)
-	s.log.Info("SMTP content filter listening", "address", s.Addr)
+	logger := s.log
+	if logger == nil { logger = slog.Default() }
+	logger.Info("SMTP content filter listening", "address", s.Addr)
 	for {
 		conn, e := listener.Accept()
 		if e != nil {
