@@ -59,7 +59,7 @@ func TestRelayDoesNotTransmitDuplicateRCPT(t *testing.T) {
 			line, err := rd.ReadString('\n')
 			if err != nil {
 				if err == io.EOF {
-					if len(rcpts) != 2 || rcpts[0] != "a@example.org" || rcpts[1] != "b@example.org" {
+					if len(rcpts) != 2 || rcpts[0] != "a@EXAMPLE.ORG" || rcpts[1] != "b@example.org" {
 						done <- fmt.Errorf("unexpected RCPT sequence %q", rcpts)
 					} else {
 						done <- nil
@@ -99,7 +99,7 @@ func TestRelayDoesNotTransmitDuplicateRCPT(t *testing.T) {
 		}
 	}()
 	relay := &Relay{Address: ln.Addr().String(), TLSMode: "none"}
-	message := core.Message{Sender: "sender@example.org", Recipients: []string{"a@example.org", "a@example.org", "b@example.org"}}
+	message := core.Message{Sender: "sender@example.org", Recipients: []string{"a@EXAMPLE.ORG", "a@example.org", "b@example.org"}}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := relay.Send(ctx, message, []byte("From: sender@example.org\r\nTo: a@example.org\r\nSubject: recipient test\r\n\r\nbody\r\n")); err != nil {
