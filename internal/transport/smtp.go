@@ -205,7 +205,7 @@ func SMTPFromEnv(store *core.Store, relay *Relay) (*SMTP, error) {
 func (s *SMTP) Listen(ctx context.Context) error {
  // The native SMTP listener must never accept a message without the
  // fsync-backed outbox. Direct relay before SMTP 250 has ambiguous outcomes.
- if s.Queue == nil { return errors.New("SMTP listener requires a durable delivery queue") }
+ if err := s.validateListenerPreflight(); err != nil { return err }
  listener, e := net.Listen("tcp", s.Addr)
 	if e != nil {
 		return e
