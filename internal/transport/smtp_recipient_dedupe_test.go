@@ -82,7 +82,7 @@ func TestRelayDoesNotTransmitDuplicateRCPT(t *testing.T) {
 				case strings.HasPrefix(cmd, "MAIL FROM:"):
 					_, err = io.WriteString(conn, "250 2.1.0 sender ok\r\n")
 				case strings.HasPrefix(cmd, "RCPT TO:"):
-					rcpts = append(rcpts, strings.TrimSuffix(strings.TrimPrefix(cmd, "RCPT TO:"), ""))
+					rcpts = append(rcpts, strings.Trim(strings.TrimPrefix(cmd, "RCPT TO:"), "<>"))
 					_, err = io.WriteString(conn, "250 2.1.5 recipient ok\r\n")
 				case cmd == "DATA":
 					inData = true
