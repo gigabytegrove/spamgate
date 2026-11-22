@@ -35,6 +35,10 @@ func run(args []string,stdout,stderr io.Writer) int {
  queuedCount:=fs.Int("max-queued-count",-1,"maximum absolute queued count across all observations")
  deliveringCount:=fs.Int("max-delivering-count",-1,"maximum absolute delivering count across all observations")
  pendingCount:=fs.Int("max-pending-count",-1,"maximum absolute pending count across all observations")
+ sustainedQueued:=fs.Int("max-sustained-queued",-1,"maximum queued count for sustained pressure; -1 disables")
+ sustainedDelivering:=fs.Int("max-sustained-delivering",-1,"maximum delivering count for sustained pressure; -1 disables")
+ sustainedPending:=fs.Int("max-sustained-pending",-1,"maximum pending count for sustained pressure; -1 disables")
+ sustainedSamples:=fs.Int("min-sustained-samples",2,"consecutive observations required to report sustained pressure")
  age:=fs.Duration("max-snapshot-age",0,"maximum age of latest report; zero disables")
  gap:=fs.Duration("max-snapshot-gap",0,"maximum interval between captures; zero disables")
  if err:=fs.Parse(args);err!=nil{return 2}
@@ -45,6 +49,8 @@ func run(args []string,stdout,stderr io.Writer) int {
  if err:=freshness.Validate();err!=nil{fmt.Fprintln(stderr,err);return 2}
  ceilings:=spooltrend.SeriesCeilings{MaxQueued:*queuedCount,MaxDelivering:*deliveringCount,MaxPending:*pendingCount}
  if err:=ceilings.Validate();err!=nil{fmt.Fprintln(stderr,err);return 2}
+ sustained:=spooltrend.SustainedPolicy{MaxQueued:*sustainedQueued,MaxDelivering:*sustainedDelivering,MaxPending:*sustainedPending,MinSamples:*sustainedSamples}
+ if err:=sustained.Validate();err!=nil{fmt.Fprintln(stderr,err);return 2}
  seen:=map[string]os.FileInfo{}
  snapshots:=make([]spooltrend.Snapshot,0,len(paths))
  for i,path:=range paths {
@@ -61,6 +67,8 @@ func run(args []string,stdout,stderr io.Writer) int {
  result,err:=spooltrend.AnalyzeSeries(snapshots,policy,freshness,time.Now().UTC())
  if err!=nil{fmt.Fprintln(stderr,err);return 2}
  result,err=spooltrend.ApplySeriesCeilings(result,ceilings)
+ if err!=nil{fmt.Fprintln(stderr,err);return 2}
+ result,err=spooltrend.ApplySustainedPolicy(result,sustained)
  if err!=nil{fmt.Fprintln(stderr,err);return 2}
  encoder:=json.NewEncoder(stdout)
  encoder.SetIndent("","  ")
