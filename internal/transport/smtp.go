@@ -249,7 +249,7 @@ func (s *SMTP) allowedRecipient(address string) bool {
 	// A future caller must not turn a malformed envelope with an extra @,
 	// empty mailbox or Unicode domain into an authorized relay recipient.
 	at := strings.IndexByte(address, '@')
-	if at <= 0 || at == len(address)-1 || strings.IndexByte(address[at+1:], '@') >= 0 {
+	if at <= 0 || at == len(address)-1 || strings.IndexByte(address[at+1:], '@') >= 0 || !validSMTPAuthorizationLocalPart(address[:at]) {
 		return false
 	}
 	domain := address[at+1:]
