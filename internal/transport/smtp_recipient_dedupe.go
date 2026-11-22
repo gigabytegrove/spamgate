@@ -11,7 +11,7 @@ func sameSMTPRecipient(a, b string) bool {
         // Malformed historical records are not silently normalized.
         return a == b
     }
-    return a[:ai] == b[:bi] && strings.EqualFold(a[ai+1:], b[bi+1:])
+    return a[:ai] == b[:bi] && equalASCIIDNSDomain(a[ai+1:], b[bi+1:])
 }
 
 func containsSMTPRecipient(recipients []string, address string) bool {
@@ -53,4 +53,19 @@ func acceptSMTPRecipient(recipients []string, address string, maxDistinct int) (
         return recipients, false
     }
     return append(recipients, address), true
+}
+
+// DNS wire names are ASCII. Unicode case folding can equate unrelated UTF-8
+// code points (for example the Kelvin sign and ASCII K), silently merging
+// distinct historical envelope recipients. Internationalized domains must be
+// canonicalized to IDNA A-labels by the envelope parser, not here.
+func equalASCIIDNSDomain(a, b string) bool {
+    if len(a) != len(b) { return false }
+    for i := 0; i < len(a); i++ {
+        x, y := a[i], b[i]
+        if x >= 'A' && x <= 'Z' { x += 'a' - 'A' }
+        if y >= 'A' && y <= 'Z' { y += 'a' - 'A' }
+        if x != y { return false }
+    }
+    return true
 }
