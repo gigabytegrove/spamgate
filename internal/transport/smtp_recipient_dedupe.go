@@ -1,49 +1,56 @@
 package transport
 
-// containsSMTPRecipient uses exact mailbox identity: local parts may be
-// case-sensitive, and plus-addresses are distinct delivery targets.
+import "strings"
+
+// sameSMTPRecipient preserves the case-sensitive local part while comparing
+// DNS domains case-insensitively. Do not rewrite the first accepted address:
+// it is the address that must be persisted and forwarded.
+func sameSMTPRecipient(a, b string) bool {
+    ai, bi := strings.LastIndexByte(a, '@'), strings.LastIndexByte(b, '@')
+    if ai <= 0 || bi <= 0 || ai == len(a)-1 || bi == len(b)-1 {
+        // Malformed historical records are not silently normalized.
+        return a == b
+    }
+    return a[:ai] == b[:bi] && strings.EqualFold(a[ai+1:], b[bi+1:])
+}
+
 func containsSMTPRecipient(recipients []string, address string) bool {
-	for _, existing := range recipients {
-		if existing == address {
-			return true
-		}
-	}
-	return false
+    for _, existing := range recipients {
+        if sameSMTPRecipient(existing, address) {
+            return true
+        }
+    }
+    return false
 }
 
-// appendUniqueSMTPRecipient preserves the first occurrence of an exact SMTP
-// mailbox. SMTP local parts can be case-sensitive, so do not fold case or
-// strip plus-addressing. Domain normalization is deliberately left to the
-// envelope parser; this helper never rewrites a delivery address.
+// Preserve the first address and order; never strip plus tags or fold the
+// local part. Domain case is not part of mailbox identity.
 func appendUniqueSMTPRecipient(recipients []string, address string) []string {
-	if containsSMTPRecipient(recipients, address) {
-		return recipients
-	}
-	return append(recipients, address)
+    if containsSMTPRecipient(recipients, address) {
+        return recipients
+    }
+    return append(recipients, address)
 }
 
-// uniqueSMTPRecipients removes exact duplicates from legacy persisted
-// envelopes without changing the order of distinct delivery targets.
 func uniqueSMTPRecipients(recipients []string) []string {
-	if len(recipients) < 2 {
-		return recipients
-	}
-	unique := make([]string, 0, len(recipients))
-	for _, recipient := range recipients {
-		unique = appendUniqueSMTPRecipient(unique, recipient)
-	}
-	return unique
+    if len(recipients) < 2 {
+        return recipients
+    }
+    unique := make([]string, 0, len(recipients))
+    for _, recipient := range recipients {
+        unique = appendUniqueSMTPRecipient(unique, recipient)
+    }
+    return unique
 }
 
-// acceptSMTPRecipient applies the distinct-recipient limit atomically. Exact
-// repeats are accepted without consuming another slot; a new mailbox over
-// capacity is refused without mutating the existing envelope.
+// Exact local-part duplicates with differently cased domains remain accepted
+// at capacity; genuinely new mailboxes cannot mutate the accepted envelope.
 func acceptSMTPRecipient(recipients []string, address string, maxDistinct int) ([]string, bool) {
-	if containsSMTPRecipient(recipients, address) {
-		return recipients, true
-	}
-	if len(recipients) >= maxDistinct {
-		return recipients, false
-	}
-	return append(recipients, address), true
+    if containsSMTPRecipient(recipients, address) {
+        return recipients, true
+    }
+    if maxDistinct <= 0 || len(recipients) >= maxDistinct {
+        return recipients, false
+    }
+    return append(recipients, address), true
 }
