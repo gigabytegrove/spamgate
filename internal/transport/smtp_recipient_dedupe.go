@@ -6,9 +6,11 @@ import "strings"
 // DNS domains case-insensitively. Do not rewrite the first accepted address:
 // it is the address that must be persisted and forwarded.
 func sameSMTPRecipient(a, b string) bool {
-    ai, bi := strings.LastIndexByte(a, '@'), strings.LastIndexByte(b, '@')
-    if ai <= 0 || bi <= 0 || ai == len(a)-1 || bi == len(b)-1 {
-        // Malformed historical records are not silently normalized.
+    ai, bi := strings.IndexByte(a, '@'), strings.IndexByte(b, '@')
+    if ai <= 0 || bi <= 0 || ai == len(a)-1 || bi == len(b)-1 ||
+        strings.IndexByte(a[ai+1:], '@') >= 0 || strings.IndexByte(b[bi+1:], '@') >= 0 {
+        // Legacy malformed envelopes must never be normalized by selecting
+        // the last @, even when their apparent final domains are equivalent.
         return a == b
     }
     return a[:ai] == b[:bi] && equalASCIIDNSDomain(a[ai+1:], b[bi+1:])
