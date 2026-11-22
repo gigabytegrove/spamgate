@@ -15,8 +15,8 @@ func TestHistoryRejectsDeadBaselineWithoutGrowth(t *testing.T) {
  policy:=Policy{MaxQueuedGrowth:-1,MaxDeadGrowth:-1,MaxDeliveringGrowth:-1,MaxPendingGrowth:-1,MaxDeadCount:3}
  got,err:=AnalyzeSeries(samples,policy,FreshnessPolicy{},now)
  if err!=nil {t.Fatal(err)}
- if got.GatePassed || got.FailedIntervals!=0 || len(got.GateFailures)!=2 {
-  t.Fatalf("baseline and subsequent dead count must both fail: %+v",got)
+ if got.GatePassed || got.FailedIntervals!=1 || len(got.GateFailures)!=2 {
+  t.Fatalf("baseline and interval dead count must both fail: %+v",got)
  }
  if !strings.Contains(got.GateFailures[1],"sample_0: dead_count=7") {
   t.Fatalf("missing baseline evidence: %v",got.GateFailures)
