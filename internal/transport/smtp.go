@@ -194,11 +194,14 @@ func SMTPFromEnv(store *core.Store, relay *Relay) (*SMTP, error) {
 		s.CIDRs = append(s.CIDRs, network)
 	}
 	for _, piece := range strings.Split(domainText, ",") {
-		piece = strings.ToLower(strings.TrimSpace(piece))
-		if !validSMTPRecipientDomain(piece) {
+		piece = strings.TrimSpace(piece)
+		// Validate the raw configured DNS name before any case conversion.
+		// Unicode simple-case conversion can map lookalikes such as U+212A
+		// (Kelvin sign) onto ASCII k, silently authorizing another domain.
+		if !isASCIIDomain(piece) || !validSMTPRecipientDomain(piece) {
 			return nil, errors.New("invalid allowed recipient domain")
 		}
-		s.Domains = append(s.Domains, piece)
+		s.Domains = append(s.Domains, strings.ToLower(piece))
 	}
 	return s, nil
 }
