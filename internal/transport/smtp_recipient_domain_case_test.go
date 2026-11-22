@@ -15,6 +15,10 @@ func TestSMTPRecipientDomainCaseIdentity(t *testing.T) {
         {"bad", "BAD", false},
         {"bad", "bad", true},
         {"@example.org", "@EXAMPLE.ORG", false},
+        {"Alice@evil@EXAMPLE.ORG", "Alice@evil@example.org", false},
+        {"Alice@evil@EXAMPLE.ORG", "Alice@evil@EXAMPLE.ORG", true},
+        {"Alice@@EXAMPLE.ORG", "Alice@@example.org", false},
+        {"Alice@example.org@", "Alice@example.org@", true},
     }
     for _, tc := range cases {
         if got := sameSMTPRecipient(tc.a, tc.b); got != tc.same {
@@ -72,5 +76,26 @@ func TestSMTPRecipientDomainDoesNotUnicodeFold(t *testing.T) {
     }
     if !sameSMTPRecipient("user@EXAMPLE.org", "user@example.ORG") {
         t.Fatal("ASCII DNS case folding regressed")
+    }
+}
+
+func TestMalformedHistoricalRecipientsNeverCollapseOnDomainCase(t *testing.T) {
+    originals := []string{
+        "Alice@evil@EXAMPLE.ORG",
+        "Alice@evil@example.org",
+        "Alice@@EXAMPLE.ORG",
+        "Alice@@example.org",
+        "Alice@EXAMPLE.ORG",
+        "Alice@example.org",
+    }
+    want := originals[:5]
+    got := uniqueSMTPRecipients(originals)
+    if !reflect.DeepEqual(got, want) {
+        t.Fatalf("historical recipient replay collapsed malformed identities: got %q want %q", got, want)
+    }
+    atCapacity := []string{"Alice@evil@EXAMPLE.ORG"}
+    unchanged, accepted := acceptSMTPRecipient(atCapacity, "Alice@evil@example.org", 1)
+    if accepted || !reflect.DeepEqual(unchanged, atCapacity) {
+        t.Fatalf("malformed recipient alias bypassed capacity: accepted=%v recipients=%q", accepted, unchanged)
     }
 }
