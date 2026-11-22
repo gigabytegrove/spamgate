@@ -56,3 +56,21 @@ func TestUniqueSMTPRecipientsKeepsFirstWireAddress(t *testing.T) {
     }
     if len(input) != 6 { t.Fatal("source envelope mutated") }
 }
+
+func TestSMTPRecipientDomainDoesNotUnicodeFold(t *testing.T) {
+    // U+212A Kelvin sign folds to ASCII k under Unicode EqualFold, but DNS
+    // case-insensitive matching only folds ASCII A-Z. Never merge these.
+    a := "user@K.example"
+    b := "user@k.example"
+    if sameSMTPRecipient(a, b) || sameSMTPRecipient(b, a) {
+        t.Fatal("Unicode folding merged distinct envelope recipients")
+    }
+    original := []string{a}
+    got := uniqueSMTPRecipients([]string{a, b})
+    if len(got) != 2 || got[0] != original[0] || got[1] != b {
+        t.Fatalf("unexpected recipient identity collapse: %q", got)
+    }
+    if !sameSMTPRecipient("user@EXAMPLE.org", "user@example.ORG") {
+        t.Fatal("ASCII DNS case folding regressed")
+    }
+}
