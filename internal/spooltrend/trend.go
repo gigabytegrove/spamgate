@@ -25,6 +25,18 @@ type Snapshot struct {
  States map[string]int `json:"states"`
  Findings []json.RawMessage `json:"findings"`
  Truncated bool `json:"truncated"`
+ // Audit counters must agree with a successful integrity gate even when
+ // a malformed or fabricated report omits individual findings.
+ PendingWithoutFinal int `json:"pending_without_final"`
+ PendingWithFinal int `json:"pending_with_final"`
+ PendingDuplicateIDs int `json:"pending_duplicate_ids"`
+ PendingConflictingIDs int `json:"pending_conflicting_ids"`
+ LifecycleAnomalies int `json:"lifecycle_anomalies"`
+ LegacyUnsigned int `json:"legacy_unsigned"`
+ UnreadableRecords int `json:"unreadable_records"`
+ InvalidFilenames int `json:"invalid_filenames"`
+ UnexpectedEntries int `json:"unexpected_entries"`
+ DroppedFindings int `json:"dropped_findings"`
 }
 type Result struct {
  GatePassed bool `json:"gate_passed"`
@@ -118,6 +130,7 @@ func Compare(before,after Snapshot,maxQueuedGrowth,maxDeadGrowth int)(Result,err
 // validateSnapshot also protects callers that construct Snapshot values directly.
 func validateSnapshot(s Snapshot) error {
  if s.GatePassed==nil || !*s.GatePassed || s.Truncated || len(s.Findings)!=0 || len(s.GateFailures)!=0 {return errors.New("unqualified input snapshot")}
+ if err:=validateAuditCounters(s);err!=nil{return err}
  if !s.CapturedAt.IsZero() && (s.CapturedAt.Before(time.Date(2020,1,1,0,0,0,0,time.UTC)) || s.CapturedAt.After(time.Now().Add(5*time.Minute))) {return errors.New("invalid capture timestamp")}
  if s.Examined<0 || s.Published<0 || s.Pending<0 || s.Published>s.Examined || s.Pending>s.Examined-s.Published || s.States==nil {return errors.New("invalid snapshot counts")}
  total:=0
@@ -127,5 +140,28 @@ func validateSnapshot(s Snapshot) error {
   total+=n
  }
  if total!=s.Published {return errors.New("published records missing verified states")}
+ return nil
+}
+
+// validateAuditCounters prevents a report with nonzero integrity/anomaly
+// counters from being used as a clean baseline, even if its gate flag or
+// findings array is inconsistent. Reconciled pending records are findings
+// too and cannot be silently treated as a fully clean snapshot.
+func validateAuditCounters(s Snapshot) error {
+ counters:=[]struct{name string; value int}{
+  {"pending_without_final",s.PendingWithoutFinal},
+  {"pending_with_final",s.PendingWithFinal},
+  {"pending_duplicate_ids",s.PendingDuplicateIDs},
+  {"pending_conflicting_ids",s.PendingConflictingIDs},
+  {"lifecycle_anomalies",s.LifecycleAnomalies},
+  {"legacy_unsigned",s.LegacyUnsigned},
+  {"unreadable_records",s.UnreadableRecords},
+  {"invalid_filenames",s.InvalidFilenames},
+  {"unexpected_entries",s.UnexpectedEntries},
+  {"dropped_findings",s.DroppedFindings},
+ }
+ for _,counter:=range counters {
+  if counter.value!=0 {return fmt.Errorf("unqualified audit counter %s=%d",counter.name,counter.value)}
+ }
  return nil
 }
