@@ -34,3 +34,16 @@ func uniqueSMTPRecipients(recipients []string) []string {
 	}
 	return unique
 }
+
+// acceptSMTPRecipient applies the distinct-recipient limit atomically. Exact
+// repeats are accepted without consuming another slot; a new mailbox over
+// capacity is refused without mutating the existing envelope.
+func acceptSMTPRecipient(recipients []string, address string, maxDistinct int) ([]string, bool) {
+	if containsSMTPRecipient(recipients, address) {
+		return recipients, true
+	}
+	if len(recipients) >= maxDistinct {
+		return recipients, false
+	}
+	return append(recipients, address), true
+}
