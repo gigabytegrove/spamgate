@@ -39,6 +39,9 @@ func run(args []string,stdout,stderr io.Writer) int {
  sustainedDelivering:=fs.Int("max-sustained-delivering",-1,"maximum delivering count for sustained pressure; -1 disables")
  sustainedPending:=fs.Int("max-sustained-pending",-1,"maximum pending count for sustained pressure; -1 disables")
  sustainedSamples:=fs.Int("min-sustained-samples",2,"consecutive observations required to report sustained pressure")
+ durationQueued:=fs.Duration("min-queued-pressure-duration",0,"minimum observed time above queued ceiling; zero disables")
+ durationDelivering:=fs.Duration("min-delivering-pressure-duration",0,"minimum observed time above delivering ceiling; zero disables")
+ durationPending:=fs.Duration("min-pending-pressure-duration",0,"minimum observed time above pending ceiling; zero disables")
  age:=fs.Duration("max-snapshot-age",0,"maximum age of latest report; zero disables")
  gap:=fs.Duration("max-snapshot-gap",0,"maximum interval between captures; zero disables")
  if err:=fs.Parse(args);err!=nil{return 2}
@@ -51,6 +54,8 @@ func run(args []string,stdout,stderr io.Writer) int {
  if err:=ceilings.Validate();err!=nil{fmt.Fprintln(stderr,err);return 2}
  sustained:=spooltrend.SustainedPolicy{MaxQueued:*sustainedQueued,MaxDelivering:*sustainedDelivering,MaxPending:*sustainedPending,MinSamples:*sustainedSamples}
  if err:=sustained.Validate();err!=nil{fmt.Fprintln(stderr,err);return 2}
+ durationPolicy:=spooltrend.DurationPressurePolicy{Queued:*durationQueued,Delivering:*durationDelivering,Pending:*durationPending}
+ if err:=durationPolicy.Validate();err!=nil{fmt.Fprintln(stderr,err);return 2}
  seen:=map[string]os.FileInfo{}
  snapshots:=make([]spooltrend.Snapshot,0,len(paths))
  for i,path:=range paths {
@@ -69,6 +74,8 @@ func run(args []string,stdout,stderr io.Writer) int {
  result,err=spooltrend.ApplySeriesCeilings(result,ceilings)
  if err!=nil{fmt.Fprintln(stderr,err);return 2}
  result,err=spooltrend.ApplySustainedPolicy(result,sustained)
+ if err!=nil{fmt.Fprintln(stderr,err);return 2}
+ result,err=spooltrend.ApplyDurationPressure(result,ceilings,durationPolicy)
  if err!=nil{fmt.Fprintln(stderr,err);return 2}
  encoder:=json.NewEncoder(stdout)
  encoder.SetIndent("","  ")
