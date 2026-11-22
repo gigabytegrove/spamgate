@@ -32,6 +32,7 @@ type SeriesResult struct {
  LargestDeliveringIncrease int `json:"largest_delivering_increase"`
  LargestPendingIncrease int `json:"largest_pending_increase"`
  FailedIntervals int `json:"failed_intervals"`
+ Points []SeriesPoint `json:"points"`
 }
 
 // AnalyzeSeries checks every adjacent interval, not merely the endpoints.
@@ -41,7 +42,7 @@ func AnalyzeSeries(samples []Snapshot, policy Policy, freshness FreshnessPolicy,
  if len(samples)<2 || len(samples)>1024 { return SeriesResult{},errors.New("series requires 2 to 1024 snapshots") }
  if err:=policy.Validate();err!=nil{return SeriesResult{},err}
  if err:=freshness.Validate();err!=nil{return SeriesResult{},err}
- r:=SeriesResult{GatePassed:true,Samples:len(samples),First:samples[0].CapturedAt,Last:samples[len(samples)-1].CapturedAt,GateFailures:[]string{}}
+ r:=SeriesResult{GatePassed:true,Samples:len(samples),First:samples[0].CapturedAt,Last:samples[len(samples)-1].CapturedAt,GateFailures:[]string{},Points:make([]SeriesPoint,0,len(samples))}
  for i,s:=range samples {
   if err:=validateSnapshot(s);err!=nil{return SeriesResult{},fmt.Errorf("sample %d: %w",i,err)}
   if s.CapturedAt.IsZero(){return SeriesResult{},fmt.Errorf("sample %d: timestamp required",i)}
@@ -50,6 +51,7 @@ func AnalyzeSeries(samples []Snapshot, policy Policy, freshness FreshnessPolicy,
   if i==0 || s.States["delivering"]>r.PeakDelivering {r.PeakDelivering=s.States["delivering"]}
   if i==0 || s.States["dead"]>r.PeakDead {r.PeakDead=s.States["dead"]}
   if i==0 || s.Pending>r.PeakPending {r.PeakPending=s.Pending}
+  r.Points=append(r.Points,SeriesPoint{CapturedAt:s.CapturedAt,Queued:s.States["queued"],Delivering:s.States["delivering"],Dead:s.States["dead"],Pending:s.Pending})
   if i==0 {continue}
   prev:=samples[i-1]
   if err:=CheckFreshness(prev,s,FreshnessPolicy{RequireTimestamps:true,MaxSnapshotGap:freshness.MaxSnapshotGap},now);err!=nil {
@@ -70,6 +72,11 @@ func AnalyzeSeries(samples []Snapshot, policy Policy, freshness FreshnessPolicy,
  }
  if freshness.MaxSnapshotAge>0 && now.Sub(r.Last)>freshness.MaxSnapshotAge {
   return SeriesResult{},fmt.Errorf("last snapshot age exceeds %s",freshness.MaxSnapshotAge)
+ }
+ // Absolute dead-letter ceilings apply to every observation, including the
+ // first baseline. Growth-only checks cannot detect a pre-existing backlog.
+ if policy.MaxDeadCount>=0 && samples[0].States["dead"]>policy.MaxDeadCount {
+  r.GateFailures=append(r.GateFailures,fmt.Sprintf("sample_0: dead_count=%d exceeds max-dead-count=%d",samples[0].States["dead"],policy.MaxDeadCount))
  }
  r.GatePassed=len(r.GateFailures)==0
  return r,nil
