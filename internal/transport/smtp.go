@@ -473,12 +473,11 @@ func (s *SMTP) handle(conn net.Conn) {
 			// An exact duplicate is already part of this transaction and must
 			// remain idempotently accepted even at the distinct-recipient cap.
 			// Reject only a *new* mailbox when all 100 slots are occupied.
-			if !containsSMTPRecipient(recipients, addr) {
-				if len(recipients) >= 100 {
-					reply(452, "4.5.3 Too many recipients")
-					continue
-				}
-				recipients = append(recipients, addr)
+			var accepted bool
+			recipients, accepted = acceptSMTPRecipient(recipients, addr, 100)
+			if !accepted {
+				reply(452, "4.5.3 Too many recipients")
+				continue
 			}
 			reply(250, "2.1.5 Recipient accepted")
 		case upper == "DATA":
