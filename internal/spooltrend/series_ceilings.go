@@ -39,10 +39,19 @@ func ApplySeriesCeilings(r SeriesResult, c SeriesCeilings) (SeriesResult,error) 
   } {
    if item.value<0 {return SeriesResult{},fmt.Errorf("sample %d: negative %s",i,item.name)}
    if item.limit>=0 && item.value>item.limit {
-    r.GateFailures=append(r.GateFailures,fmt.Sprintf("sample_%d: %s=%d exceeds max-%s=%d",i,item.name,item.value,item.name,item.limit))
+    r.GateFailures=append(r.GateFailures,fmt.Sprintf("sample_%d: %s=%d exceeds max-%s=%d",i,item.name,item.value,ceilingFlag(item.name),item.limit))
    }
   }
  }
  r.GatePassed=len(r.GateFailures)==0
  return r,nil
+}
+
+func ceilingFlag(name string) string {
+ switch name {
+ case "queued_count": return "queued-count"
+ case "delivering_count": return "delivering-count"
+ case "pending_count": return "pending-count"
+ default: return name
+ }
 }
