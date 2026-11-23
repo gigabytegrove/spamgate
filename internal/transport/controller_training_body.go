@@ -16,6 +16,10 @@ func readControllerTrainingSample(w http.ResponseWriter, r *http.Request) ([]byt
 	if r == nil || r.Body == nil {
 		return nil, http.StatusBadRequest
 	}
+	defer r.Body.Close()
+	if status := validateControllerTrainingRepresentation(r); status != http.StatusOK {
+		return nil, status
+	}
 	if err := r.Context().Err(); err != nil {
 		return nil, http.StatusRequestTimeout
 	}
