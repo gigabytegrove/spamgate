@@ -351,10 +351,13 @@ func (s *SMTP) handle(conn net.Conn) {
 		// DATA may require the remainder of the session budget to transmit
 		// the advertised 10 MiB maximum; remove the short command timeout.
 		_ = conn.SetReadDeadline(sessionDeadline)
-		// Preserve original SMTP command bytes for greeting validation: trimming
-		// the command first would silently authorize trailing whitespace.
+		// Validate the exact wire command before dispatch. Trimming first can
+		// turn malformed command framing into an authorized SMTP transaction.
+		if !validSMTPCommandWire(line) {
+			reply(500, "5.5.2 Invalid SMTP command syntax")
+			continue
+		}
 		rawCommand := line
-		line = strings.TrimSpace(line)
 		if line == "" {
 			reply(500, "5.5.2 Empty command")
 			continue
