@@ -109,10 +109,9 @@ func (s *RspamdController) train(w http.ResponseWriter, r *http.Request, label s
 		return
 	}
 	defer s.trainingGate.release()
-	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
-	raw, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, "sample exceeds 10 MiB", 413)
+	raw, status := readControllerTrainingSample(w, r)
+	if status != http.StatusOK {
+		http.Error(w, http.StatusText(status), status)
 		return
 	}
 	stats, err := s.Store.TrainBayes(raw, label)
