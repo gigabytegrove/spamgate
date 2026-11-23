@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,8 +34,8 @@ func ControllerFromEnv(store *core.Store) (*RspamdController, error) {
 	if addr == "" {
 		return nil, nil
 	}
-	if _, port, err := net.SplitHostPort(addr); err != nil || port == "" {
-		return nil, errors.New("invalid SPAMGATE_CONTROLLER_LISTEN: use host:port")
+	if err := validateControllerListenAddress(addr); err != nil {
+		return nil, fmt.Errorf("invalid SPAMGATE_CONTROLLER_LISTEN: %w", err)
 	}
 	token := os.Getenv("SPAMGATE_CONTROLLER_TOKEN")
 	if len(token) < 24 || !validControllerToken(token) {
@@ -46,6 +47,28 @@ func ControllerFromEnv(store *core.Store) (*RspamdController, error) {
 	}
 	return &RspamdController{ListenAddress: addr, Trusted: cidrs, Token: token, Store: store}, nil
 }
+// validateControllerListenAddress rejects malformed ports before the service starts.
+// Port zero is intentionally disallowed for a configured, persistent listener.
+func validateControllerListenAddress(addr string) error {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil || strings.TrimSpace(host) != host || strings.ContainsAny(host, "\\r\\n\\t") {
+		return errors.New("expected host:port")
+	}
+	if len(port) == 0 {
+		return errors.New("port is required")
+	}
+	for _, ch := range port {
+		if ch < '0' || ch > '9' {
+			return errors.New("port must be numeric")
+		}
+	}
+	number, err := strconv.Atoi(port)
+	if err != nil || number < 1 || number > 65535 {
+		return errors.New("port must be between 1 and 65535")
+	}
+	return nil
+}
+
 func (s *RspamdController) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /ping", func(w http.ResponseWriter, r *http.Request) {
@@ -101,6 +124,10 @@ func (s *RspamdController) train(w http.ResponseWriter, r *http.Request, label s
 	writeControllerJSON(w, 200, map[string]any{"success": true, "classifier": "bayes", "class": label, "stats": stats})
 }
 func (s *RspamdController) Listen(ctx context.Context) error {
+	if ctx == nil { return errors.New("controller context is nil") }
+	if err := ctx.Err(); err != nil { return err }
+	if s == nil { return errors.New("controller is nil") }
+	if err := validateControllerListenAddress(s.ListenAddress); err != nil { return err }
 	ln, err := net.Listen("tcp", s.ListenAddress)
 	if err != nil {
 		return err
