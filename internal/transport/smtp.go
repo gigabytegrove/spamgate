@@ -351,6 +351,9 @@ func (s *SMTP) handle(conn net.Conn) {
 		// DATA may require the remainder of the session budget to transmit
 		// the advertised 10 MiB maximum; remove the short command timeout.
 		_ = conn.SetReadDeadline(sessionDeadline)
+		// Preserve original SMTP command bytes for greeting validation: trimming
+		// the command first would silently authorize trailing whitespace.
+		rawCommand := line
 		line = strings.TrimSpace(line)
 		if line == "" {
 			reply(500, "5.5.2 Empty command")
@@ -359,7 +362,7 @@ func (s *SMTP) handle(conn net.Conn) {
 		upper := strings.ToUpper(line)
 		switch {
 		case strings.HasPrefix(upper, "EHLO "):
-			if !validSMTPGreetingIdentity(line[5:]) {
+			if !validSMTPGreetingIdentity(rawCommand[5:]) {
 				reply(501, "5.5.2 EHLO requires a client identity")
 				continue
 			}
@@ -376,7 +379,7 @@ func (s *SMTP) handle(conn net.Conn) {
 			_, _ = io.WriteString(writer, "250-SpamGate\r\n250-XFORWARD ADDR\r\n250-8BITMIME\r\n250 SIZE 10485760\r\n")
 			_ = writer.Flush()
 		case strings.HasPrefix(upper, "HELO "):
-			if !validSMTPGreetingIdentity(line[5:]) {
+			if !validSMTPGreetingIdentity(rawCommand[5:]) {
 				reply(501, "5.5.2 HELO requires a client identity")
 				continue
 			}
