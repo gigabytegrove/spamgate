@@ -51,7 +51,7 @@ func TestSMTPGreetingRejectsMalformedIdentityWithoutChangingSession(t *testing.T
   if _, writeErr := fmt.Fprintf(conn, "%s\r\n", command); writeErr != nil { t.Fatal(writeErr) }
  }
  expect("220 ")
- for _, command := range []string{"HELO bad_name", "EHLO example..org", "EHLO [::1]", "HELO mail example.org"} {
+ for _, command := range []string{"HELO bad_name", "EHLO example..org", "EHLO [::1]", "HELO mail example.org", "HELO mail.example.org ", "EHLO mail.example.org  "} {
   send(command)
   expect("501 ")
  }
