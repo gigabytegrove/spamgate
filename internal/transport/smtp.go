@@ -359,7 +359,7 @@ func (s *SMTP) handle(conn net.Conn) {
 		upper := strings.ToUpper(line)
 		switch {
 		case strings.HasPrefix(upper, "EHLO "):
-			if strings.TrimSpace(line[5:]) == "" {
+			if !validSMTPGreetingIdentity(line[5:]) {
 				reply(501, "5.5.2 EHLO requires a client identity")
 				continue
 			}
@@ -376,7 +376,7 @@ func (s *SMTP) handle(conn net.Conn) {
 			_, _ = io.WriteString(writer, "250-SpamGate\r\n250-XFORWARD ADDR\r\n250-8BITMIME\r\n250 SIZE 10485760\r\n")
 			_ = writer.Flush()
 		case strings.HasPrefix(upper, "HELO "):
-			if strings.TrimSpace(line[5:]) == "" {
+			if !validSMTPGreetingIdentity(line[5:]) {
 				reply(501, "5.5.2 HELO requires a client identity")
 				continue
 			}
