@@ -316,6 +316,7 @@ func (s *SMTP) handle(conn net.Conn) {
 	var sender string
 	var recipients []string
 	greeted := false
+	esmtp := false
 	heloName := ""
 	mailIssued := false
 	mailParams := smtpMailParameters{DeclaredSize: -1}
@@ -372,6 +373,7 @@ func (s *SMTP) handle(conn net.Conn) {
 			}
 			heloName = strings.TrimSpace(line[5:])
 			greeted = true
+			esmtp = true
 			forwardedIP = ""
 			seenForwardedIP = false
 			seenForwardedHelo = false
@@ -388,6 +390,7 @@ func (s *SMTP) handle(conn net.Conn) {
 			}
 			heloName = strings.TrimSpace(line[5:])
 			greeted = true
+			esmtp = false
 			forwardedIP = ""
 			seenForwardedIP = false
 			seenForwardedHelo = false
@@ -413,8 +416,8 @@ func (s *SMTP) handle(conn net.Conn) {
 			reply(221, "2.0.0 Bye")
 			return
 		case strings.HasPrefix(upper, "XFORWARD "):
-			if !greeted || mailIssued {
-				reply(503, "5.5.1 XFORWARD only before MAIL FROM")
+			if !esmtp || mailIssued {
+				reply(503, "5.5.1 XFORWARD requires EHLO before MAIL FROM")
 				continue
 			}
 			// Postfix may split XFORWARD metadata across commands. Preserve the
@@ -484,6 +487,7 @@ func (s *SMTP) handle(conn net.Conn) {
    mailIssued = false
    mailParams = smtpMailParameters{DeclaredSize: -1}
    addr, parsedParams, e := parseSMTPMailParameters(line)
+   if e == nil { e = validateSMTPGreetingMailOptions(esmtp, line) }
    if e != nil {
     reply(501, "5.5.4 Invalid MAIL FROM path or unsupported ESMTP parameter")
     continue
