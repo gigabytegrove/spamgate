@@ -300,7 +300,11 @@ func readLineLimited(reader *bufio.Reader, limit int) ([]byte, error) {
 func (s *SMTP) handle(conn net.Conn) {
 	defer conn.Close()
 	logger := s.logger()
-	_ = conn.SetDeadline(time.Now().Add(4 * time.Minute))
+	// Bound both total session lifetime and each idle command wait. A trusted
+	// Postfix peer must not occupy one of the 64 connection slots indefinitely.
+	// The fixed session deadline remains an upper bound even when commands flow.
+	sessionDeadline := time.Now().Add(4 * time.Minute)
+	_ = conn.SetDeadline(sessionDeadline)
 	reader := bufio.NewReaderSize(conn, 64*1024)
 	writer := bufio.NewWriter(conn)
 	reply := func(code int, msg string) { _, _ = fmt.Fprintf(writer, "%d %s\r\n", code, msg); _ = writer.Flush() }
@@ -332,11 +336,22 @@ func (s *SMTP) handle(conn net.Conn) {
 		seenForwardedHelo = false
 	}
 	for commands := 0; commands < 500; commands++ {
+		// A silent or stalled peer cannot hold a listener slot for the entire
+		// four-minute transaction budget. Do not extend the total deadline.
+		_ = conn.SetReadDeadline(smtpCommandDeadline(time.Now(), sessionDeadline, 30*time.Second))
 		line, commandErr := readSMTPCommand(reader)
 		if commandErr != nil {
-			reply(500, "5.5.2 Invalid SMTP command framing")
+			var netErr net.Error
+			if errors.As(commandErr, &netErr) && netErr.Timeout() {
+				reply(421, "4.4.2 SMTP command timeout")
+			} else if !errors.Is(commandErr, io.EOF) {
+				reply(500, "5.5.2 Invalid SMTP command framing")
+			}
 			return
 		}
+		// DATA may require the remainder of the session budget to transmit
+		// the advertised 10 MiB maximum; remove the short command timeout.
+		_ = conn.SetReadDeadline(sessionDeadline)
 		line = strings.TrimSpace(line)
 		if line == "" {
 			reply(500, "5.5.2 Empty command")
