@@ -25,9 +25,8 @@ func RelayFromEnv() (*Relay, error) {
 	if addr == "" {
 		return nil, nil
 	}
-	host, port, e := net.SplitHostPort(addr)
-	if e != nil || host == "" || port == "" {
-		return nil, errors.New("SPAMGATE_RELAY_ADDRESS must be host:port")
+	if _, err := validateRelayEndpoint(addr); err != nil {
+		return nil, fmt.Errorf("SPAMGATE_RELAY_ADDRESS: %w", err)
 	}
 	mode := os.Getenv("SPAMGATE_RELAY_TLS")
 	if mode == "" {
@@ -57,7 +56,7 @@ func (r *Relay) Send(ctx context.Context, m core.Message, raw []byte) error {
 	if err := r.validateConfiguration(); err != nil {
 		return err
 	}
-	host, _, e := net.SplitHostPort(r.Address)
+	host, e := validateRelayEndpoint(r.Address)
 	if e != nil {
 		return e
 	}
