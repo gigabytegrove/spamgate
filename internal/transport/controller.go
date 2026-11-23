@@ -51,7 +51,7 @@ func ControllerFromEnv(store *core.Store) (*RspamdController, error) {
 // Port zero is intentionally disallowed for a configured, persistent listener.
 func validateControllerListenAddress(addr string) error {
 	host, port, err := net.SplitHostPort(addr)
-	if err != nil || strings.TrimSpace(host) != host || strings.ContainsAny(host, "\\r\\n\\t") {
+	if err != nil || strings.TrimSpace(host) != host || strings.ContainsAny(host, "\r\n\t") {
 		return errors.New("expected host:port")
 	}
 	if len(port) == 0 {
