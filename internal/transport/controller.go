@@ -37,8 +37,8 @@ func ControllerFromEnv(store *core.Store) (*RspamdController, error) {
 		return nil, errors.New("invalid SPAMGATE_CONTROLLER_LISTEN: use host:port")
 	}
 	token := os.Getenv("SPAMGATE_CONTROLLER_TOKEN")
-	if len(token) < 24 {
-		return nil, errors.New("SPAMGATE_CONTROLLER_TOKEN must be at least 24 characters")
+	if len(token) < 24 || !validControllerToken(token) {
+		return nil, errors.New("SPAMGATE_CONTROLLER_TOKEN must be at least 24 printable non-whitespace ASCII characters")
 	}
 	cidrs, err := parseTrustedCIDRs(os.Getenv("SPAMGATE_CONTROLLER_TRUSTED_CIDRS"))
 	if err != nil {
@@ -111,7 +111,8 @@ func (s *RspamdController) train(w http.ResponseWriter, r *http.Request, label s
 	}
 	stats, err := s.Store.TrainBayes(raw, label)
 	if err != nil {
-		http.Error(w, err.Error(), 422)
+		// Do not disclose classifier internals, corpus contents or filesystem paths to API clients.
+		http.Error(w, "training sample rejected", 422)
 		return
 	}
 	writeControllerJSON(w, 200, map[string]any{"success": true, "classifier": "bayes", "class": label, "stats": stats})
@@ -123,12 +124,12 @@ func (s *RspamdController) Listen(ctx context.Context) error {
 	}
 	defer ln.Close()
 	srv := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 8 * time.Second, ReadTimeout: 25 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
-	go func() {
-		<-ctx.Done()
+	stopShutdown := context.AfterFunc(ctx, func() {
 		grace, stop := context.WithTimeout(context.Background(), 5*time.Second)
 		defer stop()
 		_ = srv.Shutdown(grace)
-	}()
+	})
+	defer stopShutdown()
 	err = srv.Serve(ln)
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
