@@ -49,5 +49,10 @@ func TestControllerTrainingRepresentationDuplicateHeaders(t *testing.T) {
    }
   })
  }
+ r:=httptest.NewRequest(http.MethodPost,"/learnspam",strings.NewReader("sample"))
+ r.Header = http.Header{"Content-Type":{"message/rfc822"},"content-type":{"application/json"}}
+ if got:=validateControllerTrainingRepresentation(r);got!=http.StatusUnsupportedMediaType {t.Fatalf("mixed-case duplicate content type accepted: %d",got)}
+ r.Header = http.Header{"content-encoding":{"gzip"}}
+ if got:=validateControllerTrainingRepresentation(r);got!=http.StatusUnsupportedMediaType {t.Fatalf("noncanonical content encoding accepted: %d",got)}
  if got:=validateControllerTrainingRepresentation(nil);got!=http.StatusBadRequest {t.Fatalf("nil request: %d",got)}
 }
