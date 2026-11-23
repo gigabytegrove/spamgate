@@ -46,6 +46,9 @@ func readControllerTrainingSample(w http.ResponseWriter, r *http.Request) ([]byt
 	if r.Context().Err() != nil {
 		return nil, http.StatusRequestTimeout
 	}
+	if r.ContentLength >= 0 && int64(len(raw)) != r.ContentLength {
+		return nil, http.StatusBadRequest
+	}
 	if len(raw) == 0 {
 		return nil, http.StatusBadRequest
 	}
