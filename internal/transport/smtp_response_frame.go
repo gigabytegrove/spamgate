@@ -16,7 +16,7 @@ func validateSMTPResponseFrame(frame string) error {
  if len(lines) > 100 { return errors.New("too many SMTP response lines") }
  var code string
  for i, line := range lines {
-  if len(line) < 4 || len(line) > 512 { return fmt.Errorf("invalid SMTP response line %d length", i+1) }
+  if len(line) < 4 || len(line)+2 > 512 { return fmt.Errorf("invalid SMTP response line %d length", i+1) }
   for j := 0; j < len(line); j++ {
    b := line[j]
    if b < 0x20 || b > 0x7e { return fmt.Errorf("nonprintable SMTP response byte on line %d", i+1) }
@@ -38,7 +38,7 @@ func validateSMTPResponseFrame(frame string) error {
    token := line[4:]
    if end >= 0 { token = line[4:4+end] }
    parts := strings.Split(token, ".")
-   if len(parts) != 3 || len(parts[0]) != 1 || len(parts[1]) == 0 || len(parts[2]) == 0 {
+   if len(parts) != 3 || len(parts[0]) != 1 || len(parts[1]) == 0 || len(parts[2]) == 0 || len(parts[1]) > 3 || len(parts[2]) > 3 {
     return errors.New("malformed enhanced SMTP status")
    }
    for _, part := range parts {
