@@ -382,7 +382,7 @@ func (s *SMTP) handle(conn net.Conn) {
 			sender = ""
 			recipients = nil
 			mailParams = smtpMailParameters{DeclaredSize: -1}
-			if err := smtpWriteResponse(conn, writer, "250-SpamGate\r\n250-XFORWARD ADDR\r\n250-8BITMIME\r\n250 SIZE 10485760\r\n"); err != nil { logger.Debug("SMTP EHLO response failed", "error", err); return }
+			if err := smtpWriteResponse(conn, writer, "250-SpamGate\r\n250-XFORWARD ADDR HELO\r\n250-8BITMIME\r\n250 SIZE 10485760\r\n"); err != nil { logger.Debug("SMTP EHLO response failed", "error", err); return }
 		case strings.HasPrefix(upper, "HELO "):
 			if !validSMTPGreetingIdentity(rawCommand[5:]) {
 				reply(501, "5.5.2 HELO requires a client identity")
