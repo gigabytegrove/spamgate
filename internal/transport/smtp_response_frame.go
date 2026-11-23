@@ -6,9 +6,8 @@ import (
  "strings"
 )
 
-// validateSMTPResponseFrame rejects ambiguous or injectable SMTP replies
-// before any bytes are written to the network. Multiline replies must use
-// the same three-digit code and terminate with a space separator.
+// validateSMTPResponseFrame validates an entire SMTP reply before the first
+// network write. It deliberately rejects ambiguous framing and control bytes.
 func validateSMTPResponseFrame(frame string) error {
  if len(frame) < 6 || len(frame) > 16384 || !strings.HasSuffix(frame, "\r\n") {
   return errors.New("SMTP response must be CRLF terminated and within 16 KiB")
@@ -17,7 +16,7 @@ func validateSMTPResponseFrame(frame string) error {
  if len(lines) > 100 { return errors.New("too many SMTP response lines") }
  var code string
  for i, line := range lines {
-  if len(line) < 4 || len(line) > 1000 { return fmt.Errorf("invalid SMTP response line %d length", i+1) }
+  if len(line) < 4 || len(line) > 512 { return fmt.Errorf("invalid SMTP response line %d length", i+1) }
   for j := 0; j < len(line); j++ {
    b := line[j]
    if b < 0x20 || b > 0x7e { return fmt.Errorf("nonprintable SMTP response byte on line %d", i+1) }
@@ -30,6 +29,24 @@ func validateSMTPResponseFrame(frame string) error {
   separator := byte('-')
   if i == len(lines)-1 { separator = ' ' }
   if line[3] != separator { return errors.New("invalid multiline SMTP response separator") }
+  // RFC 3463 enhanced status codes must agree with the basic SMTP reply
+  // class. A mismatched class can cause clients to interpret a temporary
+  // failure as permanent, or vice versa.
+  if len(line) >= 6 && line[4] >= '2' && line[4] <= '5' && line[5] == '.' {
+   if line[4] != line[0] { return errors.New("enhanced SMTP status class differs from reply code") }
+   end := strings.IndexByte(line[4:], ' ')
+   token := line[4:]
+   if end >= 0 { token = line[4:4+end] }
+   parts := strings.Split(token, ".")
+   if len(parts) != 3 || len(parts[0]) != 1 || len(parts[1]) == 0 || len(parts[2]) == 0 {
+    return errors.New("malformed enhanced SMTP status")
+   }
+   for _, part := range parts {
+    for j := 0; j < len(part); j++ {
+     if part[j] < '0' || part[j] > '9' { return errors.New("malformed enhanced SMTP status") }
+    }
+   }
+  }
  }
  return nil
 }
