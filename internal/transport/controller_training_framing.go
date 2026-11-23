@@ -12,6 +12,10 @@ import (
 func validateControllerTrainingFraming(r *http.Request) int {
  if r == nil || r.Body == nil { return http.StatusBadRequest }
  if r.ContentLength < -1 { return http.StatusBadRequest }
+ // Refuse raw framing headers from direct callers; net/http normally normalizes them.
+ if len(controllerHeaderValues(r.Header, "Transfer-Encoding")) != 0 { return http.StatusBadRequest }
+ if len(controllerHeaderValues(r.Header, "Trailer")) != 0 { return http.StatusBadRequest }
+ if len(r.Trailer) != 0 { return http.StatusBadRequest }
  lengths := controllerHeaderValues(r.Header, "Content-Length")
  if len(lengths) > 1 { return http.StatusBadRequest }
  if len(lengths) == 1 {
