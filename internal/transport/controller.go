@@ -25,6 +25,7 @@ type RspamdController struct {
 	Trusted       []*net.IPNet
 	Token         string
 	Store         *core.Store
+	trainingGate controllerTrainingGate
 }
 
 func ControllerFromEnv(store *core.Store) (*RspamdController, error) {
@@ -79,6 +80,12 @@ func writeControllerJSON(w http.ResponseWriter, status int, data any) {
 	_ = json.NewEncoder(w).Encode(data)
 }
 func (s *RspamdController) train(w http.ResponseWriter, r *http.Request, label string) {
+	if !s.trainingGate.acquire() {
+		w.Header().Set("Retry-After", "5")
+		http.Error(w, "training capacity exhausted", http.StatusTooManyRequests)
+		return
+	}
+	defer s.trainingGate.release()
 	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
