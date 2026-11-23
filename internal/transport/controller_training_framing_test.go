@@ -5,6 +5,7 @@ import (
  "net/http"
  "net/http/httptest"
  "strings"
+ "strconv"
  "testing"
 )
 
@@ -58,4 +59,21 @@ func TestControllerTrainingFramingNil(t *testing.T) {
  r:=httptest.NewRequest(http.MethodPost,"/learnspam",nil)
  r.Body=nil
  if got:=validateControllerTrainingFraming(r);got!=http.StatusBadRequest {t.Fatalf("nil body: %d",got)}
+}
+
+func TestControllerTrainingDeclaredBodyIntegrity(t *testing.T) {
+ for _, tc := range []struct{name string; declared int64; want int}{
+  {"short-body",8,http.StatusBadRequest},
+  {"excess-body",6,http.StatusBadRequest},
+  {"exact-body",7,http.StatusOK},
+ } {
+  t.Run(tc.name,func(t *testing.T){
+   r:=httptest.NewRequest(http.MethodPost,"/learnham",strings.NewReader("sample!"))
+   r.ContentLength=tc.declared
+   r.Header.Set("Content-Length",strconv.FormatInt(tc.declared,10))
+   data,status:=readControllerTrainingSample(httptest.NewRecorder(),r)
+   if status!=tc.want {t.Fatalf("status %d want %d",status,tc.want)}
+   if status!=http.StatusOK && data!=nil {t.Fatal("mismatched body reached classifier")}
+  })
+ }
 }
