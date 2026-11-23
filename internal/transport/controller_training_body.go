@@ -17,6 +17,9 @@ func readControllerTrainingSample(w http.ResponseWriter, r *http.Request) ([]byt
 		return nil, http.StatusBadRequest
 	}
 	defer r.Body.Close()
+	if status := validateControllerTrainingFraming(r); status != http.StatusOK {
+		return nil, status
+	}
 	if status := validateControllerTrainingRepresentation(r); status != http.StatusOK {
 		return nil, status
 	}
