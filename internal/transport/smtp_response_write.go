@@ -4,6 +4,7 @@ import (
  "bufio"
  "io"
  "net"
+ "fmt"
  "time"
 )
 
@@ -12,6 +13,7 @@ import (
 // Refresh the deadline on every response, including multiline EHLO responses,
 // so a previously sent greeting cannot poison a later response.
 func smtpWriteResponse(conn net.Conn, writer *bufio.Writer, response string) error {
+ if err := validateSMTPResponseFrame(response); err != nil { return fmt.Errorf("invalid SMTP response frame: %w", err) }
  if err := conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
   return err
  }
