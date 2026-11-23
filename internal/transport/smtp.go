@@ -537,16 +537,13 @@ func (s *SMTP) handle(conn net.Conn) {
 			reply(354, "End data with <CR><LF>.<CR><LF>")
 			raw, dataErr := readSMTPData(reader, 10<<20)
 			if dataErr != nil {
-				if errors.Is(dataErr, errSMTPDataTooLarge) {
-					reply(552, "5.3.4 Message too large")
-					resetEnvelope()
-					continue
-				}
-				// Malformed DATA framing makes the remainder of the stream
-				// ambiguous. Close rather than treating message bytes as
-				// SMTP commands after a rejected transaction.
-				slog.Warn("SMTP DATA wire framing rejected", "error", dataErr)
-				reply(554, "5.6.0 Invalid SMTP DATA framing")
+				// A failed DATA read cannot establish the next SMTP command
+				// boundary. In particular, an oversized DATA body may still
+				// contain lines resembling MAIL/RCPT commands. Never resume
+				// command parsing on the same connection after a read failure.
+				code, message := smtpDataReadFailureReply(dataErr)
+				logger.Warn("SMTP DATA read failed; closing session", "error", dataErr, "smtp_code", code)
+				reply(code, message)
 				return
 			}
 			if wireErr := validateRelayWireData(raw); wireErr != nil {
