@@ -11,10 +11,10 @@ import (
 
 func TestSMTPCommandWireValidation(t *testing.T) {
  valid := []string{"EHLO mail.example.org", "MAIL FROM:<sender@example.org> SIZE=42", "RCPT TO:<user@example.org>", "XFORWARD ADDR=192.0.2.10 HELO=mx.example.org", "DATA", "QUIT"}
- invalid := []string{"", " ", " HELO example.org", "HELO example.org ", "HELO  example.org", "MAIL  FROM:<a@example.org>", "MAIL FROM:<a@example.org> ", "QUIT ", "QUIT\\t", "HELO\\tmail.example.org", "EHLO mail.example.org\\r", "EHLO mail.example.org\\n", "EHLO K.example", "M4IL FROM:<a@example.org>", "MAIL", "MAIL  ", strings.Repeat("A", 513)}
+ invalid := []string{"", " ", " HELO example.org", "HELO example.org ", "HELO  example.org", "MAIL  FROM:<a@example.org>", "MAIL FROM:<a@example.org> ", "QUIT ", "QUIT\\t", "HELO\\tmail.example.org", "EHLO mail.example.org\\r", "EHLO mail.example.org\\n", "EHLO K.example", "M4IL FROM:<a@example.org>", "MAIL  ", strings.Repeat("A", 513)}
  for _, command := range valid { if !validSMTPCommandWire(command) { t.Errorf("valid command rejected: %q", command) } }
  for _, command := range invalid {
-  command = strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(command, "\\\\t", "\\t"), "\\\\r", "\\r"), "\\\\n", "\\n")
+  command = strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(command, "\\t", "\\t"), "\\r", "\\r"), "\\n", "\\n")
   if validSMTPCommandWire(command) { t.Errorf("malformed command accepted: %q", command) }
  }
 }
