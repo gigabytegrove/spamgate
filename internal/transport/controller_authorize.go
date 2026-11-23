@@ -4,18 +4,24 @@ import (
  "crypto/subtle"
  "net"
  "net/http"
+ "strconv"
 )
 
-// controllerAuthorize is the controller's single trust boundary. It never
-// interprets forwarding headers: only the transport peer can establish trust.
+// controllerAuthorize only trusts the socket peer, never proxy-supplied
+// identity headers. An invalid or synthetic peer address fails closed.
 func (s *RspamdController) controllerAuthorize(r *http.Request) int {
  if s == nil || s.Store == nil || !validControllerToken(s.Token) || len(s.Token) < 24 {
   return http.StatusServiceUnavailable
  }
- host, _, err := net.SplitHostPort(r.RemoteAddr)
+ if r == nil {
+  return http.StatusForbidden
+ }
+ host, port, err := net.SplitHostPort(r.RemoteAddr)
  if err != nil { return http.StatusForbidden }
  peer := net.ParseIP(host)
  if peer == nil { return http.StatusForbidden }
+ number, err := strconv.Atoi(port)
+ if err != nil || number < 1 || number > 65535 { return http.StatusForbidden }
  allowed := false
  for _, cidr := range s.Trusted {
   if cidr != nil && cidr.Contains(peer) { allowed = true; break }
