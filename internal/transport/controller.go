@@ -7,7 +7,6 @@ package transport
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -66,32 +65,9 @@ func (s *RspamdController) Handler() http.Handler {
 	mux.HandleFunc("POST /learnham", func(w http.ResponseWriter, r *http.Request) { s.train(w, r, "ham") })
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
-		host, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			http.Error(w, "forbidden", 403)
-			return
-		}
-		peer := net.ParseIP(host)
-		allowed := false
-		for _, cidr := range s.Trusted {
-			if peer != nil && cidr.Contains(peer) {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			http.Error(w, "forbidden", 403)
-			return
-		}
-		// Support Rspamd's conventional Password header as well as Authorization.
-		// An explicit controller secret is always required even on trusted networks.
-		provided, valid := controllerCredential(r.Header)
-		if !valid || subtle.ConstantTimeCompare([]byte(provided), []byte(s.Token)) != 1 {
-			http.Error(w, "unauthorized", 401)
-			return
-		}
-		if !s.Store.Config().SetupComplete {
-			http.Error(w, "setup incomplete", 503)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		if status := s.controllerAuthorize(r); status != http.StatusOK {
+			http.Error(w, http.StatusText(status), status)
 			return
 		}
 		mux.ServeHTTP(w, r)
