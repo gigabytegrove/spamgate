@@ -10,12 +10,12 @@ import (
 // transfer. Refuse ambiguous encodings before feeding bytes to Bayes.
 func validateControllerTrainingRepresentation(r *http.Request) int {
  if r == nil { return http.StatusBadRequest }
- if len(r.Header.Values("Content-Encoding")) > 0 {
+ if len(controllerHeaderValues(r.Header, "Content-Encoding")) > 0 {
   // Go does not decode request content encodings. Even "identity" is
   // rejected to prevent proxy/backend interpretation differences.
   return http.StatusUnsupportedMediaType
  }
- values := r.Header.Values("Content-Type")
+ values := controllerHeaderValues(r.Header, "Content-Type")
  if len(values) == 0 { return http.StatusOK } // Rspamd-compatible raw uploads
  if len(values) != 1 { return http.StatusUnsupportedMediaType }
  value := strings.TrimSpace(values[0])
@@ -28,4 +28,14 @@ func validateControllerTrainingRepresentation(r *http.Request) int {
  default:
   return http.StatusUnsupportedMediaType
  }
+}
+
+// Include noncanonical map keys: tests and internal callers can construct
+// http.Header directly without going through the net/http wire parser.
+func controllerHeaderValues(h http.Header, name string) []string {
+ var values []string
+ for key, entries := range h {
+  if strings.EqualFold(key, name) { values = append(values, entries...) }
+ }
+ return values
 }
