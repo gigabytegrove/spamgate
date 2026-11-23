@@ -85,11 +85,8 @@ func (s *RspamdController) Handler() http.Handler {
 		}
 		// Support Rspamd's conventional Password header as well as Authorization.
 		// An explicit controller secret is always required even on trusted networks.
-		provided := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if provided == "" {
-			provided = r.Header.Get("Password")
-		}
-		if subtle.ConstantTimeCompare([]byte(provided), []byte(s.Token)) != 1 {
+		provided, valid := controllerCredential(r.Header)
+		if !valid || subtle.ConstantTimeCompare([]byte(provided), []byte(s.Token)) != 1 {
 			http.Error(w, "unauthorized", 401)
 			return
 		}
