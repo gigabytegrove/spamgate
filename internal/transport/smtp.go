@@ -306,7 +306,7 @@ func (s *SMTP) handle(conn net.Conn) {
 	_ = conn.SetDeadline(sessionDeadline)
 	reader := bufio.NewReaderSize(conn, 64*1024)
 	writer := bufio.NewWriter(conn)
-	reply := func(code int, msg string) { _, _ = fmt.Fprintf(writer, "%d %s\r\n", code, msg); _ = writer.Flush() }
+	reply := func(code int, msg string) { if err := smtpWriteResponse(conn, writer, fmt.Sprintf("%d %s\r\n", code, msg)); err != nil { logger.Debug("SMTP response write failed", "error", err) } }
 	if !s.allowedPeer(conn.RemoteAddr()) {
 		reply(554, "5.7.1 Client network not trusted")
 		return
@@ -379,8 +379,7 @@ func (s *SMTP) handle(conn net.Conn) {
 			sender = ""
 			recipients = nil
 			mailParams = smtpMailParameters{DeclaredSize: -1}
-			_, _ = io.WriteString(writer, "250-SpamGate\r\n250-XFORWARD ADDR\r\n250-8BITMIME\r\n250 SIZE 10485760\r\n")
-			_ = writer.Flush()
+			if err := smtpWriteResponse(conn, writer, "250-SpamGate\r\n250-XFORWARD ADDR\r\n250-8BITMIME\r\n250 SIZE 10485760\r\n"); err != nil { logger.Debug("SMTP EHLO response failed", "error", err); return }
 		case strings.HasPrefix(upper, "HELO "):
 			if !validSMTPGreetingIdentity(rawCommand[5:]) {
 				reply(501, "5.5.2 HELO requires a client identity")
