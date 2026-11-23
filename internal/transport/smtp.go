@@ -235,8 +235,9 @@ func (s *SMTP) Listen(ctx context.Context) error {
 		case slots <- struct{}{}:
 			go func() { defer func() { <-slots }(); s.handle(conn) }()
 		default:
-			_, _ = io.WriteString(conn, "421 SpamGate busy\r\n")
-			_ = conn.Close()
+			// Do not perform network I/O on the accept goroutine when saturated.
+			// A peer that never reads 421 could otherwise stall all new accepts.
+			rejectBusySMTPConnection(conn)
 		}
 	}
 }
