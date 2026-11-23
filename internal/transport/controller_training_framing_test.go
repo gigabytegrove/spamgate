@@ -36,6 +36,12 @@ func TestControllerTrainingFraming(t *testing.T) {
   {"unsupported-transfer", func(r *http.Request){r.TransferEncoding=[]string{"gzip"};r.ContentLength=-1}, http.StatusBadRequest},
   {"multiple-transfer", func(r *http.Request){r.TransferEncoding=[]string{"gzip","chunked"};r.ContentLength=-1}, http.StatusBadRequest},
   {"chunked", func(r *http.Request){r.TransferEncoding=[]string{"chunked"};r.ContentLength=-1}, http.StatusOK},
+  {"raw-transfer-encoding", func(r *http.Request){r.Header.Set("Transfer-Encoding","chunked");r.ContentLength=-1}, http.StatusBadRequest},
+  {"raw-transfer-encoding-case", func(r *http.Request){r.Header=http.Header{"transfer-encoding":{"chunked"}};r.ContentLength=-1}, http.StatusBadRequest},
+  {"raw-trailer", func(r *http.Request){r.Header.Set("Trailer","X-Checksum")}, http.StatusBadRequest},
+  {"raw-trailer-case", func(r *http.Request){r.Header=http.Header{"trailer":{"X-Checksum"}}}, http.StatusBadRequest},
+  {"populated-trailer", func(r *http.Request){r.Trailer=http.Header{"X-Checksum":{"bad"}}}, http.StatusBadRequest},
+  {"chunked-with-trailer", func(r *http.Request){r.TransferEncoding=[]string{"chunked"};r.ContentLength=-1;r.Trailer=http.Header{"X-Checksum":nil}}, http.StatusBadRequest},
   {"chunked-with-length", func(r *http.Request){r.TransferEncoding=[]string{"chunked"}}, http.StatusBadRequest},
   {"chunked-with-header", func(r *http.Request){r.TransferEncoding=[]string{"chunked"};r.ContentLength=-1;r.Header.Set("Content-Length","7")}, http.StatusBadRequest},
  }
